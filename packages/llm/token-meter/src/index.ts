@@ -59,12 +59,15 @@ export {
 export {
   GENERIC_ESTIMATOR_IDENTITY,
   GenericTokenEstimator,
-  TokenEstimator,
-  TokenEstimatorRegistry,
   TokenEstimatorResolver,
   TokenEstimatorRegistryImpl,
   registerTokenEstimatorResolver,
 } from './token-estimator-resolver.ts'
+export type {
+  TokenEstimator,
+  TokenEstimatorRegistry,
+  TokenEstimateInput,
+} from '@deepseek-ai/dsh-llm'
 import { registerTokenEstimatorResolver } from './token-estimator-resolver.ts'
 
 interface MeasurementAnchor {
