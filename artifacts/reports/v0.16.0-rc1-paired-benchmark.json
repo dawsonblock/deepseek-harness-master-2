@@ -1,0 +1,2117 @@
+{
+  "release": "v0.16.0-rc.1",
+  "generatedAt": "2026-08-24T23:43:12.150Z",
+  "design": {
+    "taskClasses": [
+      {
+        "id": "arithmetic",
+        "category": "simple-factual",
+        "description": "Simple arithmetic",
+        "task": "What is 7 * 8? Reply with just the number.",
+        "criteriaCount": 2
+      },
+      {
+        "id": "factual-explain",
+        "category": "factual-formatting",
+        "description": "Factual explanation in 3 sentences",
+        "task": "Explain in three sentences how a hash map handles collisions using open addressing. Each sentence must be distinct.",
+        "criteriaCount": 4
+      },
+      {
+        "id": "reasoning-proof",
+        "category": "multi-step-reasoning",
+        "description": "Prove sum of two odds is even",
+        "task": "Think step by step. Prove that the sum of two odd integers is always even. Show your reasoning.",
+        "criteriaCount": 4
+      },
+      {
+        "id": "code-edit",
+        "category": "short-code-edit",
+        "description": "Write a function to reverse a list",
+        "task": "Write a TypeScript function called reverseList that takes an array and returns it reversed. Include the type signature.",
+        "criteriaCount": 4
+      },
+      {
+        "id": "structured-transform",
+        "category": "structured-transformation",
+        "description": "Convert CSV to JSON",
+        "task": "Convert this CSV to a JSON array of objects:\nname,age\nAlice,30\nBob,25\n\nReply with only the JSON.",
+        "criteriaCount": 4
+      }
+    ],
+    "iterations": 2,
+    "cacheControl": "warm-then-randomized",
+    "verification": "structured criteria (same status vocabulary as RoutingOutcome)",
+    "coreMetric": "CostPerVerifiedTask = TotalCost / VerifiedPasses"
+  },
+  "runs": [
+    {
+      "taskId": "arithmetic",
+      "model": "deepseek-v4-pro",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 24,
+        "hitRate": 0.9980302035456337
+      },
+      "usage": {
+        "inputTokens": 24,
+        "outputTokens": 39,
+        "reasoningTokens": 37,
+        "totalTokens": 12223
+      },
+      "economics": {
+        "costUsd": 0.00008845000000000001,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 1652,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 2,
+        "criteriaTotal": 2,
+        "checks": [
+          {
+            "description": "Contains the number 56",
+            "passed": true
+          },
+          {
+            "description": "Does not contain other numbers",
+            "passed": true
+          }
+        ]
+      },
+      "output": "56"
+    },
+    {
+      "taskId": "factual-explain",
+      "model": "deepseek-v4-flash",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 4352,
+        "missTokens": 7839,
+        "hitRate": 0.35698466081535557
+      },
+      "usage": {
+        "inputTokens": 7839,
+        "outputTokens": 210,
+        "reasoningTokens": 34,
+        "totalTokens": 12401
+      },
+      "economics": {
+        "costUsd": 0.0011684456000000001,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 3336,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Mentions open addressing or probing",
+            "passed": true
+          },
+          {
+            "description": "Mentions collision or hash",
+            "passed": true
+          },
+          {
+            "description": "Has at least 2 sentence terminators",
+            "passed": true
+          },
+          {
+            "description": "Does not exceed 5 sentences",
+            "passed": false
+          }
+        ]
+      },
+      "output": "1. When two keys hash to the same slot, open addressing does not store a linked list at that slot; instead, the hash map probes through a deterministic sequence of alternative slots in the table itself, using methods such as linear probing (checking consecutive slots), quadratic probing, or double hashing.\n\n2. Each probe applies a function of the original hash and the probe count to compute the next candidate index, continuing until it finds either an empty slot to insert into or a slot holding the target key during lookup.\n\n3. Deletion must replace a removed entry with a special \"tombstone\" marker rather than leaving a plain empty slot, because an empty slot would incorrectly terminate the probe sequence for keys inserted later that wrapped past the deleted position, so tombstones preserve correctness at the cost of reduced effective capacity until the table is resized or rehashed."
+    },
+    {
+      "taskId": "code-edit",
+      "model": "deepseek-v4-pro",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 17024,
+        "missTokens": 7967,
+        "hitRate": 0.6812052338841983
+      },
+      "usage": {
+        "inputTokens": 7967,
+        "outputTokens": 696,
+        "reasoningTokens": 420,
+        "totalTokens": 25687
+      },
+      "economics": {
+        "costUsd": 0.004132877,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 12694,
+        "attempts": 1,
+        "toolCalls": 1,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Declares function reverseList",
+            "passed": true
+          },
+          {
+            "description": "Takes an array parameter",
+            "passed": true
+          },
+          {
+            "description": "Returns reversed array",
+            "passed": true
+          },
+          {
+            "description": "Has TypeScript type annotation",
+            "passed": true
+          }
+        ]
+      },
+      "output": "```ts\n/** Returns a new array containing the elements of `items` in reverse order. */\nfunction reverseList<T>(items: T[]): T[] {\n  return [...items].reverse()\n}\n```\n\nThe generic `T` lets the same function handle any element type while preserving it in the return type. The spread copy means the input array isn't mutated (`.reverse()` reverses in place otherwise). Verified: `reverseList([1, 2, 3])` → `[3, 2, 1]`."
+    },
+    {
+      "taskId": "structured-transform",
+      "model": "deepseek-v4-pro",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 4352,
+        "missTokens": 7846,
+        "hitRate": 0.3567797999672077
+      },
+      "usage": {
+        "inputTokens": 7846,
+        "outputTokens": 63,
+        "reasoningTokens": 34,
+        "totalTokens": 12261
+      },
+      "economics": {
+        "costUsd": 0.0034835960000000003,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 2828,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Contains valid JSON array",
+            "passed": true
+          },
+          {
+            "description": "Contains Alice with age 30",
+            "passed": true
+          },
+          {
+            "description": "Contains Bob with age 25",
+            "passed": true
+          },
+          {
+            "description": "Has name and age keys",
+            "passed": true
+          }
+        ]
+      },
+      "output": "[\n  {\"name\": \"Alice\", \"age\": 30},\n  {\"name\": \"Bob\", \"age\": 25}\n]"
+    },
+    {
+      "taskId": "code-edit",
+      "model": "deepseek-v4-pro",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 32,
+        "hitRate": 0.9973753280839895
+      },
+      "usage": {
+        "inputTokens": 32,
+        "outputTokens": 240,
+        "reasoningTokens": 156,
+        "totalTokens": 12432
+      },
+      "economics": {
+        "costUsd": 0.0002668,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 4481,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Declares function reverseList",
+            "passed": true
+          },
+          {
+            "description": "Takes an array parameter",
+            "passed": true
+          },
+          {
+            "description": "Returns reversed array",
+            "passed": true
+          },
+          {
+            "description": "Has TypeScript type annotation",
+            "passed": true
+          }
+        ]
+      },
+      "output": "```ts\nfunction reverseList<T>(list: T[]): T[] {\n  return list.slice().reverse()\n}\n```\n\nThe signature `reverseList<T>(list: T[]): T[]` is generic, so element types are preserved (e.g. `number[]` in, `number[]` out). `slice()` copies the input before `reverse()`, so the original array is not mutated."
+    },
+    {
+      "taskId": "structured-transform",
+      "model": "deepseek-v4-flash",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 4352,
+        "missTokens": 7847,
+        "hitRate": 0.35675055332404293
+      },
+      "usage": {
+        "inputTokens": 7847,
+        "outputTokens": 310,
+        "reasoningTokens": 289,
+        "totalTokens": 12509
+      },
+      "economics": {
+        "costUsd": 0.0011975656,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 3712,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Contains valid JSON array",
+            "passed": true
+          },
+          {
+            "description": "Contains Alice with age 30",
+            "passed": true
+          },
+          {
+            "description": "Contains Bob with age 25",
+            "passed": true
+          },
+          {
+            "description": "Has name and age keys",
+            "passed": true
+          }
+        ]
+      },
+      "output": "[{\"name\":\"Alice\",\"age\":\"30\"},{\"name\":\"Bob\",\"age\":\"25\"}]"
+    },
+    {
+      "taskId": "factual-explain",
+      "model": "deepseek-v4-flash",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 31,
+        "hitRate": 0.9974571405134935
+      },
+      "usage": {
+        "inputTokens": 31,
+        "outputTokens": 189,
+        "reasoningTokens": 44,
+        "totalTokens": 12380
+      },
+      "economics": {
+        "costUsd": 0.00009130800000000001,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 3032,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Mentions open addressing or probing",
+            "passed": true
+          },
+          {
+            "description": "Mentions collision or hash",
+            "passed": true
+          },
+          {
+            "description": "Has at least 2 sentence terminators",
+            "passed": true
+          },
+          {
+            "description": "Does not exceed 5 sentences",
+            "passed": false
+          }
+        ]
+      },
+      "output": "Here is a three-sentence explanation:\n\n1. When a hash map inserts a key whose hash slot is already occupied, open addressing resolves the collision by probing a sequence of alternative slots within the same underlying array rather than storing extra elements in a linked structure.\n2. Common probing strategies include linear probing, which checks consecutive slots, and quadratic or double hashing, which jump by a fixed or independently computed step to spread entries out and reduce clustering.\n3. Lookup follows the same probe sequence, and deletion uses a special tombstone marker so that later searches do not stop early at a vacated slot; when the table becomes too full, it is resized and every entry is reinserted into the larger array."
+    },
+    {
+      "taskId": "factual-explain",
+      "model": "deepseek-v4-pro",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 4352,
+        "missTokens": 7838,
+        "hitRate": 0.35701394585726004
+      },
+      "usage": {
+        "inputTokens": 7838,
+        "outputTokens": 162,
+        "reasoningTokens": 36,
+        "totalTokens": 12352
+      },
+      "economics": {
+        "costUsd": 0.0035662459999999995,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 4319,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Mentions open addressing or probing",
+            "passed": true
+          },
+          {
+            "description": "Mentions collision or hash",
+            "passed": true
+          },
+          {
+            "description": "Has at least 2 sentence terminators",
+            "passed": true
+          },
+          {
+            "description": "Does not exceed 5 sentences",
+            "passed": true
+          }
+        ]
+      },
+      "output": "Open addressing keeps every key stored inside the hash table's own array rather than in separate chains, so a collision simply means the intended slot is occupied. When a hash collision occurs, the table probes alternative slots using a deterministic sequence—such as linear probing (next slot), quadratic probing (step sizes grow quadratically), or double hashing (a second hash function sets the stride)—until it finds an empty slot. Lookups and deletions follow the same probe sequence to locate the key, with deletions typically marking slots as \"deleted\" (tombstones) so the search can continue past them instead of stopping early."
+    },
+    {
+      "taskId": "reasoning-proof",
+      "model": "deepseek-v4-flash",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 16896,
+        "missTokens": 7923,
+        "hitRate": 0.6807687658648616
+      },
+      "usage": {
+        "inputTokens": 7923,
+        "outputTokens": 727,
+        "reasoningTokens": 262,
+        "totalTokens": 25546
+      },
+      "economics": {
+        "costUsd": 0.0013600888,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 7543,
+        "attempts": 1,
+        "toolCalls": 1,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Defines odd integer (2k+1 form)",
+            "passed": true
+          },
+          {
+            "description": "Shows addition of two odds",
+            "passed": false
+          },
+          {
+            "description": "Factors out 2 from result",
+            "passed": true
+          },
+          {
+            "description": "Concludes result is even",
+            "passed": true
+          }
+        ]
+      },
+      "output": "**Proof that the sum of two odd integers is even.**\n\n**Definitions.** An integer is *even* if it can be written as $2k$, and *odd* if it can be written as $2k+1$, for some integer $k$.\n\n**Step 1 — express the two odd integers.** Let $a$ and $b$ be any odd integers. By the definition of odd, there exist integers $m$ and $n$ such that:\n\n$$a = 2m + 1, \\qquad b = 2n + 1$$\n\n**Step 2 — add them.** \n\n$$a + b = (2m + 1) + (2n + 1) = 2m + 2n + 2$$\n\n**Step 3 — factor out 2.**\n\n$$a + b = 2(m + n + 1)$$\n\n**Step 4 — conclude.** Since $m$, $n$, and $1$ are integers, $m + n + 1$ is an integer. Call it $k$. Then:\n\n$$a + b = 2k$$\n\nwhich is exactly the form of an even number. Hence the sum of any two odd integers is even. $\\blacksquare$\n\nThe idea: each odd number has one \"leftover\" 1 after removing pairs of 2s; two leftovers combine into one more full pair of 2, so nothing is left over. (A brute-force check over all pairs of odds from 1 to 199 confirmed every sum is even.)"
+    },
+    {
+      "taskId": "code-edit",
+      "model": "deepseek-v4-flash",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 81280,
+        "missTokens": 8453,
+        "hitRate": 0.9057983127723357
+      },
+      "usage": {
+        "inputTokens": 8453,
+        "outputTokens": 1092,
+        "reasoningTokens": 224,
+        "totalTokens": 90825
+      },
+      "economics": {
+        "costUsd": 0.0017167640000000002,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 26338,
+        "attempts": 1,
+        "toolCalls": 6,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Declares function reverseList",
+            "passed": true
+          },
+          {
+            "description": "Takes an array parameter",
+            "passed": true
+          },
+          {
+            "description": "Returns reversed array",
+            "passed": true
+          },
+          {
+            "description": "Has TypeScript type annotation",
+            "passed": true
+          }
+        ]
+      },
+      "output": "Created `reverseList.ts`:\n\n```ts\n/**\n * Returns a new array with the elements of `list` in reverse order.\n * The input array is not mutated.\n *\n * @param list - The array to reverse.\n * @returns A new array containing the elements of `list` reversed.\n */\nfunction reverseList<T>(list: T[]): T[] {\n  return list.toReversed();\n}\n```\n\n- **Type signature:** generic `function reverseList<T>(list: T[]): T[]` — works with any element type and preserves it.\n- Uses `Array.prototype.toReversed()`, which returns a new array and leaves the input untouched (it's typed `T[]`, so it satisfies the signature directly).\n- Verified: passes `tsc --strict` (repo tsc 6.0.3, `--target es2023`) and smoke-tested — `reverseList([1,2,3])` → `[3,2,1]`, original unchanged, empty array returns `[]`."
+    },
+    {
+      "taskId": "arithmetic",
+      "model": "deepseek-v4-flash",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 25,
+        "hitRate": 0.9979482970865818
+      },
+      "usage": {
+        "inputTokens": 25,
+        "outputTokens": 28,
+        "reasoningTokens": 26,
+        "totalTokens": 12213
+      },
+      "economics": {
+        "costUsd": 0.000045388,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 1505,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 2,
+        "criteriaTotal": 2,
+        "checks": [
+          {
+            "description": "Contains the number 56",
+            "passed": true
+          },
+          {
+            "description": "Does not contain other numbers",
+            "passed": true
+          }
+        ]
+      },
+      "output": "56"
+    },
+    {
+      "taskId": "arithmetic",
+      "model": "deepseek-v4-flash",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 25,
+        "hitRate": 0.9979482970865818
+      },
+      "usage": {
+        "inputTokens": 25,
+        "outputTokens": 35,
+        "reasoningTokens": 33,
+        "totalTokens": 12220
+      },
+      "economics": {
+        "costUsd": 0.000047348,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 1177,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 2,
+        "criteriaTotal": 2,
+        "checks": [
+          {
+            "description": "Contains the number 56",
+            "passed": true
+          },
+          {
+            "description": "Does not contain other numbers",
+            "passed": true
+          }
+        ]
+      },
+      "output": "56"
+    },
+    {
+      "taskId": "arithmetic",
+      "model": "deepseek-v4-pro",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 24,
+        "hitRate": 0.9980302035456337
+      },
+      "usage": {
+        "inputTokens": 24,
+        "outputTokens": 33,
+        "reasoningTokens": 31,
+        "totalTokens": 12217
+      },
+      "economics": {
+        "costUsd": 0.00008323,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 1452,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 2,
+        "criteriaTotal": 2,
+        "checks": [
+          {
+            "description": "Contains the number 56",
+            "passed": true
+          },
+          {
+            "description": "Does not contain other numbers",
+            "passed": true
+          }
+        ]
+      },
+      "output": "56"
+    },
+    {
+      "taskId": "factual-explain",
+      "model": "deepseek-v4-pro",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 30,
+        "hitRate": 0.9975389663658737
+      },
+      "usage": {
+        "inputTokens": 30,
+        "outputTokens": 156,
+        "reasoningTokens": 38,
+        "totalTokens": 12346
+      },
+      "economics": {
+        "costUsd": 0.00019285,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 4182,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Mentions open addressing or probing",
+            "passed": true
+          },
+          {
+            "description": "Mentions collision or hash",
+            "passed": true
+          },
+          {
+            "description": "Has at least 2 sentence terminators",
+            "passed": true
+          },
+          {
+            "description": "Does not exceed 5 sentences",
+            "passed": true
+          }
+        ]
+      },
+      "output": "In open addressing, all entries live directly in the hash table's backing array, so a collision simply means the hashed slot is already occupied by a different key. On a collision, the map probes for the next free slot by following a deterministic sequence — such as linear, quadratic, or double-hash step sizes — until it finds an empty cell where the new key-value pair can be stored. Lookups and deletions must follow the same probe sequence, and deletions typically leave a special tombstone marker so that later probes don't stop early and miss entries stored past the removed slot."
+    },
+    {
+      "taskId": "reasoning-proof",
+      "model": "deepseek-v4-flash",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 32,
+        "hitRate": 0.9973753280839895
+      },
+      "usage": {
+        "inputTokens": 32,
+        "outputTokens": 573,
+        "reasoningTokens": 242,
+        "totalTokens": 12765
+      },
+      "economics": {
+        "costUsd": 0.00019896800000000002,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 5285,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Defines odd integer (2k+1 form)",
+            "passed": true
+          },
+          {
+            "description": "Shows addition of two odds",
+            "passed": false
+          },
+          {
+            "description": "Factors out 2 from result",
+            "passed": true
+          },
+          {
+            "description": "Concludes result is even",
+            "passed": true
+          }
+        ]
+      },
+      "output": "**Claim:** The sum of two odd integers is always even.\n\n**Proof.**\n\n*Step 1 — Definition.* An integer is **odd** if it can be written as $2k + 1$ for some integer $k$ (i.e., it leaves remainder 1 when divided by 2). An integer is **even** if it can be written as $2k$ for some integer $k$.\n\n*Step 2 — Represent the two odds.* Let $a$ and $b$ be odd integers. By definition:\n\n$$a = 2m + 1 \\quad \\text{and} \\quad b = 2n + 1$$\n\nfor some integers $m$ and $n$.\n\n*Step 3 — Add them.*\n\n$$a + b = (2m + 1) + (2n + 1) = 2m + 2n + 2 = 2(m + n + 1)$$\n\n*Step 4 — Conclude.* Since $m$, $n$, and $1$ are integers, $m + n + 1$ is an integer. Therefore $a + b$ equals 2 times an integer, which is exactly the definition of an even number.\n\nSo the sum of any two odd integers is even. ∎\n\n**Intuition (parity view):** Odd numbers are \"1 more than even,\" so two odds together contribute $1 + 1 = 2$, which is an even amount — the leftover pairs up. Example: $3 + 5 = 8 = 2 \\times 4$."
+    },
+    {
+      "taskId": "code-edit",
+      "model": "deepseek-v4-flash",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 146688,
+        "missTokens": 1477,
+        "hitRate": 0.990031383930078
+      },
+      "usage": {
+        "inputTokens": 1477,
+        "outputTokens": 1952,
+        "reasoningTokens": 399,
+        "totalTokens": 150117
+      },
+      "economics": {
+        "costUsd": 0.0011640664000000002,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 25629,
+        "attempts": 1,
+        "toolCalls": 10,
+        "toolFailures": 1,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-pass",
+        "criteriaPassed": 4,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Declares function reverseList",
+            "passed": true
+          },
+          {
+            "description": "Takes an array parameter",
+            "passed": true
+          },
+          {
+            "description": "Returns reversed array",
+            "passed": true
+          },
+          {
+            "description": "Has TypeScript type annotation",
+            "passed": true
+          }
+        ]
+      },
+      "output": "Done. `reverseList.ts` contains:\n\n```typescript\n/**\n * Returns a new array with the elements of `list` in reverse order.\n * The input array is not mutated.\n *\n * @param list - The array to reverse.\n * @returns A new array containing the elements of `list` reversed.\n */\nexport function reverseList<T>(list: T[]): T[] {\n  return list.toReversed();\n}\n```\n\n**Type signature:** `function reverseList<T>(list: T[]): T[]` — generic over element type `T`, so it works with arrays of any type and preserves the element type.\n\nVerified:\n- Strict type-check passes (`tsc --strict --target es2023`)\n- `[1, 2, 3]` → `[3, 2, 1]`, `['a', 'b']` → `['b', 'a']`, `[]` → `[]`\n- Input array is not mutated (`toReversed()` returns a new array)\n\nNote: `toReversed()` requires ES2023 (Node 20+). If you need older-target compatibility, `[...list].reverse()` is the equivalent alternative."
+    },
+    {
+      "taskId": "structured-transform",
+      "model": "deepseek-v4-pro",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 38,
+        "hitRate": 0.9968847352024922
+      },
+      "usage": {
+        "inputTokens": 38,
+        "outputTokens": 86,
+        "reasoningTokens": 53,
+        "totalTokens": 12284
+      },
+      "economics": {
+        "costUsd": 0.00013543000000000002,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 2392,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Contains valid JSON array",
+            "passed": false
+          },
+          {
+            "description": "Contains Alice with age 30",
+            "passed": true
+          },
+          {
+            "description": "Contains Bob with age 25",
+            "passed": true
+          },
+          {
+            "description": "Has name and age keys",
+            "passed": true
+          }
+        ]
+      },
+      "output": "```json\n[\n  {\"name\": \"Alice\", \"age\": 30},\n  {\"name\": \"Bob\", \"age\": 25}\n]\n```"
+    },
+    {
+      "taskId": "structured-transform",
+      "model": "deepseek-v4-flash",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 39,
+        "hitRate": 0.9968030166407083
+      },
+      "usage": {
+        "inputTokens": 39,
+        "outputTokens": 55,
+        "reasoningTokens": 30,
+        "totalTokens": 12254
+      },
+      "economics": {
+        "costUsd": 0.000054908000000000004,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 1519,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Contains valid JSON array",
+            "passed": false
+          },
+          {
+            "description": "Contains Alice with age 30",
+            "passed": true
+          },
+          {
+            "description": "Contains Bob with age 25",
+            "passed": true
+          },
+          {
+            "description": "Has name and age keys",
+            "passed": true
+          }
+        ]
+      },
+      "output": "```json\n[{\"name\":\"Alice\",\"age\":\"30\"},{\"name\":\"Bob\",\"age\":\"25\"}]\n```"
+    },
+    {
+      "taskId": "reasoning-proof",
+      "model": "deepseek-v4-pro",
+      "iteration": 1,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 4352,
+        "missTokens": 7839,
+        "hitRate": 0.35698466081535557
+      },
+      "usage": {
+        "inputTokens": 7839,
+        "outputTokens": 322,
+        "reasoningTokens": 53,
+        "totalTokens": 12513
+      },
+      "economics": {
+        "costUsd": 0.003705881,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 5452,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Defines odd integer (2k+1 form)",
+            "passed": true
+          },
+          {
+            "description": "Shows addition of two odds",
+            "passed": false
+          },
+          {
+            "description": "Factors out 2 from result",
+            "passed": true
+          },
+          {
+            "description": "Concludes result is even",
+            "passed": true
+          }
+        ]
+      },
+      "output": "## Proof\n\n**Step 1 — Define what \"odd\" means.**\nAn integer is odd if it can be written as one more than a multiple of 2. So let the two odd integers be:\n\n- a = 2m + 1, for some integer m\n- b = 2n + 1, for some integer n\n\n**Step 2 — Form the sum.**\na + b = (2m + 1) + (2n + 1)\n\n**Step 3 — Rearrange the terms.**\n= 2m + 2n + 1 + 1\n= 2m + 2n + 2\n\n**Step 4 — Factor out 2.**\n= 2(m + n + 1)\n\n**Step 5 — Conclude.**\nSince m and n are integers, m + n + 1 is also an integer. Writing the sum as 2 times an integer is exactly the definition of an even number.\n\nTherefore, the sum of any two odd integers is always even. ∎\n\n**Quick example:** 3 + 7 = 10. Here m = 1, n = 3, and 2(1 + 3 + 1) = 2(5) = 10."
+    },
+    {
+      "taskId": "reasoning-proof",
+      "model": "deepseek-v4-pro",
+      "iteration": 2,
+      "cacheState": "warm",
+      "cache": {
+        "hitTokens": 12160,
+        "missTokens": 31,
+        "hitRate": 0.9974571405134935
+      },
+      "usage": {
+        "inputTokens": 31,
+        "outputTokens": 374,
+        "reasoningTokens": 43,
+        "totalTokens": 12565
+      },
+      "economics": {
+        "costUsd": 0.000382945,
+        "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+      },
+      "execution": {
+        "latencyMs": 5381,
+        "attempts": 1,
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0
+      },
+      "verification": {
+        "status": "verified-fail",
+        "criteriaPassed": 3,
+        "criteriaTotal": 4,
+        "checks": [
+          {
+            "description": "Defines odd integer (2k+1 form)",
+            "passed": true
+          },
+          {
+            "description": "Shows addition of two odds",
+            "passed": false
+          },
+          {
+            "description": "Factors out 2 from result",
+            "passed": true
+          },
+          {
+            "description": "Concludes result is even",
+            "passed": true
+          }
+        ]
+      },
+      "output": "Let me prove this step by step.\n\n**Step 1: Define what \"odd\" means.**\nAn integer is odd if it can be written in the form 2k + 1, where k is some integer. (For example: 7 = 2(3) + 1, −5 = 2(−3) + 1.)\n\n**Step 2: Represent two arbitrary odd integers.**\nLet the two odd integers be:\n- a = 2m + 1, where m is an integer\n- b = 2n + 1, where n is an integer\n\n**Step 3: Add them.**\na + b = (2m + 1) + (2n + 1)\n      = 2m + 2n + 2\n      = 2(m + n + 1)\n\n**Step 4: Recognize the form.**\nSince m and n are integers, m + n + 1 is also an integer. Let's call it q. Then:\n\na + b = 2q\n\n**Step 5: Apply the definition of \"even.\"**\nAn integer is even if it equals 2 times some integer. Since a + b = 2q where q is an integer, a + b is even.\n\n**Conclusion:** The sum of any two odd integers is always even. ∎\n\n**Quick check with examples:**\n- 3 + 5 = 8 ✓ (even)\n- −7 + 9 = 2 ✓ (even)\n- 1 + 1 = 2 ✓ (even)"
+    }
+  ],
+  "pairs": [
+    {
+      "taskId": "arithmetic/1",
+      "flash": {
+        "taskId": "arithmetic",
+        "model": "deepseek-v4-flash",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 25,
+          "hitRate": 0.9979482970865818
+        },
+        "usage": {
+          "inputTokens": 25,
+          "outputTokens": 35,
+          "reasoningTokens": 33,
+          "totalTokens": 12220
+        },
+        "economics": {
+          "costUsd": 0.000047348,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 1177,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 2,
+          "criteriaTotal": 2,
+          "checks": [
+            {
+              "description": "Contains the number 56",
+              "passed": true
+            },
+            {
+              "description": "Does not contain other numbers",
+              "passed": true
+            }
+          ]
+        },
+        "output": "56"
+      },
+      "pro": {
+        "taskId": "arithmetic",
+        "model": "deepseek-v4-pro",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 24,
+          "hitRate": 0.9980302035456337
+        },
+        "usage": {
+          "inputTokens": 24,
+          "outputTokens": 33,
+          "reasoningTokens": 31,
+          "totalTokens": 12217
+        },
+        "economics": {
+          "costUsd": 0.00008323,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 1452,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 2,
+          "criteriaTotal": 2,
+          "checks": [
+            {
+              "description": "Contains the number 56",
+              "passed": true
+            },
+            {
+              "description": "Does not contain other numbers",
+              "passed": true
+            }
+          ]
+        },
+        "output": "56"
+      },
+      "classification": "both-pass-pro-more-expensive",
+      "cacheComparable": true
+    },
+    {
+      "taskId": "arithmetic/2",
+      "flash": {
+        "taskId": "arithmetic",
+        "model": "deepseek-v4-flash",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 25,
+          "hitRate": 0.9979482970865818
+        },
+        "usage": {
+          "inputTokens": 25,
+          "outputTokens": 28,
+          "reasoningTokens": 26,
+          "totalTokens": 12213
+        },
+        "economics": {
+          "costUsd": 0.000045388,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 1505,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 2,
+          "criteriaTotal": 2,
+          "checks": [
+            {
+              "description": "Contains the number 56",
+              "passed": true
+            },
+            {
+              "description": "Does not contain other numbers",
+              "passed": true
+            }
+          ]
+        },
+        "output": "56"
+      },
+      "pro": {
+        "taskId": "arithmetic",
+        "model": "deepseek-v4-pro",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 24,
+          "hitRate": 0.9980302035456337
+        },
+        "usage": {
+          "inputTokens": 24,
+          "outputTokens": 39,
+          "reasoningTokens": 37,
+          "totalTokens": 12223
+        },
+        "economics": {
+          "costUsd": 0.00008845000000000001,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 1652,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 2,
+          "criteriaTotal": 2,
+          "checks": [
+            {
+              "description": "Contains the number 56",
+              "passed": true
+            },
+            {
+              "description": "Does not contain other numbers",
+              "passed": true
+            }
+          ]
+        },
+        "output": "56"
+      },
+      "classification": "both-pass-pro-more-expensive",
+      "cacheComparable": true
+    },
+    {
+      "taskId": "factual-explain/1",
+      "flash": {
+        "taskId": "factual-explain",
+        "model": "deepseek-v4-flash",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 31,
+          "hitRate": 0.9974571405134935
+        },
+        "usage": {
+          "inputTokens": 31,
+          "outputTokens": 189,
+          "reasoningTokens": 44,
+          "totalTokens": 12380
+        },
+        "economics": {
+          "costUsd": 0.00009130800000000001,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 3032,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Mentions open addressing or probing",
+              "passed": true
+            },
+            {
+              "description": "Mentions collision or hash",
+              "passed": true
+            },
+            {
+              "description": "Has at least 2 sentence terminators",
+              "passed": true
+            },
+            {
+              "description": "Does not exceed 5 sentences",
+              "passed": false
+            }
+          ]
+        },
+        "output": "Here is a three-sentence explanation:\n\n1. When a hash map inserts a key whose hash slot is already occupied, open addressing resolves the collision by probing a sequence of alternative slots within the same underlying array rather than storing extra elements in a linked structure.\n2. Common probing strategies include linear probing, which checks consecutive slots, and quadratic or double hashing, which jump by a fixed or independently computed step to spread entries out and reduce clustering.\n3. Lookup follows the same probe sequence, and deletion uses a special tombstone marker so that later searches do not stop early at a vacated slot; when the table becomes too full, it is resized and every entry is reinserted into the larger array."
+      },
+      "pro": {
+        "taskId": "factual-explain",
+        "model": "deepseek-v4-pro",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7838,
+          "hitRate": 0.35701394585726004
+        },
+        "usage": {
+          "inputTokens": 7838,
+          "outputTokens": 162,
+          "reasoningTokens": 36,
+          "totalTokens": 12352
+        },
+        "economics": {
+          "costUsd": 0.0035662459999999995,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 4319,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Mentions open addressing or probing",
+              "passed": true
+            },
+            {
+              "description": "Mentions collision or hash",
+              "passed": true
+            },
+            {
+              "description": "Has at least 2 sentence terminators",
+              "passed": true
+            },
+            {
+              "description": "Does not exceed 5 sentences",
+              "passed": true
+            }
+          ]
+        },
+        "output": "Open addressing keeps every key stored inside the hash table's own array rather than in separate chains, so a collision simply means the intended slot is occupied. When a hash collision occurs, the table probes alternative slots using a deterministic sequence—such as linear probing (next slot), quadratic probing (step sizes grow quadratically), or double hashing (a second hash function sets the stride)—until it finds an empty slot. Lookups and deletions follow the same probe sequence to locate the key, with deletions typically marking slots as \"deleted\" (tombstones) so the search can continue past them instead of stopping early."
+      },
+      "classification": "pro-necessary",
+      "cacheComparable": false
+    },
+    {
+      "taskId": "factual-explain/2",
+      "flash": {
+        "taskId": "factual-explain",
+        "model": "deepseek-v4-flash",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7839,
+          "hitRate": 0.35698466081535557
+        },
+        "usage": {
+          "inputTokens": 7839,
+          "outputTokens": 210,
+          "reasoningTokens": 34,
+          "totalTokens": 12401
+        },
+        "economics": {
+          "costUsd": 0.0011684456000000001,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 3336,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Mentions open addressing or probing",
+              "passed": true
+            },
+            {
+              "description": "Mentions collision or hash",
+              "passed": true
+            },
+            {
+              "description": "Has at least 2 sentence terminators",
+              "passed": true
+            },
+            {
+              "description": "Does not exceed 5 sentences",
+              "passed": false
+            }
+          ]
+        },
+        "output": "1. When two keys hash to the same slot, open addressing does not store a linked list at that slot; instead, the hash map probes through a deterministic sequence of alternative slots in the table itself, using methods such as linear probing (checking consecutive slots), quadratic probing, or double hashing.\n\n2. Each probe applies a function of the original hash and the probe count to compute the next candidate index, continuing until it finds either an empty slot to insert into or a slot holding the target key during lookup.\n\n3. Deletion must replace a removed entry with a special \"tombstone\" marker rather than leaving a plain empty slot, because an empty slot would incorrectly terminate the probe sequence for keys inserted later that wrapped past the deleted position, so tombstones preserve correctness at the cost of reduced effective capacity until the table is resized or rehashed."
+      },
+      "pro": {
+        "taskId": "factual-explain",
+        "model": "deepseek-v4-pro",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 30,
+          "hitRate": 0.9975389663658737
+        },
+        "usage": {
+          "inputTokens": 30,
+          "outputTokens": 156,
+          "reasoningTokens": 38,
+          "totalTokens": 12346
+        },
+        "economics": {
+          "costUsd": 0.00019285,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 4182,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Mentions open addressing or probing",
+              "passed": true
+            },
+            {
+              "description": "Mentions collision or hash",
+              "passed": true
+            },
+            {
+              "description": "Has at least 2 sentence terminators",
+              "passed": true
+            },
+            {
+              "description": "Does not exceed 5 sentences",
+              "passed": true
+            }
+          ]
+        },
+        "output": "In open addressing, all entries live directly in the hash table's backing array, so a collision simply means the hashed slot is already occupied by a different key. On a collision, the map probes for the next free slot by following a deterministic sequence — such as linear, quadratic, or double-hash step sizes — until it finds an empty cell where the new key-value pair can be stored. Lookups and deletions must follow the same probe sequence, and deletions typically leave a special tombstone marker so that later probes don't stop early and miss entries stored past the removed slot."
+      },
+      "classification": "pro-necessary",
+      "cacheComparable": false
+    },
+    {
+      "taskId": "reasoning-proof/1",
+      "flash": {
+        "taskId": "reasoning-proof",
+        "model": "deepseek-v4-flash",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 16896,
+          "missTokens": 7923,
+          "hitRate": 0.6807687658648616
+        },
+        "usage": {
+          "inputTokens": 7923,
+          "outputTokens": 727,
+          "reasoningTokens": 262,
+          "totalTokens": 25546
+        },
+        "economics": {
+          "costUsd": 0.0013600888,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 7543,
+          "attempts": 1,
+          "toolCalls": 1,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Defines odd integer (2k+1 form)",
+              "passed": true
+            },
+            {
+              "description": "Shows addition of two odds",
+              "passed": false
+            },
+            {
+              "description": "Factors out 2 from result",
+              "passed": true
+            },
+            {
+              "description": "Concludes result is even",
+              "passed": true
+            }
+          ]
+        },
+        "output": "**Proof that the sum of two odd integers is even.**\n\n**Definitions.** An integer is *even* if it can be written as $2k$, and *odd* if it can be written as $2k+1$, for some integer $k$.\n\n**Step 1 — express the two odd integers.** Let $a$ and $b$ be any odd integers. By the definition of odd, there exist integers $m$ and $n$ such that:\n\n$$a = 2m + 1, \\qquad b = 2n + 1$$\n\n**Step 2 — add them.** \n\n$$a + b = (2m + 1) + (2n + 1) = 2m + 2n + 2$$\n\n**Step 3 — factor out 2.**\n\n$$a + b = 2(m + n + 1)$$\n\n**Step 4 — conclude.** Since $m$, $n$, and $1$ are integers, $m + n + 1$ is an integer. Call it $k$. Then:\n\n$$a + b = 2k$$\n\nwhich is exactly the form of an even number. Hence the sum of any two odd integers is even. $\\blacksquare$\n\nThe idea: each odd number has one \"leftover\" 1 after removing pairs of 2s; two leftovers combine into one more full pair of 2, so nothing is left over. (A brute-force check over all pairs of odds from 1 to 199 confirmed every sum is even.)"
+      },
+      "pro": {
+        "taskId": "reasoning-proof",
+        "model": "deepseek-v4-pro",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7839,
+          "hitRate": 0.35698466081535557
+        },
+        "usage": {
+          "inputTokens": 7839,
+          "outputTokens": 322,
+          "reasoningTokens": 53,
+          "totalTokens": 12513
+        },
+        "economics": {
+          "costUsd": 0.003705881,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 5452,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Defines odd integer (2k+1 form)",
+              "passed": true
+            },
+            {
+              "description": "Shows addition of two odds",
+              "passed": false
+            },
+            {
+              "description": "Factors out 2 from result",
+              "passed": true
+            },
+            {
+              "description": "Concludes result is even",
+              "passed": true
+            }
+          ]
+        },
+        "output": "## Proof\n\n**Step 1 — Define what \"odd\" means.**\nAn integer is odd if it can be written as one more than a multiple of 2. So let the two odd integers be:\n\n- a = 2m + 1, for some integer m\n- b = 2n + 1, for some integer n\n\n**Step 2 — Form the sum.**\na + b = (2m + 1) + (2n + 1)\n\n**Step 3 — Rearrange the terms.**\n= 2m + 2n + 1 + 1\n= 2m + 2n + 2\n\n**Step 4 — Factor out 2.**\n= 2(m + n + 1)\n\n**Step 5 — Conclude.**\nSince m and n are integers, m + n + 1 is also an integer. Writing the sum as 2 times an integer is exactly the definition of an even number.\n\nTherefore, the sum of any two odd integers is always even. ∎\n\n**Quick example:** 3 + 7 = 10. Here m = 1, n = 3, and 2(1 + 3 + 1) = 2(5) = 10."
+      },
+      "classification": "both-fail",
+      "cacheComparable": false
+    },
+    {
+      "taskId": "reasoning-proof/2",
+      "flash": {
+        "taskId": "reasoning-proof",
+        "model": "deepseek-v4-flash",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 32,
+          "hitRate": 0.9973753280839895
+        },
+        "usage": {
+          "inputTokens": 32,
+          "outputTokens": 573,
+          "reasoningTokens": 242,
+          "totalTokens": 12765
+        },
+        "economics": {
+          "costUsd": 0.00019896800000000002,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 5285,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Defines odd integer (2k+1 form)",
+              "passed": true
+            },
+            {
+              "description": "Shows addition of two odds",
+              "passed": false
+            },
+            {
+              "description": "Factors out 2 from result",
+              "passed": true
+            },
+            {
+              "description": "Concludes result is even",
+              "passed": true
+            }
+          ]
+        },
+        "output": "**Claim:** The sum of two odd integers is always even.\n\n**Proof.**\n\n*Step 1 — Definition.* An integer is **odd** if it can be written as $2k + 1$ for some integer $k$ (i.e., it leaves remainder 1 when divided by 2). An integer is **even** if it can be written as $2k$ for some integer $k$.\n\n*Step 2 — Represent the two odds.* Let $a$ and $b$ be odd integers. By definition:\n\n$$a = 2m + 1 \\quad \\text{and} \\quad b = 2n + 1$$\n\nfor some integers $m$ and $n$.\n\n*Step 3 — Add them.*\n\n$$a + b = (2m + 1) + (2n + 1) = 2m + 2n + 2 = 2(m + n + 1)$$\n\n*Step 4 — Conclude.* Since $m$, $n$, and $1$ are integers, $m + n + 1$ is an integer. Therefore $a + b$ equals 2 times an integer, which is exactly the definition of an even number.\n\nSo the sum of any two odd integers is even. ∎\n\n**Intuition (parity view):** Odd numbers are \"1 more than even,\" so two odds together contribute $1 + 1 = 2$, which is an even amount — the leftover pairs up. Example: $3 + 5 = 8 = 2 \\times 4$."
+      },
+      "pro": {
+        "taskId": "reasoning-proof",
+        "model": "deepseek-v4-pro",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 31,
+          "hitRate": 0.9974571405134935
+        },
+        "usage": {
+          "inputTokens": 31,
+          "outputTokens": 374,
+          "reasoningTokens": 43,
+          "totalTokens": 12565
+        },
+        "economics": {
+          "costUsd": 0.000382945,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 5381,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Defines odd integer (2k+1 form)",
+              "passed": true
+            },
+            {
+              "description": "Shows addition of two odds",
+              "passed": false
+            },
+            {
+              "description": "Factors out 2 from result",
+              "passed": true
+            },
+            {
+              "description": "Concludes result is even",
+              "passed": true
+            }
+          ]
+        },
+        "output": "Let me prove this step by step.\n\n**Step 1: Define what \"odd\" means.**\nAn integer is odd if it can be written in the form 2k + 1, where k is some integer. (For example: 7 = 2(3) + 1, −5 = 2(−3) + 1.)\n\n**Step 2: Represent two arbitrary odd integers.**\nLet the two odd integers be:\n- a = 2m + 1, where m is an integer\n- b = 2n + 1, where n is an integer\n\n**Step 3: Add them.**\na + b = (2m + 1) + (2n + 1)\n      = 2m + 2n + 2\n      = 2(m + n + 1)\n\n**Step 4: Recognize the form.**\nSince m and n are integers, m + n + 1 is also an integer. Let's call it q. Then:\n\na + b = 2q\n\n**Step 5: Apply the definition of \"even.\"**\nAn integer is even if it equals 2 times some integer. Since a + b = 2q where q is an integer, a + b is even.\n\n**Conclusion:** The sum of any two odd integers is always even. ∎\n\n**Quick check with examples:**\n- 3 + 5 = 8 ✓ (even)\n- −7 + 9 = 2 ✓ (even)\n- 1 + 1 = 2 ✓ (even)"
+      },
+      "classification": "both-fail",
+      "cacheComparable": true
+    },
+    {
+      "taskId": "code-edit/1",
+      "flash": {
+        "taskId": "code-edit",
+        "model": "deepseek-v4-flash",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 146688,
+          "missTokens": 1477,
+          "hitRate": 0.990031383930078
+        },
+        "usage": {
+          "inputTokens": 1477,
+          "outputTokens": 1952,
+          "reasoningTokens": 399,
+          "totalTokens": 150117
+        },
+        "economics": {
+          "costUsd": 0.0011640664000000002,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 25629,
+          "attempts": 1,
+          "toolCalls": 10,
+          "toolFailures": 1,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Declares function reverseList",
+              "passed": true
+            },
+            {
+              "description": "Takes an array parameter",
+              "passed": true
+            },
+            {
+              "description": "Returns reversed array",
+              "passed": true
+            },
+            {
+              "description": "Has TypeScript type annotation",
+              "passed": true
+            }
+          ]
+        },
+        "output": "Done. `reverseList.ts` contains:\n\n```typescript\n/**\n * Returns a new array with the elements of `list` in reverse order.\n * The input array is not mutated.\n *\n * @param list - The array to reverse.\n * @returns A new array containing the elements of `list` reversed.\n */\nexport function reverseList<T>(list: T[]): T[] {\n  return list.toReversed();\n}\n```\n\n**Type signature:** `function reverseList<T>(list: T[]): T[]` — generic over element type `T`, so it works with arrays of any type and preserves the element type.\n\nVerified:\n- Strict type-check passes (`tsc --strict --target es2023`)\n- `[1, 2, 3]` → `[3, 2, 1]`, `['a', 'b']` → `['b', 'a']`, `[]` → `[]`\n- Input array is not mutated (`toReversed()` returns a new array)\n\nNote: `toReversed()` requires ES2023 (Node 20+). If you need older-target compatibility, `[...list].reverse()` is the equivalent alternative."
+      },
+      "pro": {
+        "taskId": "code-edit",
+        "model": "deepseek-v4-pro",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 17024,
+          "missTokens": 7967,
+          "hitRate": 0.6812052338841983
+        },
+        "usage": {
+          "inputTokens": 7967,
+          "outputTokens": 696,
+          "reasoningTokens": 420,
+          "totalTokens": 25687
+        },
+        "economics": {
+          "costUsd": 0.004132877,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 12694,
+          "attempts": 1,
+          "toolCalls": 1,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Declares function reverseList",
+              "passed": true
+            },
+            {
+              "description": "Takes an array parameter",
+              "passed": true
+            },
+            {
+              "description": "Returns reversed array",
+              "passed": true
+            },
+            {
+              "description": "Has TypeScript type annotation",
+              "passed": true
+            }
+          ]
+        },
+        "output": "```ts\n/** Returns a new array containing the elements of `items` in reverse order. */\nfunction reverseList<T>(items: T[]): T[] {\n  return [...items].reverse()\n}\n```\n\nThe generic `T` lets the same function handle any element type while preserving it in the return type. The spread copy means the input array isn't mutated (`.reverse()` reverses in place otherwise). Verified: `reverseList([1, 2, 3])` → `[3, 2, 1]`."
+      },
+      "classification": "both-pass-pro-more-expensive",
+      "cacheComparable": false
+    },
+    {
+      "taskId": "code-edit/2",
+      "flash": {
+        "taskId": "code-edit",
+        "model": "deepseek-v4-flash",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 81280,
+          "missTokens": 8453,
+          "hitRate": 0.9057983127723357
+        },
+        "usage": {
+          "inputTokens": 8453,
+          "outputTokens": 1092,
+          "reasoningTokens": 224,
+          "totalTokens": 90825
+        },
+        "economics": {
+          "costUsd": 0.0017167640000000002,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 26338,
+          "attempts": 1,
+          "toolCalls": 6,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Declares function reverseList",
+              "passed": true
+            },
+            {
+              "description": "Takes an array parameter",
+              "passed": true
+            },
+            {
+              "description": "Returns reversed array",
+              "passed": true
+            },
+            {
+              "description": "Has TypeScript type annotation",
+              "passed": true
+            }
+          ]
+        },
+        "output": "Created `reverseList.ts`:\n\n```ts\n/**\n * Returns a new array with the elements of `list` in reverse order.\n * The input array is not mutated.\n *\n * @param list - The array to reverse.\n * @returns A new array containing the elements of `list` reversed.\n */\nfunction reverseList<T>(list: T[]): T[] {\n  return list.toReversed();\n}\n```\n\n- **Type signature:** generic `function reverseList<T>(list: T[]): T[]` — works with any element type and preserves it.\n- Uses `Array.prototype.toReversed()`, which returns a new array and leaves the input untouched (it's typed `T[]`, so it satisfies the signature directly).\n- Verified: passes `tsc --strict` (repo tsc 6.0.3, `--target es2023`) and smoke-tested — `reverseList([1,2,3])` → `[3,2,1]`, original unchanged, empty array returns `[]`."
+      },
+      "pro": {
+        "taskId": "code-edit",
+        "model": "deepseek-v4-pro",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 32,
+          "hitRate": 0.9973753280839895
+        },
+        "usage": {
+          "inputTokens": 32,
+          "outputTokens": 240,
+          "reasoningTokens": 156,
+          "totalTokens": 12432
+        },
+        "economics": {
+          "costUsd": 0.0002668,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 4481,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Declares function reverseList",
+              "passed": true
+            },
+            {
+              "description": "Takes an array parameter",
+              "passed": true
+            },
+            {
+              "description": "Returns reversed array",
+              "passed": true
+            },
+            {
+              "description": "Has TypeScript type annotation",
+              "passed": true
+            }
+          ]
+        },
+        "output": "```ts\nfunction reverseList<T>(list: T[]): T[] {\n  return list.slice().reverse()\n}\n```\n\nThe signature `reverseList<T>(list: T[]): T[]` is generic, so element types are preserved (e.g. `number[]` in, `number[]` out). `slice()` copies the input before `reverse()`, so the original array is not mutated."
+      },
+      "classification": "pro-better",
+      "cacheComparable": true
+    },
+    {
+      "taskId": "structured-transform/1",
+      "flash": {
+        "taskId": "structured-transform",
+        "model": "deepseek-v4-flash",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 39,
+          "hitRate": 0.9968030166407083
+        },
+        "usage": {
+          "inputTokens": 39,
+          "outputTokens": 55,
+          "reasoningTokens": 30,
+          "totalTokens": 12254
+        },
+        "economics": {
+          "costUsd": 0.000054908000000000004,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 1519,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Contains valid JSON array",
+              "passed": false
+            },
+            {
+              "description": "Contains Alice with age 30",
+              "passed": true
+            },
+            {
+              "description": "Contains Bob with age 25",
+              "passed": true
+            },
+            {
+              "description": "Has name and age keys",
+              "passed": true
+            }
+          ]
+        },
+        "output": "```json\n[{\"name\":\"Alice\",\"age\":\"30\"},{\"name\":\"Bob\",\"age\":\"25\"}]\n```"
+      },
+      "pro": {
+        "taskId": "structured-transform",
+        "model": "deepseek-v4-pro",
+        "iteration": 1,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7846,
+          "hitRate": 0.3567797999672077
+        },
+        "usage": {
+          "inputTokens": 7846,
+          "outputTokens": 63,
+          "reasoningTokens": 34,
+          "totalTokens": 12261
+        },
+        "economics": {
+          "costUsd": 0.0034835960000000003,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 2828,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Contains valid JSON array",
+              "passed": true
+            },
+            {
+              "description": "Contains Alice with age 30",
+              "passed": true
+            },
+            {
+              "description": "Contains Bob with age 25",
+              "passed": true
+            },
+            {
+              "description": "Has name and age keys",
+              "passed": true
+            }
+          ]
+        },
+        "output": "[\n  {\"name\": \"Alice\", \"age\": 30},\n  {\"name\": \"Bob\", \"age\": 25}\n]"
+      },
+      "classification": "pro-necessary",
+      "cacheComparable": false
+    },
+    {
+      "taskId": "structured-transform/2",
+      "flash": {
+        "taskId": "structured-transform",
+        "model": "deepseek-v4-flash",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7847,
+          "hitRate": 0.35675055332404293
+        },
+        "usage": {
+          "inputTokens": 7847,
+          "outputTokens": 310,
+          "reasoningTokens": 289,
+          "totalTokens": 12509
+        },
+        "economics": {
+          "costUsd": 0.0011975656,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 3712,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Contains valid JSON array",
+              "passed": true
+            },
+            {
+              "description": "Contains Alice with age 30",
+              "passed": true
+            },
+            {
+              "description": "Contains Bob with age 25",
+              "passed": true
+            },
+            {
+              "description": "Has name and age keys",
+              "passed": true
+            }
+          ]
+        },
+        "output": "[{\"name\":\"Alice\",\"age\":\"30\"},{\"name\":\"Bob\",\"age\":\"25\"}]"
+      },
+      "pro": {
+        "taskId": "structured-transform",
+        "model": "deepseek-v4-pro",
+        "iteration": 2,
+        "cacheState": "warm",
+        "cache": {
+          "hitTokens": 12160,
+          "missTokens": 38,
+          "hitRate": 0.9968847352024922
+        },
+        "usage": {
+          "inputTokens": 38,
+          "outputTokens": 86,
+          "reasoningTokens": 53,
+          "totalTokens": 12284
+        },
+        "economics": {
+          "costUsd": 0.00013543000000000002,
+          "pricingVersion": "deepseek-v4-usd-observed-2026-08-23"
+        },
+        "execution": {
+          "latencyMs": 2392,
+          "attempts": 1,
+          "toolCalls": 0,
+          "toolFailures": 0,
+          "repairs": 0
+        },
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 3,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Contains valid JSON array",
+              "passed": false
+            },
+            {
+              "description": "Contains Alice with age 30",
+              "passed": true
+            },
+            {
+              "description": "Contains Bob with age 25",
+              "passed": true
+            },
+            {
+              "description": "Has name and age keys",
+              "passed": true
+            }
+          ]
+        },
+        "output": "```json\n[\n  {\"name\": \"Alice\", \"age\": 30},\n  {\"name\": \"Bob\", \"age\": 25}\n]\n```"
+      },
+      "classification": "flash-better",
+      "cacheComparable": false
+    }
+  ]
+}
