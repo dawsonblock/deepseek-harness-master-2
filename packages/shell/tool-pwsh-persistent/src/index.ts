@@ -32,6 +32,14 @@ const LOST_PREFIX_MESSAGE = '<response clipped><NOTE>The beginning of this comma
 const SHELL_RESET_MESSAGE = 'The persistent pwsh shell was reset; the next pwsh call starts from the workspace with a fresh current directory and environment.'
 const SHELL_PROMPT = '__DSH_PERSISTENT_PWSH_PROMPT__ '
 const TIMEOUT_CODE = 'PERSISTENT_PWSH_TIMEOUT'
+
+/** Strip ANSI escape sequences (CSI, OSC, and single ESC) from PTY output.
+ * PSReadLine and PowerShell emit color and cursor codes that can split
+ * marker strings and interfere with output extraction. */
+const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b./g
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_ESCAPE_RE, '')
+}
 // One page is enough to find a just-emitted completion marker; the full
 // scrollback is assembled only when a command settles or needs partial output.
 const SCROLLBACK_PAGE_LINES = 1_000
@@ -124,7 +132,7 @@ function commandOutput(
   marker: CommandMarkers,
   wrapper: string,
 ): CapturedOutput | undefined {
-  const text = snapshot.text
+  const text = stripAnsi(snapshot.text)
   const end = text.lastIndexOf(marker.end)
   const status = /^(\d+)\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
   if (status === undefined) return undefined
@@ -144,9 +152,10 @@ function commandOutput(
 }
 
 function promptCompleted(result: TerminalSendResult): boolean {
-  return result.viewport.endsWith(SHELL_PROMPT)
-    || result.viewport.endsWith(`${SHELL_PROMPT}\r\n`)
-    || result.viewport.endsWith(`${SHELL_PROMPT}\n`)
+  const viewport = stripAnsi(result.viewport)
+  return viewport.endsWith(SHELL_PROMPT)
+    || viewport.endsWith(`${SHELL_PROMPT}\r\n`)
+    || viewport.endsWith(`${SHELL_PROMPT}\n`)
 }
 
 function partialOutput(
@@ -156,17 +165,19 @@ function partialOutput(
   fallback: string,
   fallbackTruncated = false,
 ): CapturedOutput {
-  const startMarker = snapshot.text.lastIndexOf(marker.start)
+  const snapshotText = stripAnsi(snapshot.text)
+  const startMarker = snapshotText.lastIndexOf(marker.start)
   if (startMarker >= 0) {
     return {
-      text: stripPrompt(snapshot.text.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
+      text: stripPrompt(snapshotText.slice(startMarker + marker.start.length).replace(/^\r?\n/, '')),
       incomplete: false,
     }
   }
-  const fallbackStart = fallback.lastIndexOf(marker.start)
+  const fallbackText = stripAnsi(fallback)
+  const fallbackStart = fallbackText.lastIndexOf(marker.start)
   const afterStart = fallbackStart < 0
-    ? fallback
-    : fallback.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
+    ? fallbackText
+    : fallbackText.slice(fallbackStart + marker.start.length).replace(/^\r?\n/, '')
   const fallbackEnd = afterStart.lastIndexOf(marker.end)
   const beforeEnd = fallbackEnd < 0 ? afterStart : afterStart.slice(0, fallbackEnd)
   return {
