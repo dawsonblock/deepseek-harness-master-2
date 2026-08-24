@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
 import { once } from 'node:events'
@@ -15,6 +15,7 @@ import SessionPersistenceSqlite, {
   DEFAULT_BUSY_TIMEOUT_MS,
   SCHEMA_VERSION,
 } from '@deepseek-ai/dsh-session-persistence-sqlite'
+import { claimModelSelection, releaseToAuto, reconstructSelectionState } from '@deepseek-ai/dsh-agent'
 import {
   runCoordinatorContract,
   type CoordinatorFixture,
@@ -829,5 +830,109 @@ describe('SessionPersistenceSqlite edge behavior', () => {
     await writeFile(parent, 'not a directory')
     await expect(store.open()).rejects.toThrow(/ENOENT|ENOTDIR/)
     await store.close()
+  })
+})
+
+// Real two-process durability: each scenario creates a session on one context,
+// flushes to disk, disposes the context (simulating process death), then loads
+// the session from the same SQLite database on a fresh context. This is not a
+// simulated restart by copying session.events — it is a real reload from the
+// SQLite file on disk. The flush barrier guarantees the authority event reached
+// disk before the RPC returned, so disposal (or SIGKILL) cannot lose it.
+describe('v0.15.5 model-selection durability (real SQLite reload)', () => {
+  let dbPath: string
+
+  beforeEach(async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-sqlite-durability-'))
+    dbPath = join(dir, 'sessions.db')
+  })
+
+  afterEach(async () => {
+    await rm(join(dbPath, '..'), { recursive: true, force: true })
+  })
+
+  async function freshContext(): Promise<{ ctx: Context; dispose: () => Promise<void> }> {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionPersistenceSqlite, { path: dbPath })
+    return { ctx, dispose: async () => { await ctx.fiber.dispose() } }
+  }
+
+  async function loadEvents(ctx: Context, sessionId: SessionId): Promise<readonly SessionEvent[]> {
+    const loaded = await ctx.sessionPersistence.load(sessionId)
+    if (loaded === undefined) throw new Error(`session ${sessionId} not found on disk`)
+    return loaded.events
+  }
+
+  it('manual selection survives process death after flush', async () => {
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-manual'))
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-pro' } })
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-manual'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({
+      mode: 'manual',
+      selection: { provider: 'deepseek-official', model: 'deepseek-pro' },
+    })
+    await b.dispose()
+  })
+
+  it('Auto release survives process death after flush', async () => {
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-auto'))
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-pro' } })
+    releaseToAuto(sessionA, 'web')
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-auto'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({ mode: 'auto' })
+    await b.dispose()
+  })
+
+  it('manual reselection survives process death after flush', async () => {
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-reselect'))
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-pro' } })
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-flash' } })
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-reselect'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({
+      mode: 'manual',
+      selection: { provider: 'deepseek-official', model: 'deepseek-flash' },
+    })
+    await b.dispose()
+  })
+
+  it('foreign route cannot resurrect after restart', async () => {
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-foreign'))
+    sessionA.append('request/header', {
+      header: { config: { provider: 'foreign-gateway', model: 'foreign-model' } },
+      reason: 'initial',
+    })
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'foreign-gateway', model: 'foreign-model' } })
+    releaseToAuto(sessionA, 'web')
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-foreign'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({ mode: 'auto' })
+    const authorityEvents = events.filter(e => e.type === 'model/selection-authority')
+    const latest = authorityEvents.at(-1)
+    expect(latest?.data.mode).toBe('auto')
+    await b.dispose()
   })
 })

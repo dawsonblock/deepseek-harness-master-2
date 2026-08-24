@@ -30,15 +30,15 @@ export interface Config extends RootResourceBudget {
 }
 
 export const Config: z<Config> = z.object({
-  maxConcurrentOneShotChildren: z.number().min(0).optional(),
-  maxDescendantsStarted: z.number().min(0).optional(),
-  maxSubagentStartsPerMinute: z.number().min(0).optional(),
-  maxModelCalls: z.number().min(0).optional(),
-  maxReasoningTokens: z.number().min(0).optional(),
-  maxEventBytes: z.number().min(0).optional(),
-  maxWallTimeMs: z.number().min(0).optional(),
-  maxQueuedSubagentStarts: z.number().min(0).optional(),
-  subagentQueueTimeoutMs: z.number().min(1).optional(),
+  maxConcurrentOneShotChildren: z.number().min(0),
+  maxDescendantsStarted: z.number().min(0),
+  maxSubagentStartsPerMinute: z.number().min(0),
+  maxModelCalls: z.number().min(0),
+  maxReasoningTokens: z.number().min(0),
+  maxEventBytes: z.number().min(0),
+  maxWallTimeMs: z.number().min(0),
+  maxQueuedSubagentStarts: z.number().min(0),
+  subagentQueueTimeoutMs: z.number().min(1),
 })
 
 function rootSessionId(ctx: Context, subject: Session): SessionId {
@@ -71,10 +71,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   const subagentBackpressure = maxConcurrent !== undefined && maxConcurrent > 0
     && config.maxQueuedSubagentStarts !== undefined
     ? new BoundedBackpressureGate({
-        maxConcurrent,
-        maxQueued: config.maxQueuedSubagentStarts,
-        ...config.subagentQueueTimeoutMs === undefined ? {} : { queueTimeoutMs: config.subagentQueueTimeoutMs },
-      })
+      maxConcurrent,
+      maxQueued: config.maxQueuedSubagentStarts,
+      ...config.subagentQueueTimeoutMs === undefined ? {} : { queueTimeoutMs: config.subagentQueueTimeoutMs },
+    })
     : undefined
   const blockedRoots = new Map<string, ResourceBudgetExceededError>()
   const turnStarts = new Map<string, number>()

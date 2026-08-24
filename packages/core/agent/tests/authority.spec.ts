@@ -98,6 +98,7 @@ describe('model-selection authority', () => {
     // reusing an epoch some future-schema event already wrote could collide
     // when that schema becomes current, so the counter never regresses.
     session.append('model/selection-authority', {
+      mode: 'manual',
       authority: 'user',
       authorityEpoch: 99,
       source: 'web',

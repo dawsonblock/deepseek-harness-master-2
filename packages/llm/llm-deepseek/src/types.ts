@@ -117,6 +117,8 @@ export interface WireTool {
 
 /** One parsed SSE `data:` payload (a chat.completion.chunk). */
 export interface WireChunk {
+  /** Provider response id for billing correlation; present on the first and/or usage-only chunk. */
+  id?: string
   choices?: WireChoice[]
   /** Arrives attached to the finish chunk and/or as a trailing usage-only chunk. */
   usage?: WireUsage | null
@@ -161,11 +163,13 @@ export interface WireToolCallDelta {
  * `prompt_cache_hit_tokens + prompt_cache_miss_tokens`); `mapUsage` subtracts
  * them to keep the harness convention of disjoint counts.
  * `prompt_tokens_details.cached_tokens` is the OpenAI-compat spelling of the
- * hit count.
+ * hit count. `total_tokens` is the provider-reported sum of all token buckets.
  */
 export interface WireUsage {
   prompt_tokens: number
   completion_tokens: number
+  /** Provider-reported total across all token buckets. */
+  total_tokens?: number
   prompt_cache_hit_tokens?: number
   prompt_cache_miss_tokens?: number
   prompt_tokens_details?: { cached_tokens?: number }

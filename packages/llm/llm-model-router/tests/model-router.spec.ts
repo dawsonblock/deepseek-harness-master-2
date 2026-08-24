@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { CallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { CallId, createUserMessage, LlmAdapter, MessageId } from '@deepseek-ai/dsh-llm'
 import { clearExplicitModelSelection, installModelSelection, markExplicitModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Fiber } from '@deepseek-ai/cordis'
 import type { ModelSelectionRef } from '@deepseek-ai/dsh-agent'
@@ -175,7 +175,7 @@ describe('turnDiscoveredFacts', () => {
         type: 'tool/result',
         seq: 3,
         time: 0,
-        data: { turn: 1, step: 1, message: { role: 'tool', id: 'x', content: [{ type: 'text', text: 'x'.repeat(30) }], source: { kind: 'tool', callId: CallId('a') } } },
+        data: { turn: 1, step: 1, message: { role: 'user', id: MessageId('x'), content: [{ type: 'tool-result', toolCallId: CallId('a'), content: [{ type: 'text', text: 'x'.repeat(30) }] }], source: { kind: 'tool', callId: CallId('a') } } },
         surfaceOp: 'append',
       },
       { type: 'turn/start', seq: 4, time: 0, data: { turn: 2 } },
@@ -274,8 +274,10 @@ describe('decideRoute', () => {
 
   it('an explicit selection mark owns the session in both directions', () => {
     const flashKept = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: true,
+      activeAuthority: 'default',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -286,8 +288,10 @@ describe('decideRoute', () => {
     expect(flashKept.reason).toBe('explicit-selection-passthrough')
     expect(flashKept.config.model).toBe('deepseek-v4-flash')
     const heavyKept = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-pro'),
       explicitSelection: true,
+      activeAuthority: 'default',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -302,8 +306,10 @@ describe('decideRoute', () => {
   it('THE AUDIT BUG: explicit heavy after router-owned heavy is never downgraded', () => {
     // Turn 1: router escalates a complex prompt and owns the decision.
     const escalated = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -315,8 +321,10 @@ describe('decideRoute', () => {
 
     // Turn 2: the operator EXPLICITLY selects Pro (a live mark exists).
     const explicit = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-pro'),
       explicitSelection: true,
+      activeAuthority: 'default',
       isSubagent: false,
       turn: 2,
       step: 1,
@@ -330,8 +338,10 @@ describe('decideRoute', () => {
     // Turn 2 without a live mark but with a field-changed proposal (a
     // selection mechanism rewrote the config): still never downgraded.
     const rewritten = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-pro', { temperature: 0.2 }),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 2,
       step: 1,
@@ -345,8 +355,10 @@ describe('decideRoute', () => {
 
   it('a router-owned heavy continuation IS re-scored on the next turn', () => {
     const escalated = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -355,8 +367,10 @@ describe('decideRoute', () => {
       config,
     })
     const next = router.decideRoute({
+      sessionId: 'test',
       proposed: escalated.config,
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 2,
       step: 1,
@@ -370,8 +384,10 @@ describe('decideRoute', () => {
 
   it('subagents pass through unless configured; coordinator text scores when routed', () => {
     const passthrough = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'default',
       isSubagent: true,
       turn: 1,
       step: 1,
@@ -381,8 +397,10 @@ describe('decideRoute', () => {
     })
     expect(passthrough.reason).toBe('subagent-passthrough')
     const routed = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'default',
       isSubagent: true,
       turn: 1,
       step: 1,
@@ -395,8 +413,10 @@ describe('decideRoute', () => {
 
   it('mid-turn: heavy is never downgraded; fast escalates once on discovered complexity', () => {
     const fastTurn = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -408,8 +428,10 @@ describe('decideRoute', () => {
 
     // Quiet later step: route retained, facts not even needed for heavy.
     const quiet = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 2,
@@ -421,8 +443,10 @@ describe('decideRoute', () => {
 
     // Discovered complexity mid-turn: one-way escalation to heavy.
     const discovered = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 3,
@@ -435,8 +459,10 @@ describe('decideRoute', () => {
 
     // After escalation the turn stays heavy regardless of later facts.
     const staysHeavy = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-pro'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 4,
@@ -449,8 +475,10 @@ describe('decideRoute', () => {
 
   it('mid-turn escalation can be disabled', () => {
     const fastTurn = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -460,8 +488,10 @@ describe('decideRoute', () => {
     })
     const off = router.resolveConfig(resolvedConfig({ discoveredEscalation: false }))
     const retained = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 3,
@@ -478,8 +508,10 @@ describe('decideRoute', () => {
     const noText = { userText: explode, discovered: () => ({ toolCalls: 0, toolResultChars: 0 }) }
     const foreign = proposal('other-model')
     expect(router.decideRoute({
+      sessionId: 'test',
       proposed: foreign,
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -488,8 +520,10 @@ describe('decideRoute', () => {
       config,
     }).config).toBe(foreign)
     const fastTurn = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -500,8 +534,10 @@ describe('decideRoute', () => {
     // Retention measures discovered facts (that is how mid-turn escalation
     // works) but never re-reads the turn's request text.
     expect(router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 5,
@@ -516,8 +552,10 @@ describe('decideRoute', () => {
       heavyRoute: { ...HEAVY, reasoningEffort: 'max' },
     }))
     const decision = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash', { reasoningEffort: 'low' as never, temperature: 0.7 }),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -532,8 +570,10 @@ describe('decideRoute', () => {
 
   it('emits durable records for ownership changes but stays lean by default', () => {
     const fast = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -543,8 +583,10 @@ describe('decideRoute', () => {
     })
     expect(fast.record).toBeUndefined()
     const escalated = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 2,
       step: 1,
@@ -563,8 +605,10 @@ describe('decideRoute', () => {
     })
     const telemetry = router.resolveConfig(resolvedConfig({ recordAllDecisions: true }))
     const every = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -579,8 +623,10 @@ describe('decideRoute', () => {
     const telemetry = router.resolveConfig(resolvedConfig({ recordAllDecisions: true }))
     const decide = (overrides: Partial<Parameters<typeof router.decideRoute>[0]>) =>
       router.decideRoute({
+        sessionId: 'test',
         proposed: proposal('deepseek-v4-flash'),
         explicitSelection: false,
+        activeAuthority: 'router',
         isSubagent: false,
         turn: 1,
         step: 1,
@@ -600,13 +646,15 @@ describe('decideRoute', () => {
       authority: 'foreign-route',
       reason: 'foreign-route-passthrough',
     })
-    const retained = decide({ step: 3, memory: { turn: 1, decided: proposal('deepseek-v4-flash'), source: 'direct', explicit: false, epoch: 1 } })
+    const retained = decide({ step: 3, memory: { turn: 1, decided: proposal('deepseek-v4-flash'), source: 'direct', explicit: false, authority: 'router' } })
     expect(retained.record).toMatchObject({ authority: 'router', reason: 'turn-route-retained' })
 
     // Lean mode records none of these — the option keeps its meaning both ways.
     expect(router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'default',
       isSubagent: true,
       turn: 1,
       step: 1,
@@ -615,8 +663,10 @@ describe('decideRoute', () => {
       config,
     }).record).toBeUndefined()
     expect(router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('other-model'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -628,8 +678,10 @@ describe('decideRoute', () => {
 
   it('mid-turn escalation records the measured facts and trigger (audit Phase 9)', () => {
     const fastTurn = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 1,
@@ -638,8 +690,10 @@ describe('decideRoute', () => {
       config,
     })
     const byCalls = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 3,
@@ -652,8 +706,10 @@ describe('decideRoute', () => {
       discovered: { toolCalls: 9, toolResultChars: 1_000, trigger: 'tool-calls' },
     })
     const byVolume = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 3,
@@ -663,8 +719,10 @@ describe('decideRoute', () => {
     })
     expect(byVolume.record?.discovered).toMatchObject({ trigger: 'tool-result-volume' })
     const byBoth = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
+      activeAuthority: 'router',
       isSubagent: false,
       turn: 1,
       step: 3,
@@ -678,6 +736,7 @@ describe('decideRoute', () => {
   it('routing records carry a correlation id and the active session authority (v0.15.3)', () => {
     // Epoch 1: the router escalates — record carries routerPolicy-era fields.
     const escalated = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
       activeAuthority: 'router',
@@ -697,6 +756,7 @@ describe('decideRoute', () => {
     expect(escalated.record?.authorityEpoch).toBeUndefined()
     // An explicit passthrough stamps the session authority in force.
     const explicit = router.decideRoute({
+      sessionId: 'test',
       proposed: escalated.config,
       explicitSelection: true,
       activeAuthority: 'sdk',
@@ -719,6 +779,7 @@ describe('decideRoute', () => {
     // stream so the corpus stays complete; the AUTHORITATIVE durable record is
     // the model/selection-authority event the selection surface wrote.
     const first = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: true,
       activeAuthority: 'user',
@@ -736,6 +797,7 @@ describe('decideRoute', () => {
     })
     // A reconstructed explicit state suppresses re-recording.
     const restarted = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: true,
       activeAuthority: 'user',
@@ -751,6 +813,7 @@ describe('decideRoute', () => {
 
   it('foreign and subagent passthroughs record when they END prior router ownership (lean mode)', () => {
     const owned = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('deepseek-v4-flash'),
       explicitSelection: false,
       activeAuthority: 'router',
@@ -764,6 +827,7 @@ describe('decideRoute', () => {
     expect(owned.config.model).toBe('deepseek-v4-pro')
     // Lean mode: a foreign proposal now ends router ownership -> durable record.
     const foreign = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('other-model'),
       explicitSelection: false,
       activeAuthority: 'default',
@@ -781,6 +845,7 @@ describe('decideRoute', () => {
     })
     // Sustained foreign sessions (nothing transitioned) record nothing.
     const sustained = router.decideRoute({
+      sessionId: 'test',
       proposed: proposal('other-model'),
       explicitSelection: false,
       activeAuthority: 'default',
@@ -829,16 +894,19 @@ describe('reconstructRoutingState', () => {
     authorityEpoch: number
     source?: string
   }): SessionEvent {
+    const isManual = data.authority === 'user' || data.authority === 'sdk'
+      || data.authority === 'policy' || data.authority === 'subagent-owner'
     return {
       type: 'model/selection-authority',
       seq,
       time: 0,
       data: {
+        mode: isManual ? 'manual' : 'auto',
         authority: data.authority,
         authorityEpoch: data.authorityEpoch,
-        source: (data.source ?? 'web') as never,
+        source: data.source ?? 'web',
         authoritySchemaVersion: 1,
-      },
+      } as never,
     }
   }
 
@@ -858,6 +926,7 @@ describe('reconstructRoutingState', () => {
 
     // Turn 2 after restart, simple text: router-owned heavy is re-scored down.
     const next = router.decideRoute({
+      sessionId: 'test',
       proposed: { provider: 'deepseek-official', model: 'deepseek-v4-pro', temperature: 0.3 },
       explicitSelection: false,
       activeAuthority: 'router',
@@ -892,6 +961,7 @@ describe('reconstructRoutingState', () => {
     expect(memory).toMatchObject({ explicit: true, decided: undefined, authority: 'user' })
 
     const passthrough = router.decideRoute({
+      sessionId: 'test',
       proposed: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
       explicitSelection: true,
       activeAuthority: 'user',
@@ -981,7 +1051,7 @@ describe('reconstructRoutingState', () => {
       turn: 1,
       authority: 'router',
       selected: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
-    })].map(event => ({ ...event, data: { ...event.data, policyVersion: 1 } }))
+    })].map(event => ({ ...event, data: { ...event.data, policyVersion: 1 } })) as SessionEvent[]
     expect(router.reconstructRoutingState(stale)).toBeUndefined()
   })
 })

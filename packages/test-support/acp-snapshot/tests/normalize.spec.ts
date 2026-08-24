@@ -370,14 +370,14 @@ describe('normalizeSessionLog', () => {
     expect(out).toContain('{{sessionId}}')
   })
 
-  it('zeroes a hook/result durationMs (run-to-run noise) but keeps its decision', () => {
+  it('tokenizes a hook/result durationMs (run-to-run noise) but keeps its decision', () => {
     const ev = JSON.stringify({
       type: 'hook/result', seq: 2, time: 5,
       data: { turn: 1, point: 'UserPromptSubmit', handlerId: 'h', decision: 'block', exitCode: 2, durationMs: 37 },
     })
     const out = normalizeSessionLog(`${header({})}\n${ev}\n`, ctx)
-    expect(out).toContain('"durationMs":0')
-    expect(out).not.toContain('37')
+    expect(out).toContain('"durationMs":"<duration>"')
+    expect(out).not.toContain('"durationMs":37')
     expect(out).toContain('"decision":"block"') // the decision is the behavior — kept
   })
 
@@ -402,10 +402,55 @@ describe('normalizeSessionLog', () => {
     expect(out).toContain('"time0":0')
   })
 
-  it('leaves a non-hook event durationMs untouched (only hook/result is scrubbed)', () => {
+  it('tokenizes a terminal/settlement durationMs (run-to-run timing noise)', () => {
+    const ev = JSON.stringify({
+      type: 'terminal/settlement', seq: 2, time: 5,
+      data: { version: 1, tool: 'bash', mode: 'marker', durationMs: 307 },
+    })
+    const out = normalizeSessionLog(`${header({})}\n${ev}\n`, ctx)
+    expect(out).toContain('"durationMs":"<duration>"')
+    expect(out).not.toContain('"durationMs":307')
+    expect(out).toContain('"mode":"marker"') // the mode is the behavior — kept
+  })
+
+  it('tokenizes durationMs in any event data (centralized normalization)', () => {
     const ev = JSON.stringify({ type: 'tool/result', seq: 2, time: 5, data: { durationMs: 88 } })
     const out = normalizeSessionLog(`${header({})}\n${ev}\n`, ctx)
-    expect(out).toContain('"durationMs":88')
+    expect(out).toContain('"durationMs":"<duration>"')
+    expect(out).not.toContain('"durationMs":88')
+  })
+
+  it('proves durationMs differences produce identical normalized snapshots', () => {
+    const a = JSON.stringify({
+      type: 'terminal/settlement', seq: 2, time: 5,
+      data: { version: 1, tool: 'bash', mode: 'marker', durationMs: 95 },
+    })
+    const b = JSON.stringify({
+      type: 'terminal/settlement', seq: 2, time: 5,
+      data: { version: 1, tool: 'bash', mode: 'marker', durationMs: 103 },
+    })
+    const outA = normalizeSessionLog(`${header({})}\n${a}\n`, ctx)
+    const outB = normalizeSessionLog(`${header({})}\n${b}\n`, ctx)
+    expect(outA).toEqual(outB)
+  })
+
+  it('proves semantic differences still survive normalization', () => {
+    const base = {
+      type: 'terminal/settlement', seq: 2, time: 5,
+      data: { version: 1, tool: 'bash', mode: 'marker', durationMs: 95 },
+    }
+    // tool name changed → snapshot differs
+    const toolChanged = { ...base, data: { ...base.data, tool: 'pwsh' } }
+    expect(normalizeSessionLog(`${header({})}\n${JSON.stringify(base)}\n`, ctx))
+      .not.toEqual(normalizeSessionLog(`${header({})}\n${JSON.stringify(toolChanged)}\n`, ctx))
+    // mode changed → snapshot differs
+    const modeChanged = { ...base, data: { ...base.data, mode: 'exit' } }
+    expect(normalizeSessionLog(`${header({})}\n${JSON.stringify(base)}\n`, ctx))
+      .not.toEqual(normalizeSessionLog(`${header({})}\n${JSON.stringify(modeChanged)}\n`, ctx))
+    // version changed → snapshot differs
+    const versionChanged = { ...base, data: { ...base.data, version: 2 } }
+    expect(normalizeSessionLog(`${header({})}\n${JSON.stringify(base)}\n`, ctx))
+      .not.toEqual(normalizeSessionLog(`${header({})}\n${JSON.stringify(versionChanged)}\n`, ctx))
   })
 
   it('handles complete envelopes when optional normalized fields are absent', () => {
@@ -415,6 +460,55 @@ describe('normalizeSessionLog', () => {
     const out = normalizeSessionLog(`${bareHeader}\n${bareHook}\n${nullDataHook}\n`, ctx)
     expect(out).toContain('"decision":"allow"')
     expect(out).not.toContain('durationMs')
+  })
+
+  it('sorts concurrent tool/settled events by callId (physical settlement order is non-semantic)', () => {
+    const settledB = JSON.stringify({
+      type: 'tool/settled', seq: 24, time: 5, ignorable: true,
+      data: { turn: 1, step: 1, callId: 'call_read_b', name: 'read', dispatchSeq: 23, outcome: 'resolved' },
+    })
+    const settledA = JSON.stringify({
+      type: 'tool/settled', seq: 26, time: 5, ignorable: true,
+      data: { turn: 1, step: 1, callId: 'call_read_a', name: 'read', dispatchSeq: 22, outcome: 'resolved' },
+    })
+    const out = normalizeSessionLog(`${header({})}\n${settledB}\n${settledA}\n`, ctx)
+    const lines = out.trim().split('\n')
+    const settledLines = lines.filter(l => l.includes('tool/settled'))
+    expect(settledLines[0]).toContain('call_read_a')
+    expect(settledLines[1]).toContain('call_read_b')
+  })
+
+  it('proves concurrent settlement order differences produce identical normalized snapshots', () => {
+    const settledA = JSON.stringify({
+      type: 'tool/settled', seq: 24, time: 5, ignorable: true,
+      data: { turn: 1, step: 1, callId: 'call_read_a', name: 'read', dispatchSeq: 22, outcome: 'resolved' },
+    })
+    const settledB = JSON.stringify({
+      type: 'tool/settled', seq: 26, time: 5, ignorable: true,
+      data: { turn: 1, step: 1, callId: 'call_read_b', name: 'read', dispatchSeq: 23, outcome: 'resolved' },
+    })
+    const order1 = normalizeSessionLog(`${header({})}\n${settledA}\n${settledB}\n`, ctx)
+    const order2 = normalizeSessionLog(`${header({})}\n${settledB}\n${settledA}\n`, ctx)
+    expect(order1).toEqual(order2)
+  })
+
+  it('preserves non-settled event ordering around settled groups', () => {
+    const before = JSON.stringify({ type: 'tool/call', seq: 22, time: 5, data: { turn: 1, step: 1, callId: 'call_read_a', name: 'read' } })
+    const settledB = JSON.stringify({
+      type: 'tool/settled', seq: 24, time: 5, ignorable: true,
+      data: { turn: 1, step: 1, callId: 'call_read_b', name: 'read', dispatchSeq: 23, outcome: 'resolved' },
+    })
+    const settledA = JSON.stringify({
+      type: 'tool/settled', seq: 26, time: 5, ignorable: true,
+      data: { turn: 1, step: 1, callId: 'call_read_a', name: 'read', dispatchSeq: 22, outcome: 'resolved' },
+    })
+    const after = JSON.stringify({ type: 'tool/result', seq: 27, time: 5, data: { turn: 1, step: 1, message: { source: { kind: 'tool', callId: 'call_read_a' } } } })
+    const out = normalizeSessionLog(`${header({})}\n${before}\n${settledB}\n${settledA}\n${after}\n`, ctx)
+    const lines = out.trim().split('\n')
+    expect(lines[1]).toContain('tool/call')
+    expect(lines[2]).toContain('tool/settled')
+    expect(lines[3]).toContain('tool/settled')
+    expect(lines[4]).toContain('tool/result')
   })
 })
 

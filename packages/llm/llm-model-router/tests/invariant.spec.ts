@@ -15,12 +15,12 @@ async function setup(): Promise<Context> {
 
 function manualState(overrides: Record<string, unknown> = {}) {
   return {
-    mode: 'manual',
-    authority: 'user',
+    mode: 'manual' as const,
+    authority: 'user' as const,
     selection: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
     authorityEpoch: 1,
-    source: 'web',
-    authoritySchemaVersion: 2,
+    source: 'web' as const,
+    authoritySchemaVersion: 2 as const,
     ...overrides,
   }
 }
@@ -32,9 +32,9 @@ function decision(overrides: Record<string, unknown> = {}) {
     routingDecisionId: routingDecisionIdentity('s', 1, 1, POLICY_VERSION, 'confighash00000000'),
     proposed: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     selected: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-    authority: 'router',
-    activeAuthority: 'router',
-    reason: 'routed-fast',
+    authority: 'router' as const,
+    activeAuthority: 'router' as const,
+    reason: 'routed-fast' as const,
     threshold: 4,
     policyVersion: POLICY_VERSION,
     scorerVersion: SCORER_VERSION,

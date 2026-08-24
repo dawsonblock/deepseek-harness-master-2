@@ -12,7 +12,18 @@ const SYSTEM = '{{system}}'
 const TOOLS = '{{tools}}'
 const EVENT_TIME = '{{eventTime}}'
 const EVENT_OMITTED_BYTES = '{{eventOmittedBytes}}'
+const DURATION = '<duration>'
 const PACKED_CHUNK_ROW_TYPES = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])
+
+/** Non-semantic timing fields in event data that are replaced with a fixed
+ * token in canonical snapshots. Runtime events preserve real durations; only
+ * the snapshot representation removes run-to-run timing noise. */
+const NON_SEMANTIC_TIMING_KEYS = new Set([
+  'durationMs',
+  'elapsedMs',
+  'latencyMs',
+  'wallClockMs',
+])
 
 function isPackedFixtureRow(record: Record<string, unknown>): boolean {
   return typeof record.type === 'string' && PACKED_CHUNK_ROW_TYPES.has(record.type)
@@ -293,13 +304,148 @@ export function normalizeStdout(
 }
 
 /**
+ * Replace non-semantic timing fields in an event's `data` object with a fixed
+ * token. Runtime events preserve real durations for observability; only the
+ * canonical snapshot representation removes run-to-run timing noise so that
+ * golden comparisons reflect behavioral differences, not scheduling jitter.
+ */
+function normalizeTimingFields(record: Record<string, unknown>): void {
+  const data = record.data
+  if (data === null || typeof data !== 'object') return
+  const target = data as Record<string, unknown>
+  for (const key of Object.keys(target)) {
+    if (NON_SEMANTIC_TIMING_KEYS.has(key)) target[key] = DURATION
+  }
+}
+
+/**
+ * Canonicalize ordering of ignorable events known to have nondeterministic
+ * physical order. Two categories are handled:
+ *
+ * 1. `tool/settled`: Concurrent tools may settle in any order and may
+ *    interleave differently with non-ignorable `tool/result` events between
+ *    runs. All `tool/settled` events are extracted, sorted by
+ *    (turn, step, callId), and reinserted as a contiguous group at the
+ *    position of the first `tool/settled` event. Non-ignorable events
+ *    shift to fill the gaps left by extracted events.
+ *
+ * 2. `session/checkpoint`: Checkpoints may be emitted at slightly different
+ *    positions relative to non-ignorable hook events. All
+ *    `session/checkpoint` events are extracted, sorted by (reason, content),
+ *    and reinserted as a contiguous group at the position of the first
+ *    `session/checkpoint` event.
+ *
+ * Non-ignorable events remain in their original relative order.
+ */
+function canonicalizeIgnorableOrdering(records: Record<string, unknown>[]): void {
+  extractAndReinsertSorted(records, 'tool/settled', (a, b) => {
+    const aData = a.data as { turn?: number; step?: number; callId?: string }
+    const bData = b.data as { turn?: number; step?: number; callId?: string }
+    const aTurn = aData?.turn ?? 0
+    const bTurn = bData?.turn ?? 0
+    if (aTurn !== bTurn) return aTurn - bTurn
+    const aStep = aData?.step ?? 0
+    const bStep = bData?.step ?? 0
+    if (aStep !== bStep) return aStep - bStep
+    const aId = aData?.callId ?? ''
+    const bId = bData?.callId ?? ''
+    return aId < bId ? -1 : aId > bId ? 1 : 0
+  })
+  // session/checkpoint position is nondeterministic: checkpoints may appear
+  // before or after hook events depending on scheduling. Append all
+  // checkpoints at the end of the remaining records, sorted by content, so
+  // both harvested and fixture produce the same canonical position
+  // regardless of where checkpoints physically appeared. Non-ignorable
+  // events retain their original relative order.
+  extractAndAppendSorted(records, 'session/checkpoint', (a, b) => {
+    const aKey = JSON.stringify(a.data ?? {})
+    const bKey = JSON.stringify(b.data ?? {})
+    return aKey < bKey ? -1 : aKey > bKey ? 1 : 0
+  })
+}
+
+/**
+ * Extract all events of `eventType` from the records array, sort them, and
+ * reinsert them as a contiguous group at the position of the first extracted
+ * event. Non-extracted events retain their relative order. This canonicalizes
+ * both the order of the extracted events and their position relative to
+ * non-extracted events.
+ */
+function extractAndReinsertSorted(
+  records: Record<string, unknown>[],
+  eventType: string,
+  compare: (a: Record<string, unknown>, b: Record<string, unknown>) => number,
+): void {
+  const extracted: Record<string, unknown>[] = []
+  const remaining: Record<string, unknown>[] = []
+  let firstPos = -1
+  for (let i = 0; i < records.length; i++) {
+    if (records[i]!.type === eventType) {
+      if (firstPos === -1) firstPos = remaining.length
+      extracted.push(records[i]!)
+    } else {
+      remaining.push(records[i]!)
+    }
+  }
+  if (extracted.length <= 1) return
+  extracted.sort(compare)
+  const result = [
+    ...remaining.slice(0, firstPos),
+    ...extracted,
+    ...remaining.slice(firstPos),
+  ]
+  for (let i = 0; i < records.length; i++) records[i] = result[i]!
+}
+
+/**
+ * Extract all events of `eventType`, sort them, and append them at the end of
+ * the records array. Non-extracted events retain their relative order. Used
+ * for ignorable events whose physical position is entirely nondeterministic
+ * (e.g. `session/checkpoint` may appear before or after hook events), so no
+ * position derived from their original location is canonical.
+ */
+function extractAndAppendSorted(
+  records: Record<string, unknown>[],
+  eventType: string,
+  compare: (a: Record<string, unknown>, b: Record<string, unknown>) => number,
+): void {
+  const extracted: Record<string, unknown>[] = []
+  const remaining: Record<string, unknown>[] = []
+  for (let i = 0; i < records.length; i++) {
+    if (records[i]!.type === eventType) {
+      extracted.push(records[i]!)
+    } else {
+      remaining.push(records[i]!)
+    }
+  }
+  if (extracted.length <= 1) return
+  extracted.sort(compare)
+  const result = [...remaining, ...extracted]
+  for (let i = 0; i < records.length; i++) records[i] = result[i]!
+}
+
+/**
+ * Normalize position-dependent seq references in ignorable events.
+ * `session/checkpoint.basisSeq` references the last event before the
+ * checkpoint; when ignorable events are reordered, this reference changes
+ * even though the semantic position (before the next non-ignorable event)
+ * is unchanged.
+ */
+function normalizePositionReferences(record: Record<string, unknown>): void {
+  if (record.type === 'session/checkpoint' && record.data !== null && typeof record.data === 'object') {
+    const data = record.data as Record<string, unknown>
+    if ('basisSeq' in data) data.basisSeq = '<basisSeq>'
+  }
+}
+
+/**
  * Normalize a session JSONL log into a stable expected output: the header line's
  * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed, ordinary
- * event `time` and packed-row `time0` values are zeroed, and all volatile
- * strings are scrubbed. Projected inputs remain projected. Packed `data.dt`
- * gaps are normalized even when the projected row omits its `time0` anchor.
- * Output is JSONL in the same shape as the input — one compact record per
- * line.
+ * event `time` and packed-row `time0` values are zeroed, non-semantic timing
+ * fields in event data are tokenized, and all volatile strings are scrubbed.
+ * Projected inputs remain projected. Packed `data.dt` gaps are normalized even
+ * when the projected row omits its `time0` anchor. Output is JSONL in the same
+ * shape as the input — one compact record per line.
  *
  * @param rawLog The raw session `.jsonl` content.
  * @param ctx The run's volatile values to scrub.
@@ -326,12 +472,11 @@ export function normalizeSessionLog(
     } else if ('time' in record) {
       record.time = 0
     }
-    if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
-      const data = record.data as Record<string, unknown>
-      if ('durationMs' in data) data.durationMs = 0
-    }
+    normalizeTimingFields(record)
+    normalizePositionReferences(record)
     return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
   })
+  canonicalizeIgnorableOrdering(records)
   return records.map(r => JSON.stringify(r)).join('\n') + '\n'
 }
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-23-durable-model-selection-control-plane.md
-2026-08-23-durable-model-selection-control-plane.md: d99a1a3d6b61f80b2d5b19c1708a379cf73d58e7
-2026-08-23-durable-model-selection-control-plane.zh.md: f4a3f935fadd85167cc54128c6c88bbe8f21a2cc
+2026-08-23-durable-model-selection-control-plane.md: 3d031753abe42d186a9aa2094895c548edfe42e8
+2026-08-23-durable-model-selection-control-plane.zh.md: f3f6abc51c58d5d2cadee38edb490c5332ffe8fa

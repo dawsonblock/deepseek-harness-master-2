@@ -212,6 +212,23 @@ describe('SQLite compression', () => {
     },
   )
 
+  it('preserves model/usage ignorable accounting events as scalar rows', () => {
+    const logical = {
+      type: 'model/usage',
+      seq: 3,
+      time: 4,
+      data: {
+        turn: 1, step: 1, attempt: 1, provider: 'deepseek', model: 'deepseek-v4-flash',
+        usage: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheMissTokens: 1000, source: 'provider' },
+        routingDecisionId: 'R123',
+      },
+      ignorable: true,
+    } as unknown as SessionEvent
+    const physical = row(logical)
+    expect(physical.ignorable).toBe(1)
+    expect(decodeRow(physical)).toEqual([logical])
+  })
+
   it('compresses large data and delta-encodes complete provenance arrays', () => {
     const sources = Array.from({ length: 2_000 }, (_, index) => index + 10)
     const event = {

@@ -2472,14 +2472,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         failures: [],
       }),
       selectModel: (request) => {
-        const selected: ModelSelection = {
-          provider: request.payload.provider,
-          model: request.payload.model,
-          ...request.payload.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: request.payload.reasoningEffort },
+        const payload = request.payload
+        if ('mode' in payload) {
+          modelSelections.delete(payload.sessionId)
+          return ok(request, { selected: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } })
         }
-        modelSelections.set(request.payload.sessionId, selected)
+        const selected: ModelSelection = {
+          provider: payload.provider,
+          model: payload.model,
+          ...payload.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: payload.reasoningEffort },
+        }
+        modelSelections.set(payload.sessionId, selected)
         return ok(request, { selected })
       },
       prompt: (request) => {

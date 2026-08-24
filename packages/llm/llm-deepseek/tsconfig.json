@@ -49,6 +49,9 @@
     },
     {
       "path": "../../identity/anonymous-user-id"
+    },
+    {
+      "path": "../../llm/token-meter"
     }
   ]
 }

@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:483`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:490`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:519`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:560`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:561`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:568`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:597`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:638`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -413,7 +413,7 @@ Source: [`packages/compaction/compaction/src/types.ts:33`](../packages/compactio
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:312`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
 
 ### `feedback/*`
 
@@ -544,6 +544,51 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 
 ### `model/*`
 
+<a id="modelcontext-preflight--log-only"></a>
+
+#### `model/context-preflight` — log-only
+
+```ts persistence-catalog
+/**
+ * Preflight context budget estimate emitted before a model request is
+ * dispatched. Ignorable, model-invisible, and not reconstruction-critical.
+ * Provides historical estimator measurements for accuracy analysis without
+ * changing session semantics. Joins to `model/usage` via execution
+ * coordinates (turn, step, attempt) and `routingDecisionId`.
+ *
+ * `phase: 'pre-routing'` events are emitted before the routing decision and
+ * carry a provider-neutral generic estimate; they populate pre-decision
+ * `WorkloadFeatures.context`. `phase: 'post-routing'` events are emitted
+ * after model selection and before `model/request`; they carry the
+ * model-specific budget evaluation for admission and compaction.
+ *
+ * Ordering invariant: `post-routing` preflight seq < `model/request` seq <
+ * `model/usage` seq. A preflight emitted after the provider call has no
+ * admission value.
+ */
+'model/context-preflight': {
+  turn: number
+  step: number
+  attempt: number
+  /** `pre-routing` for the generic estimate before route selection;
+   * `post-routing` for the model-specific estimate after selection. */
+  phase: 'pre-routing' | 'post-routing'
+  provider: string
+  model: string
+  estimatedInputTokens: number
+  reservedOutputTokens: number
+  contextWindowTokens: number
+  remainingTokens: number
+  usageRatio: number
+  estimatorId: string
+  estimatorVersion: string
+  /** Joins to the routing decision that selected this model, when a router was active. */
+  routingDecisionId?: string
+}
+```
+
+Source: [`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts)
+
 <a id="modelrequest--log-only"></a>
 
 #### `model/request` — log-only
@@ -555,7 +600,7 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
  * `request/header` epoch that precedes it remains the reconstruction source of
  * truth; this record exists only for per-request metrics and cache analysis.
  */
-'model/request': { turn: number; step: number; attempt: number; provider: string; model: string }
+'model/request': { turn: number; step: number; attempt: number; provider: string; model: string; routingDecisionId?: string }
 ```
 
 Source: [`packages/core/session/src/types.ts:306`](../packages/core/session/src/types.ts)
@@ -581,6 +626,68 @@ Source: [`packages/llm/llm-model-router/src/types.ts:103`](../packages/llm/llm-m
 ```
 
 Source: [`packages/core/agent/src/authority.ts:114`](../packages/core/agent/src/authority.ts)
+
+<a id="modelusage--log-only"></a>
+
+#### `model/usage` — log-only
+
+```ts persistence-catalog
+/**
+ * Per-attempt provider token accounting, emitted once when the adapter
+ * reports authoritative usage. Ignorable so older readers may safely skip
+ * it. Unlike `assistant/message.usage`, this event is emitted for every
+ * paid attempt — including retries that never produce a final assistant
+ * message — so historical economics remain complete. Absent when the
+ * provider returned no usage (e.g. stream aborted before the final usage
+ * chunk). `assistant/message.usage` remains for backward-compatible UI
+ * projection; `model/usage` is the accounting stream.
+ */
+'model/usage': {
+  turn: number
+  step: number
+  attempt: number
+  provider: string
+  model: string
+  usage: TokenUsage
+  /** Joins to the routing decision that selected this model, when a router was active. */
+  routingDecisionId?: string
+}
+```
+
+Types: [TokenUsage](subsystems/llm-streaming.md)
+
+Source: [`packages/core/session/src/types.ts:317`](../packages/core/session/src/types.ts)
+
+<a id="modelusage-diagnostic--log-only"></a>
+
+#### `model/usage-diagnostic` — log-only
+
+```ts persistence-catalog
+/**
+ * Per-attempt provider usage invariant violation. Ignorable so older readers
+ * may safely skip it. Emitted when the provider's reported token buckets do
+ * not sum correctly. Raw provider values are preserved in `observed`; the
+ * canonical `model/usage` event retains the provider's values regardless.
+ */
+'model/usage-diagnostic': {
+  turn: number
+  step: number
+  attempt: number
+  provider: string
+  model: string
+  code: 'TOKEN_USAGE_INCONSISTENT'
+  invariant:
+    | 'prompt-cache-decomposition'
+    | 'total-token-arithmetic'
+    | 'canonical-cache-miss'
+  message: string
+  observed: Record<string, number | undefined>
+  /** Joins to the routing decision that selected this model, when a router was active. */
+  routingDecisionId?: string
+}
+```
+
+Source: [`packages/core/session/src/types.ts:333`](../packages/core/session/src/types.ts)
 
 ### `permission/*`
 
@@ -631,7 +738,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:427`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:505`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -645,7 +752,7 @@ Source: [`packages/core/session/src/types.ts:427`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:422`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:500`](../packages/core/session/src/types.ts)
 
 ### `runtime/*`
 
@@ -667,7 +774,7 @@ Source: [`packages/core/session/src/types.ts:422`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:415`](../packages/core/session/src/types.ts)
 
 <a id="runtimeperformance-sample--log-only"></a>
 
@@ -691,7 +798,7 @@ Source: [`packages/core/session/src/types.ts:337`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:323`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:401`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -754,7 +861,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:457`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:535`](../packages/core/session/src/types.ts)
 
 <a id="sessionend-seed--log-only"></a>
 
@@ -786,7 +893,7 @@ Source: [`packages/core/session/src/types.ts:457`](../packages/core/session/src/
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:450`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:528`](../packages/core/session/src/types.ts)
 
 <a id="sessionrecovery--log-only"></a>
 
@@ -815,7 +922,7 @@ Source: [`packages/core/session/src/types.ts:450`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:467`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:545`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -911,7 +1018,7 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:349`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:427`](../packages/core/session/src/types.ts)
 
 ### `team/*`
 
@@ -992,7 +1099,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experi
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:364`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:442`](../packages/core/session/src/types.ts)
 
 ### `todo/*`
 
@@ -1007,7 +1114,7 @@ Source: [`packages/core/session/src/types.ts:364`](../packages/core/session/src/
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:417`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:495`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -1107,7 +1214,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:375`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:453`](../packages/core/session/src/types.ts)
 
 <a id="toolreconciliation--log-only"></a>
 
@@ -1127,7 +1234,7 @@ Source: [`packages/core/session/src/types.ts:375`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:468`](../packages/core/session/src/types.ts)
 
 <a id="toolresult--surface"></a>
 
@@ -1154,7 +1261,7 @@ Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:409`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:487`](../packages/core/session/src/types.ts)
 
 <a id="toolsettled--log-only"></a>
 
@@ -1178,7 +1285,7 @@ Source: [`packages/core/session/src/types.ts:409`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:381`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:459`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

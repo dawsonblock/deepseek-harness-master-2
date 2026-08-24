@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BlockAssembler, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { DONE } from '../src/sse.ts'
-import { mapFinishReason, mapUsage, translate } from '../src/translate.ts'
+import { mapFinishReason, mapUsage, TOKEN_USAGE_INCONSISTENT, translate } from '../src/translate.ts'
 
 async function* feed(...payloads: (string | object)[]): AsyncGenerator<string> {
   for (const payload of payloads) {
@@ -33,7 +33,7 @@ describe('translate: text', () => {
       { type: 'text-delta', index: 0, text: 'Hel' },
       { type: 'text-delta', index: 0, text: 'lo' },
       { type: 'block-end', index: 0, block: { type: 'text', text: 'Hello' } },
-      { type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } },
+      { type: 'usage', usage: { inputTokens: 5, outputTokens: 2, source: 'provider' } },
       { type: 'finish', reason: { kind: 'stop' } },
     ])
   })
@@ -118,7 +118,7 @@ describe('translate: tool calls', () => {
         index: 0,
         block: { type: 'tool-call', id: 'call_00_x', name: 'get_weather', arguments: '{"city": "Paris"}' },
       },
-      { type: 'usage', usage: { inputTokens: 28, outputTokens: 6 } },
+      { type: 'usage', usage: { inputTokens: 28, outputTokens: 6, source: 'provider' } },
       { type: 'finish', reason: { kind: 'tool-calls' } },
     ])
   })
@@ -172,7 +172,7 @@ describe('translate: finish and usage handling', () => {
       { choices: [], usage: { prompt_tokens: 9, completion_tokens: 1 } },
       DONE,
     )))
-    expect(chunks.at(-2)).toEqual({ type: 'usage', usage: { inputTokens: 9, outputTokens: 1 } })
+    expect(chunks.at(-2)).toEqual({ type: 'usage', usage: { inputTokens: 9, outputTokens: 1, source: 'provider' } })
     expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
   })
 
@@ -184,7 +184,7 @@ describe('translate: finish and usage handling', () => {
       DONE,
     )))
     const usage = chunks.find(chunk => chunk.type === 'usage')
-    expect(usage).toEqual({ type: 'usage', usage: { inputTokens: 2, outputTokens: 2 } })
+    expect(usage).toEqual({ type: 'usage', usage: { inputTokens: 2, outputTokens: 2, source: 'provider' } })
   })
 
   it('defaults to finish stop when no finish_reason ever arrives', async () => {
@@ -219,7 +219,7 @@ describe('translate: finish and usage handling', () => {
       DONE,
     )))
     expect(chunks).toEqual([
-      { type: 'usage', usage: { inputTokens: 7, outputTokens: 0 } },
+      { type: 'usage', usage: { inputTokens: 7, outputTokens: 0, source: 'provider' } },
       {
         type: 'finish',
         reason: {
@@ -283,31 +283,108 @@ describe('mapFinishReason', () => {
 
 describe('mapUsage', () => {
   it('maps the full live-capture shape', () => {
-    expect(mapUsage({
+    const { usage, diagnostics } = mapUsage({
       prompt_tokens: 283,
       completion_tokens: 69,
+      total_tokens: 352,
       prompt_cache_hit_tokens: 256,
       prompt_cache_miss_tokens: 27,
       prompt_tokens_details: { cached_tokens: 256 },
       completion_tokens_details: { reasoning_tokens: 24 },
-    })).toEqual({
+    }, 'chatcmpl-abc123')
+    expect(diagnostics).toEqual([])
+    expect(usage).toEqual({
       // 283 wire prompt_tokens minus the 256 cached → 27 uncached input
       // (TokenUsage counts are disjoint).
       inputTokens: 27,
       outputTokens: 69,
+      source: 'provider',
       cacheReadTokens: 256,
+      cacheMissTokens: 27,
       reasoningTokens: 24,
+      totalTokens: 352,
+      requestId: 'chatcmpl-abc123',
     })
   })
 
   it('falls back to prompt_cache_hit_tokens when details are absent', () => {
-    expect(mapUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_cache_hit_tokens: 8 }))
-      .toEqual({ inputTokens: 2, outputTokens: 2, cacheReadTokens: 8 })
+    const { usage, diagnostics } = mapUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_cache_hit_tokens: 8 })
+    expect(diagnostics).toEqual([])
+    expect(usage).toEqual({ inputTokens: 2, outputTokens: 2, source: 'provider', cacheReadTokens: 8 })
   })
 
   it('omits optional fields when the wire omits them', () => {
-    expect(mapUsage({ prompt_tokens: 10, completion_tokens: 2 }))
-      .toEqual({ inputTokens: 10, outputTokens: 2 })
+    const { usage, diagnostics } = mapUsage({ prompt_tokens: 10, completion_tokens: 2 })
+    expect(diagnostics).toEqual([])
+    expect(usage).toEqual({ inputTokens: 10, outputTokens: 2, source: 'provider' })
+  })
+
+  it('preserves cache miss without hit', () => {
+    const { usage, diagnostics } = mapUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_cache_miss_tokens: 10 })
+    expect(diagnostics).toEqual([])
+    expect(usage).toEqual({ inputTokens: 10, outputTokens: 2, source: 'provider', cacheMissTokens: 10 })
+  })
+})
+
+describe('mapUsage: provider invariant validation', () => {
+  it('reports diagnostics when hit + miss != prompt_tokens but preserves raw values', () => {
+    const { usage: result, diagnostics } = mapUsage({
+      prompt_tokens: 100,
+      completion_tokens: 5,
+      prompt_cache_hit_tokens: 80,
+      prompt_cache_miss_tokens: 30,
+    })
+    // hit+miss invariant and inputTokens!=cacheMiss invariant both fire
+    // (they are mathematically linked: inputTokens = prompt - hit).
+    expect(diagnostics).toHaveLength(2)
+    expect(diagnostics[0]!.code).toBe(TOKEN_USAGE_INCONSISTENT)
+    expect(diagnostics[0]!.invariant).toBe('prompt-cache-decomposition')
+    // Raw values preserved despite inconsistency.
+    expect(result).toEqual({
+      inputTokens: 20,
+      outputTokens: 5,
+      source: 'provider',
+      cacheReadTokens: 80,
+      cacheMissTokens: 30,
+    })
+  })
+
+  it('reports diagnostics when prompt + completion != total_tokens but preserves raw values', () => {
+    const { usage: result, diagnostics } = mapUsage({
+      prompt_tokens: 10,
+      completion_tokens: 5,
+      total_tokens: 20,
+    })
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]!.code).toBe(TOKEN_USAGE_INCONSISTENT)
+    expect(diagnostics[0]!.invariant).toBe('total-token-arithmetic')
+    expect(result.totalTokens).toBe(20)
+  })
+
+  it('reports diagnostics when canonical inputTokens != cacheMissTokens', () => {
+    const { diagnostics } = mapUsage({
+      prompt_tokens: 100,
+      completion_tokens: 5,
+      prompt_cache_hit_tokens: 80,
+      prompt_cache_miss_tokens: 25,
+    })
+    // Two diagnostics: hit+miss!=prompt AND inputTokens!=cacheMiss.
+    expect(diagnostics).toHaveLength(2)
+    const canonicalDiag = diagnostics.find(d => d.invariant === 'canonical-cache-miss')
+    expect(canonicalDiag).toBeDefined()
+    expect(canonicalDiag!.code).toBe(TOKEN_USAGE_INCONSISTENT)
+  })
+
+  it('emits no diagnostics when all invariants hold', () => {
+    const { diagnostics } = mapUsage({
+      prompt_tokens: 283,
+      completion_tokens: 69,
+      total_tokens: 352,
+      prompt_cache_hit_tokens: 256,
+      prompt_cache_miss_tokens: 27,
+      completion_tokens_details: { reasoning_tokens: 24 },
+    })
+    expect(diagnostics).toEqual([])
   })
 })
 

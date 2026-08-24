@@ -50,7 +50,9 @@ function scriptedApi(overrides: {
         failures: [],
       }),
       selectModel: r => ok(r, {
-        selected: { provider: r.payload.provider, model: r.payload.model },
+        selected: 'provider' in r.payload
+          ? { provider: r.payload.provider, model: r.payload.model }
+          : { provider: 'deepseek-official', model: 'deepseek-chat' },
       }),
       rename: r => ok(r, { title: 'renamed', seq: 0 }),
       fork: r => ok(r, { sessionId: sid('s-fork') }),

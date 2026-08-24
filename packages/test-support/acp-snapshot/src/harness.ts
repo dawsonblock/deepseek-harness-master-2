@@ -258,6 +258,7 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
       ...opts.childFiles !== undefined && opts.childFiles.length > 0
         ? { DSH_SNAPSHOT_CHILD_FILES: opts.childFiles.join(delimiter) }
         : {},
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
     }
 
     // Permission answers are consumed FIFO across the whole run; exhaustion

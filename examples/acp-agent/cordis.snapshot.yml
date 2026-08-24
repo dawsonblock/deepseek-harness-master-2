@@ -35,6 +35,12 @@
             You are a coding assistant powered by the {{model}} model. Your working directory is {{cwd}}. Your bash tool runs under a file sandbox — a `[sandbox: file access denied …]` result is policy, not a command bug.
 
             Verify your work by running the code or tests. Keep answers brief and factual.
+          # Snapshot replay has no live verifier registry; autonomous goal completion
+          # would fail closed without a passing verifier. Disable the requirement so
+          # the wrap-up snapshot can prove the post-completion context injection.
+          goals:
+            tool:
+              requireIndependentCompletionVerification: false
       - id: sandbox
         name: '@deepseek-ai/dsh-sandbox-local'
         config:

@@ -303,7 +303,85 @@ export interface SessionEventMap {
    * `request/header` epoch that precedes it remains the reconstruction source of
    * truth; this record exists only for per-request metrics and cache analysis.
    */
-  'model/request': { turn: number; step: number; attempt: number; provider: string; model: string }
+  'model/request': { turn: number; step: number; attempt: number; provider: string; model: string; routingDecisionId?: string }
+  /**
+   * Per-attempt provider token accounting, emitted once when the adapter
+   * reports authoritative usage. Ignorable so older readers may safely skip
+   * it. Unlike `assistant/message.usage`, this event is emitted for every
+   * paid attempt — including retries that never produce a final assistant
+   * message — so historical economics remain complete. Absent when the
+   * provider returned no usage (e.g. stream aborted before the final usage
+   * chunk). `assistant/message.usage` remains for backward-compatible UI
+   * projection; `model/usage` is the accounting stream.
+   */
+  'model/usage': {
+    turn: number
+    step: number
+    attempt: number
+    provider: string
+    model: string
+    usage: TokenUsage
+    /** Joins to the routing decision that selected this model, when a router was active. */
+    routingDecisionId?: string
+  }
+  /**
+   * Per-attempt provider usage invariant violation. Ignorable so older readers
+   * may safely skip it. Emitted when the provider's reported token buckets do
+   * not sum correctly. Raw provider values are preserved in `observed`; the
+   * canonical `model/usage` event retains the provider's values regardless.
+   */
+  'model/usage-diagnostic': {
+    turn: number
+    step: number
+    attempt: number
+    provider: string
+    model: string
+    code: 'TOKEN_USAGE_INCONSISTENT'
+    invariant:
+      | 'prompt-cache-decomposition'
+      | 'total-token-arithmetic'
+      | 'canonical-cache-miss'
+    message: string
+    observed: Record<string, number | undefined>
+    /** Joins to the routing decision that selected this model, when a router was active. */
+    routingDecisionId?: string
+  }
+  /**
+   * Preflight context budget estimate emitted before a model request is
+   * dispatched. Ignorable, model-invisible, and not reconstruction-critical.
+   * Provides historical estimator measurements for accuracy analysis without
+   * changing session semantics. Joins to `model/usage` via execution
+   * coordinates (turn, step, attempt) and `routingDecisionId`.
+   *
+   * `phase: 'pre-routing'` events are emitted before the routing decision and
+   * carry a provider-neutral generic estimate; they populate pre-decision
+   * `WorkloadFeatures.context`. `phase: 'post-routing'` events are emitted
+   * after model selection and before `model/request`; they carry the
+   * model-specific budget evaluation for admission and compaction.
+   *
+   * Ordering invariant: `post-routing` preflight seq < `model/request` seq <
+   * `model/usage` seq. A preflight emitted after the provider call has no
+   * admission value.
+   */
+  'model/context-preflight': {
+    turn: number
+    step: number
+    attempt: number
+    /** `pre-routing` for the generic estimate before route selection;
+     * `post-routing` for the model-specific estimate after selection. */
+    phase: 'pre-routing' | 'post-routing'
+    provider: string
+    model: string
+    estimatedInputTokens: number
+    reservedOutputTokens: number
+    contextWindowTokens: number
+    remainingTokens: number
+    usageRatio: number
+    estimatorId: string
+    estimatorVersion: string
+    /** Joins to the routing decision that selected this model, when a router was active. */
+    routingDecisionId?: string
+  }
   /**
    * Log-only replay-surface composition sample emitted at a real model-request
    * boundary. Counts are approximate token-meter estimates used for trend and

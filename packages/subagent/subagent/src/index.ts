@@ -81,6 +81,7 @@ export type {
   SubagentCapabilities,
   SubagentAdmissionGuard,
   SubagentAdmissionLease,
+  SubagentAdmissionRequest,
   SubagentProvider,
   SubagentResult,
   SubagentRun,

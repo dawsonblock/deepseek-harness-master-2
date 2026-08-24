@@ -16,7 +16,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall, TokenUsage, UsageDiagnostic } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
   LlmError,
@@ -27,7 +27,9 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+import type { TokenEstimate, TokenEstimator } from '@deepseek-ai/dsh-llm'
+import { DEFAULT_CONTEXT_BUDGET_POLICY, evaluateContextBudget } from '@deepseek-ai/dsh-llm'
+import type { EpochHeader, RequestContext, Session, SessionEvent, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
 import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
@@ -60,6 +62,126 @@ function requestProposal(header: EpochHeader): LlmCallConfig {
   return proposal
 }
 
+/**
+ * Find the latest routing decision id for a turn/step from the durable log.
+ *
+ * Invariant: for one (sessionId, turn, step), there is at most one effective
+ * routing decision for the model request being constructed. Retries reuse the
+ * same routing decision — `routingDecisionId` identifies route selection,
+ * while `attempt` identifies provider execution.
+ *
+ * This is a retrospective log scan rather than request-scoped metadata. The
+ * `agent/request` waterfall returns `LlmCallConfig`, not metadata, so the
+ * routing decision id is not directly carried through the call chain. A
+ * future refactor could replace this scan with request-scoped execution
+ * metadata on the waterfall return value, but only if the router is ever
+ * allowed to reroute between retry attempts (which would require `attempt`
+ * in the routing decision identity).
+ */
+function latestRoutingDecisionId(events: readonly SessionEvent[], turn: number, step: number): string | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]! as { type: string; data: { turn?: number; step?: number; routingDecisionId?: string } }
+    if (event.type === 'model/routing-decision' && event.data.turn === turn && event.data.step === step) {
+      return event.data.routingDecisionId
+    }
+  }
+  return undefined
+}
+
+/** Build the usage spread for an assistant/message event, stamping the routing decision id when both are present. */
+function usageSpread(usage: TokenUsage | undefined, routingDecisionId: string | undefined): { usage: TokenUsage } | Record<string, never> {
+  if (usage === undefined) return {}
+  if (routingDecisionId === undefined) return { usage }
+  return { usage: { ...usage, routingDecisionId } }
+}
+
+/** Emit a `model/usage` accounting event when the adapter reported authoritative usage for an attempt. */
+function emitModelUsage(
+  session: Session,
+  turn: number,
+  step: number,
+  attempt: number,
+  request: GenerateOptions,
+  usage: TokenUsage | undefined,
+  routingDecisionId: string | undefined,
+): void {
+  if (usage === undefined) return
+  session.append('model/usage', {
+    turn,
+    step,
+    attempt,
+    provider: request.provider,
+    model: request.model,
+    usage: routingDecisionId === undefined ? usage : { ...usage, routingDecisionId },
+    ...routingDecisionId === undefined ? {} : { routingDecisionId },
+  }, { ignorable: true })
+}
+
+/** Emit `model/usage-diagnostic` events for each invariant violation the adapter reported. */
+function emitUsageDiagnostics(
+  session: Session,
+  turn: number,
+  step: number,
+  attempt: number,
+  request: GenerateOptions,
+  diagnostics: readonly UsageDiagnostic[],
+  routingDecisionId: string | undefined,
+): void {
+  for (const diagnostic of diagnostics) {
+    session.append('model/usage-diagnostic', {
+      turn,
+      step,
+      attempt,
+      provider: request.provider,
+      model: request.model,
+      code: diagnostic.code,
+      invariant: diagnostic.invariant,
+      message: diagnostic.message,
+      observed: diagnostic.observed,
+      ...routingDecisionId === undefined ? {} : { routingDecisionId },
+    }, { ignorable: true })
+  }
+}
+
+/** Emit a `model/context-preflight` event from a preflight estimate. The
+ * estimate is a prediction, not provider accounting; actual token counts come
+ * from the model's returned usage. */
+function emitContextPreflight(
+  session: Session,
+  turn: number,
+  step: number,
+  attempt: number,
+  phase: 'pre-routing' | 'post-routing',
+  request: GenerateOptions,
+  estimate: TokenEstimate,
+  contextWindowTokens: number,
+  reservedOutputTokens: number,
+  routingDecisionId: string | undefined,
+): void {
+  const utilization = evaluateContextBudget(
+    estimate,
+    contextWindowTokens,
+    reservedOutputTokens,
+    DEFAULT_CONTEXT_BUDGET_POLICY,
+  )
+  session.append('model/context-preflight', {
+    turn,
+    step,
+    attempt,
+    phase,
+    provider: request.provider,
+    model: request.model,
+    estimatedInputTokens: estimate.tokens,
+    reservedOutputTokens,
+    contextWindowTokens,
+    remainingTokens: utilization.remainingTokens,
+    usageRatio: utilization.usageRatio,
+    estimatorId: estimate.estimator.id,
+    estimatorVersion: estimate.estimator.version,
+    ...routingDecisionId === undefined ? {} : { routingDecisionId },
+  }, { ignorable: true })
+}
+
 /** Drives one session through turn and step boundaries. */
 export class ReactLoopAgent implements Agent {
   readonly inbox: Inbox
@@ -76,13 +198,18 @@ export class ReactLoopAgent implements Agent {
   /** Whether this loop instance has appended its initial/resume request anchor. */
   private requestHeaderLogged = false
   private readonly runtimeContext: RuntimeContextProjection
+  /** Optional token estimator for preflight context estimation; absent when
+   * `@deepseek-ai/dsh-llm`'s token estimator resolver is not loaded. */
+  private readonly tokenEstimator: TokenEstimator | undefined
 
   constructor(
     private loopCtx: Context,
     public readonly id: SessionId,
     public readonly options: AgentOptions,
     public readonly session: Session,
+    tokenEstimator?: TokenEstimator,
   ) {
+    this.tokenEstimator = tokenEstimator
     this.dispatch = agentEvents(loopCtx, this)
     this.inbox = new Inbox(session, {
       inserted: (message) => { this.dispatch.emit('agent/inbox/inserted', { message }) },
@@ -342,6 +469,8 @@ export class ReactLoopAgent implements Agent {
         turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
       )
       requestAttempt += 1
+      const routingDecisionId = latestRoutingDecisionId(this.session.events, turn, step)
+      await this.emitPreflight(turn, step, requestAttempt, request, 'post-routing', routingDecisionId)
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
       try {
@@ -351,6 +480,7 @@ export class ReactLoopAgent implements Agent {
           attempt: requestAttempt,
           provider: request.provider,
           model: request.model,
+          ...routingDecisionId === undefined ? {} : { routingDecisionId },
         }, { ignorable: true })
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
@@ -362,6 +492,8 @@ export class ReactLoopAgent implements Agent {
         signal.throwIfAborted()
       } catch (error: unknown) {
         if (signal.aborted) {
+          emitModelUsage(this.session, turn, step, requestAttempt, request, assembler.usage, routingDecisionId)
+          emitUsageDiagnostics(this.session, turn, step, requestAttempt, request, assembler.diagnostics, routingDecisionId)
           const content = assembler.interruptedBlocks()
           if (content.length > 0) {
             this.session.append('assistant/message', {
@@ -372,7 +504,7 @@ export class ReactLoopAgent implements Agent {
                 source: { provider: request.provider, model: request.model },
               }),
               interrupted: true,
-              ...assembler.usage === undefined ? {} : { usage: assembler.usage },
+              ...usageSpread(assembler.usage, routingDecisionId),
             }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
           }
         }
@@ -380,6 +512,8 @@ export class ReactLoopAgent implements Agent {
       }
       const finish = assembler.finish
       if (finish.kind === 'error' || finish.kind === 'aborted') {
+        emitModelUsage(this.session, turn, step, requestAttempt, request, assembler.usage, routingDecisionId)
+        emitUsageDiagnostics(this.session, turn, step, requestAttempt, request, assembler.diagnostics, routingDecisionId)
         const action = await this.dispatch.waterfall(
           'agent/request-error', {
             turn,
@@ -406,13 +540,15 @@ export class ReactLoopAgent implements Agent {
           ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
         },
       })
+      emitModelUsage(this.session, turn, step, requestAttempt, request, assembler.usage, routingDecisionId)
+      emitUsageDiagnostics(this.session, turn, step, requestAttempt, request, assembler.diagnostics, routingDecisionId)
       this.session.append(
         'assistant/message',
         {
           turn,
           step,
           message,
-          ...assembler.usage === undefined ? {} : { usage: assembler.usage },
+          ...usageSpread(assembler.usage, routingDecisionId),
         },
         { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
       )
@@ -426,6 +562,40 @@ export class ReactLoopAgent implements Agent {
       )
       return concluded ? { kind: 'completed' } : null
     }
+  }
+
+  /** Emit a context preflight estimate if the token estimator is available.
+   * Failures are swallowed because preflight is ignorable and must not break
+   * the agent path. */
+  private async emitPreflight(
+    turn: number,
+    step: number,
+    attempt: number,
+    request: GenerateOptions,
+    phase: 'pre-routing' | 'post-routing',
+    routingDecisionId: string | undefined,
+  ): Promise<void> {
+    const estimator = this.tokenEstimator
+    if (estimator === undefined) return
+    let estimate: TokenEstimate
+    try {
+      const result = await estimator.estimateInput({
+        provider: request.provider,
+        model: request.model,
+        request,
+      })
+      if (!result.available) return
+      estimate = result.estimate
+    } catch {
+      return
+    }
+    const contextWindow = this.session.requestContext()?.contextWindow
+    emitContextPreflight(
+      this.session, turn, step, attempt, phase, request, estimate,
+      contextWindow ?? 0,
+      request.maxTokens ?? 0,
+      routingDecisionId,
+    )
   }
 
   /**
@@ -463,6 +633,12 @@ export class ReactLoopAgent implements Agent {
           ...maxTokens === undefined ? {} : { maxTokens },
         },
     ))
+    await this.emitPreflight(
+      turn, step, 1,
+      { ...seedConfig, messages: boundaryMessages, ...system ? { system } : {}, ...tools.length > 0 ? { tools } : {} },
+      'pre-routing',
+      undefined,
+    )
     const proposedConfig = await this.dispatch.waterfall(
       'agent/request', { turn, step, signal },
       () => Promise.resolve(seedConfig),

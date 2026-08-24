@@ -1054,7 +1054,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const { provider, model } = defaults.defaultModelSelection()
     return { provider, model }
   }
-  type WebModelSelectionRef = ModelSelectionRef & { current: ModelSelection }
+  type WebModelSelectionRef = ModelSelectionRef & { current: ModelSelection; resetAutomatic(next: ModelSelection): void }
   const selections = new WeakMap<Agent, WebModelSelectionRef>()
   /**
    * Sessions whose durability barrier (flush) failed after an authority event
@@ -1127,7 +1127,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             // than guessing a route from the request header or default.
             throw new Error(
               `api-proxy: session "${String(agent.session.id)}" has an undecidable model-selection state `
-              + `(future schema or malformed authority); refusing to select a model — upgrade the runtime or repair the session`,
+              + '(future schema or malformed authority); refusing to select a model — upgrade the runtime or repair the session',
             )
           }
           if (durable.mode === 'manual' && durable.selection.provider.length > 0) {
@@ -1136,7 +1136,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               model: durable.selection.model,
               ...durable.selection.reasoningEffort === undefined
                 ? {}
-                : { reasoningEffort: durable.selection.reasoningEffort },
+                : { reasoningEffort: ReasoningEffortId(durable.selection.reasoningEffort) },
             }
           }
           // Durable auto: the deployment default is the base route; the router
@@ -1169,7 +1169,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         markExplicitModelSelection(agent.session, 'web', { provider: next.provider, model: next.model, ...next.reasoningEffort === undefined ? {} : { reasoningEffort: String(next.reasoningEffort) } })
       },
       assembled: undefined,
-    } as WebModelSelectionRef & { resetAutomatic(next: ModelSelection): void }
+    } as WebModelSelectionRef
     // Non-claiming reset: Auto uses this so the deployment default becomes the
     // effective route WITHOUT re-claiming manual authority — the claiming
     // setter would immediately undo the release.
@@ -2281,7 +2281,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { sessionId } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
-        if (request.payload.mode === 'auto') {
+        const payload = request.payload
+        if ('mode' in payload) {
           // Auto: release manual authority (durable, works after a process
           // restart) AND reset any picked model to the deployment default —
           // a stale picked route must not impersonate a manual choice, and a
@@ -2310,7 +2311,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             return ok(request, { selected: { ...automatic } })
           })
         }
-        const { provider, model, reasoningEffort } = request.payload
+        const { provider, model, reasoningEffort } = payload
         return serializeImageAdmission(found.agent, async () => {
           try {
             const resolved = await ctx.llm.resolveCallConfig({

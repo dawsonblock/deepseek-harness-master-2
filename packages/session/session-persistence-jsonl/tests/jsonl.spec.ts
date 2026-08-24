@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { claimModelSelection, releaseToAuto, reconstructSelectionState } from '@deepseek-ai/dsh-agent'
 import {
   encodeSegment, eventLines, logPath, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
@@ -372,6 +373,34 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await ctx.sessionPersistence.append(m.id, log)
     const loaded = await ctx.sessionPersistence.load(m.id)
     expect(loaded.events).toEqual(log) // chunks preserved, contiguous seqs
+  })
+
+  it('round-trips model/usage accounting events with ignorable envelope', async () => {
+    const m = meta('model-usage')
+    const log: SessionEvent[] = [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+      { type: 'model/request', seq: 2, time: 3, data: { turn: 1, step: 1, attempt: 1, provider: 'deepseek', model: 'deepseek-v4-flash' }, ignorable: true },
+      { type: 'model/usage', seq: 3, time: 4, data: {
+        turn: 1, step: 1, attempt: 1, provider: 'deepseek', model: 'deepseek-v4-flash',
+        usage: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheMissTokens: 1000, source: 'provider' },
+        routingDecisionId: 'R123',
+      }, ignorable: true },
+      { type: 'step/end', seq: 4, time: 5, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 5, time: 6, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, log)
+    const loaded = await ctx.sessionPersistence.load(m.id)
+    expect(loaded.events).toEqual(log)
+    // The model/usage event survives with its ignorable marker and routingDecisionId.
+    const usageEvent = loaded.events.find(e => e.type === 'model/usage')!
+    expect(usageEvent.ignorable).toBe(true)
+    expect(usageEvent.data).toMatchObject({
+      attempt: 1,
+      routingDecisionId: 'R123',
+      usage: { inputTokens: 1000, cacheReadTokens: 800, cacheMissTokens: 1000, source: 'provider' },
+    })
   })
 
   it('source-qualifies revisions across roots while preserving same-log reopen identity', async () => {
@@ -1618,4 +1647,123 @@ describe('JsonlSessionPersistence: edge cases', () => {
     expect(session.events.length).toBe(0)
   })
 
+})
+
+// Real two-process durability: each scenario creates a session on one context,
+// flushes to disk, disposes the context (simulating process death), then loads
+// the session from the same persistent storage on a fresh context. This is not
+// a simulated restart by copying session.events — it is a real reload from the
+// JSONL files on disk. The flush barrier guarantees the authority event reached
+// disk before the RPC returned, so disposal (or SIGKILL) cannot lose it.
+describe('v0.15.5 model-selection durability (real JSONL reload)', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-durability-'))
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  async function freshContext(): Promise<{ ctx: Context; dispose: () => Promise<void> }> {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
+    return { ctx, dispose: async () => { await ctx.fiber.dispose() } }
+  }
+
+  async function loadEvents(ctx: Context, sessionId: SessionId): Promise<readonly SessionEvent[]> {
+    const loaded = await ctx.sessionPersistence.load(sessionId)
+    if (loaded === undefined) throw new Error(`session ${sessionId} not found on disk`)
+    return loaded.events
+  }
+
+  it('manual selection survives process death after flush', async () => {
+    // Process A: create session, claim manual Pro, flush, die.
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-manual'))
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-pro' } })
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    // Process B: load from the same disk, reconstruct selection state.
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-manual'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({
+      mode: 'manual',
+      selection: { provider: 'deepseek-official', model: 'deepseek-pro' },
+    })
+    await b.dispose()
+  })
+
+  it('Auto release survives process death after flush', async () => {
+    // Process A: manual Pro, then release to Auto, flush, die.
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-auto'))
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-pro' } })
+    releaseToAuto(sessionA, 'web')
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    // Process B: load, reconstruct — must be Auto, not the stale manual Pro.
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-auto'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({ mode: 'auto' })
+    await b.dispose()
+  })
+
+  it('manual reselection survives process death after flush', async () => {
+    // Process A: manual Pro, then manual Flash, flush, die.
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-reselect'))
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-pro' } })
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'deepseek-official', model: 'deepseek-flash' } })
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    // Process B: load, reconstruct — must be Flash (latest authority wins).
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-reselect'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({
+      mode: 'manual',
+      selection: { provider: 'deepseek-official', model: 'deepseek-flash' },
+    })
+    await b.dispose()
+  })
+
+  it('foreign route cannot resurrect after restart', async () => {
+    // Process A: manual ForeignModel, request header carries it, then Auto, flush, die.
+    const a = await freshContext()
+    const sessionA = a.ctx.sessions.create(SessionId('dur-foreign'))
+    // Simulate a stale request/header that carries the foreign model.
+    sessionA.append('request/header', {
+      header: { config: { provider: 'foreign-gateway', model: 'foreign-model' } },
+      reason: 'initial',
+    })
+    // Manual claim of the foreign model.
+    claimModelSelection(sessionA, { authority: 'user', source: 'web', selection: { provider: 'foreign-gateway', model: 'foreign-model' } })
+    // Release to Auto — the durable state is now Auto, not the foreign manual.
+    releaseToAuto(sessionA, 'web')
+    await a.ctx.sessions.flush(sessionA)
+    await a.dispose()
+
+    // Process B: load, reconstruct — must be Auto. The stale request/header
+    // still names the foreign model, but the durable Auto authority overrides it.
+    const b = await freshContext()
+    const events = await loadEvents(b.ctx, SessionId('dur-foreign'))
+    const state = reconstructSelectionState(events)
+    expect(state).toMatchObject({ mode: 'auto' })
+    // The request/header event is still present, but it must not be the authority.
+    const headerEvent = events.find(e => e.type === 'request/header')
+    expect(headerEvent).toBeDefined()
+    // The latest authority event is Auto, not manual foreign.
+    const authorityEvents = events.filter(e => e.type === 'model/selection-authority')
+    const latest = authorityEvents.at(-1)
+    expect(latest?.data.mode).toBe('auto')
+    await b.dispose()
+  })
 })

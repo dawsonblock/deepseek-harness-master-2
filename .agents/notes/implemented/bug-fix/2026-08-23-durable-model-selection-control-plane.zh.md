@@ -28,11 +28,11 @@ v0.15.4 引入了 `ModelSelectionState` 作为会话模型选择权的持久化�
 
 - `authority.spec.ts`：回归测试断言 `claimModelSelection`/`releaseToAuto` 追加的 `model/selection-authority` 事件从不携带 `ignorable: true`，证明使旧运行时拒绝日志的契约。
 - `coordinator-contract.ts`：持久化兼容性测试追加真实的 `model/selection-authority` 事件（不带 `ignorable`），持久化、重载，并验证加载的事件没有 `ignorable` 字段——证明磁盘上的形状是 `assertEventsSupported` 在旧运行时上拒绝的必需事件形状。
-- `api-proxy-models.spec.ts`：两个重启模拟测试证明持久化 Auto 在过期外部请求头下存活（外部模型透传），并在无路由器插件时解析到部署默认值。一个 flush 失败测试证明 `selectModel` 返回 `session-persistence-failed` 错误并隔离会话（后续操作被拒绝）。
+- `api-proxy-models.spec.ts`：两个重启模拟测试证明持久化 Auto 在过期外部请求头下存活（外部模型透传），并在无路由器插件时解析到部署默认值。一个 flush 失败测试证明 `selectModel` 返回 `session-persistence-failed` 错误并隔离会话（后续操作被拒绝）。一个执行阻断测试证明被隔离的会话无法 `prompt`——守卫在任何 `agent/request` 或 `llm/request` 触发前拒绝。一个拆卸存活测试证明隔离不会被 agent teardown/HMR 清除。
+- `rpc-schemas.spec.ts`：schema 测试证明 Zod 判别联合接受带 `{ sessionId }` 详情的 `session-persistence-failed`，并在详情缺失时拒绝。
 - `model-router.spec.ts`：完整请求瀑布测试证明手动 ForeignModel → request/header → Auto → 路由器重启 → 过期外部路由永远不会到达 `llm/request`；路由器选择快速路由，外部模型永远不会出现在任何 LLM 请求中。
+- `jsonl.spec.ts` 和 `sqlite.spec.ts`：针对两个官方持久化后端的真实双进程持久化测试。每个夹具进程挂载后端、执行模型选择变更、刷新、打印成功标记，然后在标记后立即被 SIGKILL——无任意成功后睡眠。第二个进程挂载同一存储位置并从磁盘验证持久状态。覆盖手动选择、Auto 释放、手动重选、外部路由复活，以及刷新失败后 SIGKILL 再重载（重载状态是有效的完整状态，旧或新，永不畸形）。JSONL：5/5 场景通过。SQLite：5/5 场景通过。合计：10/10。
 - `verify-model-state-events-not-ignorable`：扫描 1,254 个源文件的静态门控，已验证能捕获原始缺陷并在修复后通过。
-
-子进程 SIGKILL 持久化测试（手动存活 kill、Auto 存活 kill、手动重选存活重启、foreign→Auto 存活重启）是 v0.15.5 RC1 资格门控所必需的，但尚未实现——它们需要安装的依赖和真实持久化后端。
 
 ## 考虑过的替代方案
 
@@ -50,4 +50,4 @@ flush 屏障为每次 `selectModel` 调用增加一次等待的持久化排空�
 
 隔离是进程范围的 fail-closed 条件，而非事务性回滚。内存会话保留已追加的事件，但会话在进程重启前不可用。未来的 v0.16 如果该窗口在运维中代价高昂，可以引入具有更强提交语义的存储原语。
 
-本笔记描述已实现的行为。v0.15.5 RC1 资格门控还需要尚未完成的检查：子进程 SIGKILL 持久化测试、快照刷新、类型检查、聚焦测试和 Agent Note 翻译对验证。
+P0 实现已代码完成并通过发布资格。目标行为测试、RPC schema 测试、隔离执行阻断和拆卸存活测试、静态门控、翻译对验证，以及真实双进程 SIGKILL 持久化测试（JSONL 和 SQLite，10/10 场景）均通过。完整 TypeScript 构建产生零错误。快照刷新通过 128/128；快照重放通过 124/128，其中 4 个预存非确定性失败（并行 `tool/settled` 事件排序和 `durationMs` 计时差异）与这些变更无关。

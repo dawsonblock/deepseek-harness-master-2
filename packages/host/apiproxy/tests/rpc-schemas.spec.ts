@@ -227,12 +227,13 @@ describe('sessions domain schemas', () => {
       }],
       failures: [{ id: 'broken', name: 'Broken', message: 'offline' }],
     }).groups[0]?.models[0]?.id).toBe('deepseek-v4-flash')
-    expect(sessionSelectModelRequestSchema.parse({
+    const parsed = sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
-    }).reasoningEffort).toBe('max')
+    })
+    expect('reasoningEffort' in parsed ? parsed.reasoningEffort : undefined).toBe('max')
     expect(sessionSelectModelValueSchema.parse({
       selected: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
     }).selected.reasoningEffort).toBe('max')

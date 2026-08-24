@@ -131,13 +131,47 @@ export type FinishReason = FinishReasonMap[keyof FinishReasonMap]
  * reported separately as `cacheReadTokens`/`cacheWriteTokens` (billed input =
  * sum of the three). Adapters whose providers fold cache hits into a total
  * prompt count (DeepSeek's `prompt_tokens`) subtract them out.
+ *
+ * v0.16.0 extends the vocabulary with explicit cache-miss, total, provenance,
+ * and execution-join fields. `cacheMissTokens` makes the disjoint split
+ * explicit: `inputTokens === cacheMissTokens` when both are present (invariant
+ * enforced by the normalizer). `totalTokens` is the provider-reported grand
+ * total across ALL token buckets; under the disjoint convention it equals
+ * `inputTokens + (cacheReadTokens ?? 0) + outputTokens`, NOT
+ * `inputTokens + outputTokens`. `source` marks whether the counts come from
+ * the provider response or a local estimator; absence means legacy/unclassified
+ * (pre-v0.16.0 events), not implicitly provider — folds that distinguish
+ * provider-authoritative from estimated must treat absent as unknown. `requestId`
+ * carries the provider response id. `routingDecisionId` joins the usage to the
+ * durable routing decision that selected the model.
  */
 export interface TokenUsage {
   inputTokens: number
   outputTokens: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
+  /** Explicit uncached-input count; invariant: equal to `inputTokens` when both are present. Present when the provider reports cache miss separately. */
+  cacheMissTokens?: number
   reasoningTokens?: number
+  /** Provider-reported grand total across all token buckets. Under the disjoint convention: `inputTokens + (cacheReadTokens ?? 0) + outputTokens`, NOT `inputTokens + outputTokens`. */
+  totalTokens?: number
+  /** Whether the counts come from the provider response or a local estimator. Absent means legacy/unclassified (pre-v0.16.0), not implicitly provider. */
+  source?: 'provider' | 'estimated'
+  /** Provider response id for billing correlation. */
+  requestId?: string
+  /** Correlation id joining the usage to the durable routing decision that selected the model. */
+  routingDecisionId?: string
+}
+
+/**
+ * Total billed prompt tokens under the disjoint convention: uncached input
+ * plus cached input. This is the quantity pricing multiplies by the input
+ * rate; it is NOT `inputTokens` alone (which excludes cache reads).
+ * @param usage - the token usage record to sum.
+ * @returns `inputTokens + (cacheReadTokens ?? 0)`.
+ */
+export function totalPromptTokens(usage: TokenUsage): number {
+  return usage.inputTokens + (usage.cacheReadTokens ?? 0)
 }
 
 /** Display metadata for one registered provider route. */
@@ -309,13 +343,28 @@ export interface ReplayEnvelope {
  * may throw, but `LlmRuntime.stream()` normalizes that failure to a terminal
  * `error` or `aborted` finish before exposing it to consumers.
  */
+/** One provider usage invariant violation, preserved for structured diagnostics. */
+export interface UsageDiagnostic {
+  /** Stable diagnostic code. */
+  code: 'TOKEN_USAGE_INCONSISTENT'
+  /** Which invariant failed. */
+  invariant:
+    | 'prompt-cache-decomposition'
+    | 'total-token-arithmetic'
+    | 'canonical-cache-miss'
+  /** Human-readable description of the observed mismatch. */
+  message: string
+  /** Raw provider values at the time of the violation. */
+  observed: Record<string, number | undefined>
+}
+
 export type StreamChunk =
   | { type: 'block-start'; index: number; blockType: ContentBlockType }
   | { type: 'text-delta'; index: number; text: string }
   | { type: 'reasoning-delta'; index: number; text: string }
   | { type: 'tool-call-delta'; index: number; id: CallId; name?: string; argumentsDelta: string }
   | { type: 'block-end'; index: number; block: ContentBlock }
-  | { type: 'usage'; usage: TokenUsage }
+  | { type: 'usage'; usage: TokenUsage; diagnostics?: readonly UsageDiagnostic[] }
   | {
     type: 'finish'
     reason: FinishReason

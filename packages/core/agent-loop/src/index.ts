@@ -20,6 +20,7 @@ import type {
   SessionStartSource,
 } from '@deepseek-ai/dsh-agent'
 import { errorChain } from '@deepseek-ai/dsh-llm'
+import type { TokenEstimator } from '@deepseek-ai/dsh-llm'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
@@ -315,6 +316,9 @@ export class AgentLoop extends Service implements AgentFactory {
   private readonly ownership: FactoryOwnership
   /** Plain holder prevents Cordis from re-tracing the factory's dependency context through a caller shadow. */
   private readonly runtime: { ctx: Context }
+  /** Optional token estimator captured via `ctx.inject`; absent when
+   * `@deepseek-ai/dsh-llm`'s token estimator resolver is not loaded. */
+  private tokenEstimator: TokenEstimator | undefined
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentLoop')
@@ -351,6 +355,12 @@ export class AgentLoop extends Service implements AgentFactory {
     ctx.systemPrompt.variable('provider', context => context.agent?.options.provider)
     ctx.systemPrompt.variable('model', context => context.agent?.options.model)
     ctx.systemPrompt.variable('cwd', context => context.agent?.session.header.cwd)
+    // Capture the optional token estimator when available; the agent loop
+    // uses it for preflight context estimation without requiring it.
+    ctx.inject(['tokenEstimator'], (estimatorCtx) => {
+      this.tokenEstimator = estimatorCtx.tokenEstimator
+      return () => { this.tokenEstimator = undefined }
+    })
 
     for (const { id, sessionId, cwd, resumeSessionId, ...options } of this.config.agents) {
       const meta = cwd === undefined ? {} : { cwd }
@@ -546,7 +556,7 @@ export class AgentLoop extends Service implements AgentFactory {
       throw abort.signal.reason instanceof Error ? abort.signal.reason : new Error(String(abort.signal.reason))
     }
     try {
-      const agent = machine = new ReactLoopAgent(loopCtx, id, options, session)
+      const agent = machine = new ReactLoopAgent(loopCtx, id, options, session, this.tokenEstimator)
       machineReady.resolve()
       assertLive()
 

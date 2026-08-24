@@ -24,6 +24,45 @@ import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from 
 import { foldSurfaceTokens } from './surface-fold.ts'
 
 export type * from './types.ts'
+export type * from './pricing.ts'
+export type * from './aggregate.ts'
+export type * from './routing-outcome.ts'
+export type * from './context-estimate.ts'
+export type * from './context-estimator.ts'
+export {
+  DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23,
+  DEFAULT_PRICING_REGISTRY,
+  calculateCost,
+  lookupPricing,
+} from './pricing.ts'
+export {
+  extractUsageRecords,
+  routingDecisionAccounting,
+  usageByModel,
+  usageByRoutingDecision,
+  usageBySession,
+  usageByTurn,
+} from './aggregate.ts'
+export {
+  deriveRoutingOutcomes,
+  deriveRoutingOutcomesWithFeatures,
+  deriveTaskEconomics,
+  deriveWorkloadFeatures,
+} from './routing-outcome.ts'
+export {
+  aggregateEstimatorQuality,
+  deriveContextWorkloadFeatures,
+  deriveEstimationError,
+  estimateRequestInput,
+} from './context-estimate.ts'
+export {
+  GENERIC_ESTIMATOR_IDENTITY,
+  GenericTokenEstimator,
+  TokenEstimator,
+  TokenEstimatorResolver,
+  registerTokenEstimatorResolver,
+} from './token-estimator-resolver.ts'
+import { registerTokenEstimatorResolver } from './token-estimator-resolver.ts'
 
 interface MeasurementAnchor {
   readonly header: EpochHeader | undefined
@@ -82,6 +121,11 @@ export class TokenMeter extends Service {
   constructor(ctx: Context, config: TokenMeterConfig = {}) {
     super(ctx, 'tokenMeter')
     validateConfigKeys(config)
+
+    // Register the token estimator resolver so the agent loop can compute
+    // preflight estimates. The resolver owns the `tokenEstimator` service
+    // name; provider estimators register with it.
+    registerTokenEstimatorResolver(ctx)
 
     // Projection registration is an optional child: compositions without the
     // generic registry keep the meter's standalone read shape.

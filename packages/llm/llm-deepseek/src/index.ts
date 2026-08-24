@@ -70,6 +70,11 @@ export type { DeepSeekFileId as DeepSeekFileIdType } from './file-id.ts'
 export { DeepSeekUploadIndex, deepSeekFileScope } from './upload-index.ts'
 export type { DeepSeekUploadRecord } from './upload-index.ts'
 export type { RequestDefaults } from './serialize.ts'
+export {
+  DeepSeekTokenizerEstimator,
+  registerDeepSeekTokenizerEstimator,
+} from './token-estimator.ts'
+export type { TokenizerBackend } from '@deepseek-ai/dsh-llm'
 export type * from './types.ts'
 
 export const name = 'llm-deepseek'

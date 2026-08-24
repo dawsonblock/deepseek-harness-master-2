@@ -9,7 +9,7 @@
  */
 
 import { CallId, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, FinishReason, StreamChunk, TokenUsage, UsageDiagnostic } from '@deepseek-ai/dsh-llm'
 import { DONE } from './sse.ts'
 import type { WireChunk, WireUsage } from './types.ts'
 
@@ -42,22 +42,87 @@ export function mapFinishReason(reason: string): FinishReason {
   }
 }
 
+/** Stable diagnostic code emitted when provider usage fields are internally inconsistent. */
+export const TOKEN_USAGE_INCONSISTENT = 'TOKEN_USAGE_INCONSISTENT'
+
+/**
+ * Validate provider-side invariants without rewriting the provider's values.
+ * Collects structured diagnostics when DeepSeek's reported buckets do not sum
+ * correctly. Raw values are preserved in the returned `TokenUsage` regardless
+ * — provider billing data wins over inferred arithmetic.
+ *
+ * Invariants checked:
+ * - `prompt_cache_hit_tokens + prompt_cache_miss_tokens === prompt_tokens`
+ * - `prompt_tokens + completion_tokens === total_tokens`
+ * - `inputTokens === cacheMissTokens` (canonical disjoint invariant)
+ */
+function validateUsageInvariants(usage: WireUsage, inputTokens: number, cacheMiss: number | undefined): UsageDiagnostic[] {
+  const diagnostics: UsageDiagnostic[] = []
+  const hit = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens
+  if (hit !== undefined && cacheMiss !== undefined && hit + cacheMiss !== usage.prompt_tokens) {
+    diagnostics.push({
+      code: TOKEN_USAGE_INCONSISTENT,
+      invariant: 'prompt-cache-decomposition',
+      message: `prompt_cache_hit_tokens (${hit}) + prompt_cache_miss_tokens (${cacheMiss}) !== prompt_tokens (${usage.prompt_tokens})`,
+      observed: { hit, cacheMiss, promptTokens: usage.prompt_tokens },
+    })
+  }
+  if (usage.total_tokens !== undefined && usage.prompt_tokens + usage.completion_tokens !== usage.total_tokens) {
+    diagnostics.push({
+      code: TOKEN_USAGE_INCONSISTENT,
+      invariant: 'total-token-arithmetic',
+      message: `prompt_tokens (${usage.prompt_tokens}) + completion_tokens (${usage.completion_tokens}) !== total_tokens (${usage.total_tokens})`,
+      observed: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens },
+    })
+  }
+  if (cacheMiss !== undefined && inputTokens !== cacheMiss) {
+    diagnostics.push({
+      code: TOKEN_USAGE_INCONSISTENT,
+      invariant: 'canonical-cache-miss',
+      message: `canonical inputTokens (${inputTokens}) !== cacheMissTokens (${cacheMiss})`,
+      observed: { inputTokens, cacheMissTokens: cacheMiss },
+    })
+  }
+  return diagnostics
+}
+
 /**
  * Map wire usage fields. DeepSeek's `prompt_tokens` INCLUDES cache hits
  * (`prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens`,
  * api/create-chat-completion); the harness TokenUsage convention is
  * DISJOINT counts, so cache reads are subtracted out of `inputTokens`.
+ * `cacheMissTokens` makes the disjoint split explicit: it equals `inputTokens`
+ * when the provider reports cache hit/miss separately. Provider invariants are
+ * validated without rewriting the provider's values; raw numbers are preserved
+ * even when an invariant fails.
  * @param usage - wire usage from the finish chunk or the trailing usage-only chunk.
- * @returns disjoint harness counts; cache/reasoning fields present only when the wire reported them.
+ * @param requestId - provider response id from the carrying chunk, when present.
+ * @returns disjoint harness counts; cache/reasoning/total/provenance fields present only when the wire reported them.
  */
-export function mapUsage(usage: WireUsage): TokenUsage {
+/** Result of mapping wire usage to canonical TokenUsage with diagnostics. */
+export interface MappedUsage {
+  usage: TokenUsage
+  diagnostics: readonly UsageDiagnostic[]
+}
+
+export function mapUsage(usage: WireUsage, requestId?: string): MappedUsage {
   const cacheRead = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens
+  const cacheMiss = usage.prompt_cache_miss_tokens
   const reasoning = usage.completion_tokens_details?.reasoning_tokens
+  const inputTokens = usage.prompt_tokens - (cacheRead ?? 0)
+  const diagnostics = validateUsageInvariants(usage, inputTokens, cacheMiss)
   return {
-    inputTokens: usage.prompt_tokens - (cacheRead ?? 0),
-    outputTokens: usage.completion_tokens,
-    ...cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {},
-    ...reasoning !== undefined ? { reasoningTokens: reasoning } : {},
+    usage: {
+      inputTokens,
+      outputTokens: usage.completion_tokens,
+      source: 'provider',
+      ...cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {},
+      ...cacheMiss !== undefined ? { cacheMissTokens: cacheMiss } : {},
+      ...reasoning !== undefined ? { reasoningTokens: reasoning } : {},
+      ...usage.total_tokens !== undefined ? { totalTokens: usage.total_tokens } : {},
+      ...requestId !== undefined ? { requestId } : {},
+    },
+    diagnostics,
   }
 }
 
@@ -91,6 +156,7 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
   const order: OpenBlock[] = []
   let pendingFinish: FinishReason | undefined
   let pendingUsage: TokenUsage | undefined
+  let pendingDiagnostics: readonly UsageDiagnostic[] = []
 
   function open(kind: OpenBlock['kind']): OpenBlock {
     const block: OpenBlock = { index: nextIndex++, kind, text: '' }
@@ -103,7 +169,7 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
       for (const block of order) {
         yield { type: 'block-end', index: block.index, block: closeBlock(block) }
       }
-      if (pendingUsage) yield { type: 'usage', usage: pendingUsage }
+      if (pendingUsage) yield { type: 'usage', usage: pendingUsage, ...pendingDiagnostics.length > 0 ? { diagnostics: pendingDiagnostics } : {} }
       const reason = pendingFinish ?? { kind: 'stop' as const }
       yield {
         type: 'finish',
@@ -175,8 +241,13 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
     }
 
     // Usage may arrive attached to the finish chunk or as a trailing
-    // usage-only chunk — keep the latest.
-    if (chunk.usage) pendingUsage = mapUsage(chunk.usage)
+    // usage-only chunk — keep the latest. The chunk id is the provider
+    // response id, carried as requestId for billing correlation.
+    if (chunk.usage) {
+      const mapped = mapUsage(chunk.usage, chunk.id)
+      pendingUsage = mapped.usage
+      pendingDiagnostics = mapped.diagnostics
+    }
   }
 
   // parseSse guarantees the [DONE] sentinel (or throws); reaching here means

@@ -76,13 +76,15 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: {
             ok: true,
             value: {
-              selected: {
-                provider: request.payload.provider,
-                model: request.payload.model,
-                ...request.payload.reasoningEffort === undefined
-                  ? {}
-                  : { reasoningEffort: request.payload.reasoningEffort },
-              },
+              selected: 'provider' in request.payload
+                ? {
+                  provider: request.payload.provider,
+                  model: request.payload.model,
+                  ...request.payload.reasoningEffort === undefined
+                    ? {}
+                    : { reasoningEffort: request.payload.reasoningEffort },
+                }
+                : { provider: 'deepseek-official', model: 'deepseek-chat' },
             },
           },
         }

@@ -225,7 +225,7 @@ describe('hmr node half', () => {
         }),
         end: vi.fn(),
       }
-      void (routes[0] as Extract<WebRoute, { kind: 'exact' }>).handler(
+      void routes[0]?.handler(
         { method: 'GET' } as never,
         res as never,
       )

@@ -253,7 +253,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         if (synthetic?.type !== 'tool/result' || synthetic.data.message.content[0].content[0]?.type !== 'text') {
           throw new Error('expected a text tool result')
         }
-        expect(synthetic.data.message.content[0].content[0].text).toContain('retry only if the operation is read-only or idempotent')
+        expect(synthetic.data.message.content[0].content[0].text).toContain('Retry only if the operation is read-only or idempotent')
         expect(synthetic.data.message.content[0].content[0].text).toContain('if it may have side effects, first verify external state or ask the user')
         const resumed = Session.create(m.id, loaded.events, loaded.meta)
         const resumedResult = resumed.deriveMessages().find(message => message.content.some(block => block.type === 'tool-result'))
