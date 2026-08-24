@@ -18,6 +18,8 @@
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
 {"type":"model/usage","data":{"turn":1,"step":1,"attempt":1,"provider":"deepseek-official","model":"deepseek-v4-flash","usage":{"inputTokens":10,"outputTokens":5}},"ignorable":true}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"text","text":"CHILD_RESULT"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{sessionId}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[13,14,15,16,17],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"text","text":"CHILD_RESULT"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{sessionId}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[15,16,17,18,19],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}
+{"type":"model/context-preflight","data":{"turn":1,"step":1,"attempt":1,"phase":"post-routing","provider":"deepseek-official","model":"deepseek-v4-flash","estimatedInputTokens":4831,"reservedOutputTokens":0,"contextWindowTokens":0,"remainingTokens":0,"usageRatio":1,"status":"reject","estimatorId":"character-heuristic","estimatorVersion":"1"},"ignorable":true}
+{"type":"model/context-preflight","data":{"turn":1,"step":1,"attempt":1,"phase":"pre-routing","provider":"deepseek-official","model":"deepseek-v4-flash","estimatedInputTokens":4831,"reservedOutputTokens":0,"contextWindowTokens":0,"remainingTokens":0,"usageRatio":1,"status":"reject","estimatorId":"character-heuristic","estimatorVersion":"1"},"ignorable":true}
