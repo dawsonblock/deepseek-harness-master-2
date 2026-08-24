@@ -14,8 +14,10 @@ import { Context } from '@deepseek-ai/cordis'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import {
   TokenEstimator as TokenEstimatorContract,
+  TokenEstimatorRegistry as TokenEstimatorRegistryContract,
   type TokenEstimate,
   type TokenEstimateResult,
+  type TokenEstimateInput,
   type EstimatorIdentity,
   type EstimatePrecision,
   type ProviderTokenEstimator,
@@ -68,7 +70,7 @@ export class TokenEstimatorResolver extends TokenEstimatorContract {
 
   /** Register a provider-specific estimator. The estimator must declare its
    * provider route and `supports` predicate. */
-  registerProvider(estimator: ProviderTokenEstimator): () => void {
+  register(estimator: ProviderTokenEstimator): () => void {
     this.providers.push(estimator)
     return () => {
       const index = this.providers.indexOf(estimator)
@@ -76,11 +78,7 @@ export class TokenEstimatorResolver extends TokenEstimatorContract {
     }
   }
 
-  async estimateInput(input: {
-    provider: string
-    model: string
-    request: GenerateOptions
-  }): Promise<TokenEstimateResult> {
+  async estimateInput(input: TokenEstimateInput): Promise<TokenEstimateResult> {
     const providerEstimator = this.providers.find(
       candidate =>
         candidate.provider === input.provider && candidate.supports(input.model),
@@ -103,23 +101,46 @@ export class TokenEstimatorResolver extends TokenEstimatorContract {
 }
 
 /**
- * Register the token estimator resolver on the Context. This owns the
- * `tokenEstimator` service name; provider estimators register with the
- * returned resolver instance.
+ * Registry service that delegates provider estimator registrations to the
+ * resolver. This owns the `tokenEstimatorRegistry` service name so provider
+ * packages can register without casting to the concrete resolver.
+ */
+export class TokenEstimatorRegistryImpl extends TokenEstimatorRegistryContract {
+  private readonly resolver: TokenEstimatorResolver
+
+  constructor(ctx: Context, resolver: TokenEstimatorResolver) {
+    super(ctx, 'tokenEstimatorRegistry')
+    this.resolver = resolver
+  }
+
+  register(estimator: ProviderTokenEstimator): () => void {
+    return this.resolver.register(estimator)
+  }
+}
+
+/**
+ * Register the token estimator resolver and registry on the Context. The
+ * resolver owns the `tokenEstimator` service name; the registry owns the
+ * `tokenEstimatorRegistry` service name. Provider packages register through
+ * `ctx.tokenEstimatorRegistry`.
  *
  * @param ctx - the Cordis Context to register on.
  * @returns the registered `TokenEstimatorResolver` instance.
  */
 export function registerTokenEstimatorResolver(ctx: Context): TokenEstimatorResolver {
-  return new TokenEstimatorResolver(ctx)
+  const resolver = new TokenEstimatorResolver(ctx)
+  new TokenEstimatorRegistryImpl(ctx, resolver)
+  return resolver
 }
 
 // Re-export the contract types for backward compatibility with existing
 // consumers that imported them from token-meter.
 export type {
   TokenEstimator,
+  TokenEstimatorRegistry,
   TokenEstimate,
   TokenEstimateResult,
+  TokenEstimateInput,
   EstimatorIdentity,
   EstimatePrecision,
   ProviderTokenEstimator,

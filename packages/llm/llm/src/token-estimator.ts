@@ -55,7 +55,7 @@ export type TokenEstimateResult =
 /** A tokenizer backend supplying real token counts. Only a real backend
  * earns `precision: 'tokenizer'`; an arbitrary callback does not. */
 export interface TokenizerBackend {
-  /** Stable backend id (e.g. `'deepseek-offline-tokenizer'`). */
+  /** Stable backend id (e.g. `'deepseek-official-tokenizer'`). */
   id: string
   /** Pinned backend version or tokenizer hash, for provenance. */
   version: string
@@ -63,14 +63,26 @@ export interface TokenizerBackend {
   countTokens(text: string): Promise<number>
 }
 
+/** Input to `TokenEstimator.estimateInput`: the provider route, model id,
+ * and fully assembled request. */
+export interface TokenEstimateInput {
+  /** Provider route matching `GenerateOptions.provider` (e.g. `'deepseek-official'`). */
+  provider: string
+  /** Model id matching `GenerateOptions.model`. */
+  model: string
+  /** The fully assembled request. */
+  request: GenerateOptions
+}
+
 /**
  * Provider-specific token estimator. Providers register implementations with
- * the resolver rather than owning the `tokenEstimator` service name.
+ * the `TokenEstimatorRegistry` rather than owning the `tokenEstimator`
+ * service name.
  */
 export interface ProviderTokenEstimator {
-  /** Provider route this estimator serves (e.g. `'deepseek-official'`). */
+  /** Provider route this estimator serves, matching `GenerateOptions.provider`. */
   readonly provider: string
-  /** Estimator identity for provenance stamping. */
+  /** Estimator identity for provenance stamping, separate from the provider route. */
   readonly identity: EstimatorIdentity
   /** Precision class of this estimator. */
   readonly precision: EstimatePrecision
@@ -81,9 +93,10 @@ export interface ProviderTokenEstimator {
 }
 
 /**
- * Abstract token estimator resolver service. One resolver owns the
- * `tokenEstimator` Cordis service name; provider estimators and the generic
- * fallback register with it.
+ * Token estimator capability: produces preflight input token estimates.
+ * Consumers: agent preflight, compaction, resource governor, router feature
+ * capture. The implementation lives in `token-meter`; provider estimators
+ * register through {@link TokenEstimatorRegistry}.
  */
 export abstract class TokenEstimator extends Service {
   /**
@@ -93,11 +106,23 @@ export abstract class TokenEstimator extends Service {
    * @param input - provider, model, and the fully assembled request.
    * @returns an estimate result, either available or explicitly unavailable.
    */
-  abstract estimateInput(input: {
-    provider: string
-    model: string
-    request: GenerateOptions
-  }): Promise<TokenEstimateResult>
+  abstract estimateInput(input: TokenEstimateInput): Promise<TokenEstimateResult>
+}
+
+/**
+ * Token estimator registry: accepts provider-specific estimator registrations.
+ * Provider packages (`llm-deepseek`) consume this service to register their
+ * estimators without depending on the resolver implementation (`token-meter`).
+ */
+export abstract class TokenEstimatorRegistry extends Service {
+  /**
+   * Register a provider-specific estimator. The estimator must declare its
+   * provider route and `supports` predicate.
+   *
+   * @param estimator - the provider estimator to register.
+   * @returns a disposer that unregisters the estimator.
+   */
+  abstract register(estimator: ProviderTokenEstimator): () => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -105,6 +130,9 @@ declare module '@deepseek-ai/cordis' {
     /** Token estimator capability. Consumers: agent preflight, compaction,
      * resource governor, router feature capture. */
     tokenEstimator: TokenEstimator
+    /** Token estimator registry. Consumers: provider packages registering
+     * provider-specific estimators. */
+    tokenEstimatorRegistry: TokenEstimatorRegistry
   }
 }
 

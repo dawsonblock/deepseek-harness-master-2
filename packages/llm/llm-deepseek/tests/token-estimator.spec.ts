@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { DeepSeekTokenizerEstimator, registerDeepSeekTokenizerEstimator } from '@deepseek-ai/dsh-llm-deepseek'
+import { DeepSeekTokenizerEstimator, registerDeepSeekTokenizerEstimator, createDeepSeekTokenizerBackend } from '@deepseek-ai/dsh-llm-deepseek'
 import type { TokenizerBackend } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -16,7 +16,7 @@ function mockRequest(text: string): GenerateOptions {
 
 function mockBackend(count: (text: string) => number): TokenizerBackend {
   return {
-    id: 'deepseek-offline-tokenizer',
+    id: 'deepseek-official-tokenizer',
     version: '1',
     countTokens: async text => count(text),
   }
@@ -30,7 +30,7 @@ describe('DeepSeekTokenizerEstimator', () => {
     const estimate = await estimator.estimateInput(mockRequest('hello world'))
     expect(estimate.precision).toBe('tokenizer')
     expect(estimate.source).toBe('estimated')
-    expect(estimate.estimator.id).toBe('deepseek-tokenizer')
+    expect(estimate.estimator.id).toBe('deepseek-official-tokenizer')
     expect(estimate.estimator.version).toBe('1')
     expect(estimate.tokens).toBe('hello world'.length)
   })
@@ -84,8 +84,13 @@ describe('DeepSeekTokenizerEstimator', () => {
     expect(result.available).toBe(true)
     if (result.available) {
       expect(result.estimate.precision).toBe('tokenizer')
-      expect(result.estimate.estimator.id).toBe('deepseek-tokenizer')
+      expect(result.estimate.estimator.id).toBe('deepseek-official-tokenizer')
       expect(result.estimate.tokens).toBe(6)
     }
+  })
+
+  it('createDeepSeekTokenizerBackend returns undefined when the tokenizer package is not installed', async () => {
+    const backend = await createDeepSeekTokenizerBackend()
+    expect(backend).toBeUndefined()
   })
 })

@@ -23,9 +23,11 @@ import type {
   TokenizerBackend,
 } from '@deepseek-ai/dsh-llm'
 
-/** Estimator identity for the DeepSeek tokenizer estimator. */
+/** Estimator identity for the DeepSeek tokenizer estimator. The id is
+ * separate from the provider route (`'deepseek-official'`) so implementation
+ * provenance is not overloaded with routing identity. */
 const DEEPSEEK_TOKENIZER_IDENTITY: EstimatorIdentity = {
-  id: 'deepseek-tokenizer',
+  id: 'deepseek-official-tokenizer',
   version: '1',
 }
 
@@ -107,11 +109,11 @@ function serializeRequestText(request: GenerateOptions): string {
 }
 
 /**
- * Register a DeepSeek tokenizer estimator with the `TokenEstimatorResolver`
+ * Register a DeepSeek tokenizer estimator with the `TokenEstimatorRegistry`
  * on the Context. When no backend is supplied, no provider estimator is
  * registered and the generic fallback remains active.
  *
- * @param ctx - the Cordis Context carrying the `tokenEstimator` resolver.
+ * @param ctx - the Cordis Context carrying the `tokenEstimatorRegistry` service.
  * @param backend - optional tokenizer backend for precise estimation.
  * @returns the registered estimator, or `undefined` when no backend is supplied.
  */
@@ -121,9 +123,38 @@ export function registerDeepSeekTokenizerEstimator(
 ): DeepSeekTokenizerEstimator | undefined {
   if (backend === undefined) return undefined
   const estimator = new DeepSeekTokenizerEstimator(backend)
-  const resolver = ctx.tokenEstimator
-  if (resolver instanceof Object && 'registerProvider' in resolver) {
-    ;(resolver as { registerProvider: (e: ProviderTokenEstimator) => () => void }).registerProvider(estimator)
-  }
+  ctx.tokenEstimatorRegistry.register(estimator)
   return estimator
+}
+
+/** Pinned version of the `@deepseek-kit/tokenizer` package that supplies the
+ * offline DeepSeek V4 tokenizer. The version is recorded in backend provenance
+ * so estimation accuracy can be correlated across releases. */
+const DEEPSEEK_TOKENIZER_BACKEND_VERSION = '0.0.1'
+
+/**
+ * Create a production `TokenizerBackend` backed by the offline DeepSeek
+ * tokenizer (`@deepseek-kit/tokenizer`). The package is loaded lazily so the
+ * hard dependency remains optional; when the package is not installed, the
+ * factory returns `undefined` and the generic heuristic fallback remains
+ * active.
+ *
+ * The backend id is `'deepseek-official-tokenizer'`, separate from the
+ * provider route (`'deepseek-official'`), so implementation provenance is
+ * not overloaded with routing identity.
+ *
+ * @returns a `TokenizerBackend` when the tokenizer package is available, otherwise `undefined`.
+ */
+export async function createDeepSeekTokenizerBackend(): Promise<TokenizerBackend | undefined> {
+  try {
+    const mod = await import('@deepseek-kit/tokenizer')
+    if (typeof mod.countTokens !== 'function') return undefined
+    return {
+      id: 'deepseek-official-tokenizer',
+      version: DEEPSEEK_TOKENIZER_BACKEND_VERSION,
+      countTokens: (text: string) => mod.countTokens(text),
+    }
+  } catch {
+    return undefined
+  }
 }

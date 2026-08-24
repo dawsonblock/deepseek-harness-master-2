@@ -73,6 +73,7 @@ export type { RequestDefaults } from './serialize.ts'
 export {
   DeepSeekTokenizerEstimator,
   registerDeepSeekTokenizerEstimator,
+  createDeepSeekTokenizerBackend,
 } from './token-estimator.ts'
 export type { TokenizerBackend } from '@deepseek-ai/dsh-llm'
 export type * from './types.ts'

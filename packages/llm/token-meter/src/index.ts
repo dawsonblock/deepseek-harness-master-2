@@ -59,7 +59,9 @@ export {
   GENERIC_ESTIMATOR_IDENTITY,
   GenericTokenEstimator,
   TokenEstimator,
+  TokenEstimatorRegistry,
   TokenEstimatorResolver,
+  TokenEstimatorRegistryImpl,
   registerTokenEstimatorResolver,
 } from './token-estimator-resolver.ts'
 import { registerTokenEstimatorResolver } from './token-estimator-resolver.ts'

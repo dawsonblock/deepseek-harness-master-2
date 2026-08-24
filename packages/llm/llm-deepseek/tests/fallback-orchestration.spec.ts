@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DeepSeekTokenizerEstimator } from '@deepseek-ai/dsh-llm-deepseek'
-import { TokenMeter, TokenEstimatorResolver } from '@deepseek-ai/dsh-token-meter'
-import type { TokenizerBackend, GenerateOptions, TokenEstimateResult } from '@deepseek-ai/dsh-llm'
+import { TokenMeter } from '@deepseek-ai/dsh-token-meter'
+import type { TokenizerBackend, GenerateOptions, TokenEstimateInput, TokenEstimateResult } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 function mockRequest(text: string): GenerateOptions {
@@ -15,13 +15,13 @@ function mockRequest(text: string): GenerateOptions {
 
 function mockBackend(count: (text: string) => number): TokenizerBackend {
   return {
-    id: 'deepseek-offline-tokenizer',
+    id: 'deepseek-official-tokenizer',
     version: '1',
     countTokens: async text => count(text),
   }
 }
 
-function resolverInput(request: GenerateOptions) {
+function resolverInput(request: GenerateOptions): TokenEstimateInput {
   return { provider: request.provider, model: request.model, request }
 }
 
@@ -30,11 +30,7 @@ function resolverInput(request: GenerateOptions) {
 async function makeAlwaysUnavailableResolver(ctx: Context) {
   const { TokenEstimatorResolver } = await import('@deepseek-ai/dsh-token-meter')
   return new (class extends TokenEstimatorResolver {
-    override async estimateInput(input: {
-      provider: string
-      model: string
-      request: GenerateOptions
-    }): Promise<TokenEstimateResult> {
+    override async estimateInput(input: TokenEstimateInput): Promise<TokenEstimateResult> {
       const providers = (this as unknown as {
         providers: Array<{ estimateInput(r: GenerateOptions): Promise<unknown> }>
       }).providers
@@ -56,7 +52,7 @@ describe('fallback orchestration (6E)', () => {
     const ctx = new Context()
     new TokenMeter(ctx)
     const deepseek = new DeepSeekTokenizerEstimator()
-    ;(ctx.tokenEstimator as TokenEstimatorResolver).registerProvider(deepseek)
+    ctx.tokenEstimatorRegistry.register(deepseek)
 
     const result = await ctx.tokenEstimator.estimateInput(resolverInput(mockRequest('hello world')))
 
@@ -73,14 +69,14 @@ describe('fallback orchestration (6E)', () => {
     new TokenMeter(ctx)
     const backend = mockBackend(text => text.length)
     const deepseek = new DeepSeekTokenizerEstimator(backend)
-    ;(ctx.tokenEstimator as TokenEstimatorResolver).registerProvider(deepseek)
+    ctx.tokenEstimatorRegistry.register(deepseek)
 
     const result = await ctx.tokenEstimator.estimateInput(resolverInput(mockRequest('hello')))
 
     expect(result.available).toBe(true)
     if (result.available) {
       expect(result.estimate.precision).toBe('tokenizer')
-      expect(result.estimate.estimator.id).toBe('deepseek-tokenizer')
+      expect(result.estimate.estimator.id).toBe('deepseek-official-tokenizer')
       expect(result.estimate.tokens).toBe('hello'.length)
     }
   })
@@ -89,7 +85,7 @@ describe('fallback orchestration (6E)', () => {
     const ctx = new Context()
     const resolver = await makeAlwaysUnavailableResolver(ctx)
     const deepseek = new DeepSeekTokenizerEstimator()
-    resolver.registerProvider(deepseek)
+    resolver.register(deepseek)
 
     const result = await resolver.estimateInput(resolverInput(mockRequest('hello')))
 
@@ -103,7 +99,7 @@ describe('fallback orchestration (6E)', () => {
     const ctx = new Context()
     const resolver = await makeAlwaysUnavailableResolver(ctx)
     const deepseek = new DeepSeekTokenizerEstimator()
-    resolver.registerProvider(deepseek)
+    resolver.register(deepseek)
 
     const result = await resolver.estimateInput(resolverInput(mockRequest('hello')))
 
@@ -117,14 +113,14 @@ describe('fallback orchestration (6E)', () => {
     const ctx = new Context()
     new TokenMeter(ctx)
     const deepseek = new DeepSeekTokenizerEstimator()
-    ;(ctx.tokenEstimator as TokenEstimatorResolver).registerProvider(deepseek)
+    ctx.tokenEstimatorRegistry.register(deepseek)
 
     const result = await ctx.tokenEstimator.estimateInput(resolverInput(mockRequest('test input')))
 
     expect(result.available).toBe(true)
     if (result.available) {
       expect(result.estimate.estimator.id).toBe('character-heuristic')
-      expect(result.estimate.estimator.id).not.toBe('deepseek-tokenizer')
+      expect(result.estimate.estimator.id).not.toBe('deepseek-official-tokenizer')
     }
   })
 
@@ -133,7 +129,7 @@ describe('fallback orchestration (6E)', () => {
     new TokenMeter(ctx)
     const backend = mockBackend(text => text.length)
     const deepseek = new DeepSeekTokenizerEstimator(backend)
-    ;(ctx.tokenEstimator as TokenEstimatorResolver).registerProvider(deepseek)
+    ctx.tokenEstimatorRegistry.register(deepseek)
 
     const deepseekResult = await ctx.tokenEstimator.estimateInput(resolverInput(mockRequest('hello')))
     expect(deepseekResult.available).toBe(true)
@@ -159,7 +155,7 @@ describe('fallback orchestration (6E)', () => {
     new TokenMeter(ctx)
     const backend = mockBackend(text => text.length)
     const deepseek = new DeepSeekTokenizerEstimator(backend)
-    ;(ctx.tokenEstimator as TokenEstimatorResolver).registerProvider(deepseek)
+    ctx.tokenEstimatorRegistry.register(deepseek)
 
     const otherRequest: GenerateOptions = {
       provider: 'other-provider',
