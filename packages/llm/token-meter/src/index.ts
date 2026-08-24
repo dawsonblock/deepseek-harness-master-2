@@ -53,6 +53,7 @@ export {
   aggregateEstimatorQuality,
   deriveContextWorkloadFeatures,
   deriveEstimationError,
+  deriveTokenEstimationErrors,
   estimateRequestInput,
 } from './context-estimate.ts'
 export {

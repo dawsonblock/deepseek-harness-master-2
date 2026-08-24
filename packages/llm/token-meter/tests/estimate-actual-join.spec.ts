@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { deriveEstimationError } from '@deepseek-ai/dsh-token-meter'
+import { deriveEstimationError, deriveTokenEstimationErrors } from '@deepseek-ai/dsh-token-meter'
 
 /** Build a `model/context-preflight` event with pre-routing or post-routing phase. */
 function preflightEvent(
@@ -28,6 +28,7 @@ function preflightEvent(
       contextWindowTokens: 1_000_000,
       remainingTokens: 1_000_000 - estimatedInputTokens - 4096,
       usageRatio: (estimatedInputTokens + 4096) / 1_000_000,
+      status: 'normal',
       estimatorId: 'deepseek-tokenizer',
       estimatorVersion: '1',
       ...routingDecisionId === undefined ? {} : { routingDecisionId },
@@ -194,5 +195,89 @@ describe('estimate-to-actual event join (6D)', () => {
     expect(estData.estimatorVersion).toBe('1')
     // Provider-authoritative source is on the usage event.
     expect(useData.usage.source).toBe('provider')
+  })
+})
+
+describe('deriveTokenEstimationErrors projection', () => {
+  it('joins post-routing estimates to usage by (turn, step, attempt)', () => {
+    const events: SessionEvent[] = [
+      preflightEvent(1, 1, 1, 1, 'post-routing', 1000),
+      usageEvent(2, 1, 1, 1, 1100),
+    ]
+    const results = deriveTokenEstimationErrors(events as unknown as { type: string; data: Record<string, unknown> }[])
+    expect(results).toHaveLength(1)
+    expect(results[0]!.kind).toBe('joined')
+    if (results[0]!.kind === 'joined') {
+      expect(results[0]!.error.estimated).toBe(1000)
+      expect(results[0]!.error.actual).toBe(1100)
+      expect(results[0]!.error.absoluteError).toBe(100)
+      expect(results[0]!.error.underestimated).toBe(true)
+      expect(results[0]!.error.turn).toBe(1)
+      expect(results[0]!.error.step).toBe(1)
+      expect(results[0]!.error.attempt).toBe(1)
+    }
+  })
+
+  it('detects routing-decision id mismatch and refuses to join', () => {
+    const events: SessionEvent[] = [
+      preflightEvent(1, 1, 1, 1, 'post-routing', 1000, 'rd-A'),
+      usageEvent(2, 1, 1, 1, 1100, 'rd-B'),
+    ]
+    const results = deriveTokenEstimationErrors(events as unknown as { type: string; data: Record<string, unknown> }[])
+    expect(results).toHaveLength(1)
+    expect(results[0]!.kind).toBe('routing-mismatch')
+    if (results[0]!.kind === 'routing-mismatch') {
+      expect(results[0]!.estimateRoutingId).toBe('rd-A')
+      expect(results[0]!.usageRoutingId).toBe('rd-B')
+    }
+  })
+
+  it('joins when routing ids match', () => {
+    const events: SessionEvent[] = [
+      preflightEvent(1, 1, 1, 1, 'post-routing', 1000, 'rd-X'),
+      usageEvent(2, 1, 1, 1, 1100, 'rd-X'),
+    ]
+    const results = deriveTokenEstimationErrors(events as unknown as { type: string; data: Record<string, unknown> }[])
+    expect(results).toHaveLength(1)
+    expect(results[0]!.kind).toBe('joined')
+    if (results[0]!.kind === 'joined') {
+      expect(results[0]!.error.routingDecisionId).toBe('rd-X')
+    }
+  })
+
+  it('reports missing-actual when a preflight has no matching usage', () => {
+    const events: SessionEvent[] = [
+      preflightEvent(1, 1, 1, 1, 'post-routing', 1000),
+    ]
+    const results = deriveTokenEstimationErrors(events as unknown as { type: string; data: Record<string, unknown> }[])
+    expect(results).toHaveLength(1)
+    expect(results[0]!.kind).toBe('missing-actual')
+  })
+
+  it('reports missing-estimate when a usage has no matching preflight', () => {
+    const events: SessionEvent[] = [
+      usageEvent(1, 1, 1, 1, 1100),
+    ]
+    const results = deriveTokenEstimationErrors(events as unknown as { type: string; data: Record<string, unknown> }[])
+    expect(results).toHaveLength(1)
+    expect(results[0]!.kind).toBe('missing-estimate')
+  })
+
+  it('preserves retry isolation: different attempts do not cross-join', () => {
+    const events: SessionEvent[] = [
+      preflightEvent(1, 1, 1, 1, 'post-routing', 1000),
+      usageEvent(2, 1, 1, 1, 1100),
+      preflightEvent(3, 1, 1, 2, 'post-routing', 1200),
+      usageEvent(4, 1, 1, 2, 1300),
+    ]
+    const results = deriveTokenEstimationErrors(events as unknown as { type: string; data: Record<string, unknown> }[])
+    expect(results).toHaveLength(2)
+    expect(results.every(r => r.kind === 'joined')).toBe(true)
+    if (results[0]!.kind === 'joined' && results[1]!.kind === 'joined') {
+      expect(results[0]!.error.attempt).toBe(1)
+      expect(results[0]!.error.estimated).toBe(1000)
+      expect(results[1]!.error.attempt).toBe(2)
+      expect(results[1]!.error.estimated).toBe(1200)
+    }
   })
 })

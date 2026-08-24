@@ -64,6 +64,18 @@ export interface TokenEstimationError {
   estimatorVersion: string
   provider: string
   model: string
+  /** Precision class of the estimator (`'tokenizer'` or `'heuristic'`). */
+  precision?: string
+  /** Turn coordinate for joining to routing decisions. */
+  turn?: number
+  /** Step coordinate for retry isolation. */
+  step?: number
+  /** Attempt coordinate for retry isolation. */
+  attempt?: number
+  /** Routing decision id, when a router was active. */
+  routingDecisionId?: string
+  /** True when the estimate was lower than the actual (underestimate). */
+  underestimated?: boolean
 }
 
 /** Aggregated estimator quality across many measurements. */
@@ -168,8 +180,10 @@ export function deriveEstimationError(
     relativeError,
     estimatorId: estimate.estimator.id,
     estimatorVersion: estimate.estimator.version,
+    precision: estimate.precision,
     provider,
     model,
+    underestimated: estimate.tokens < actualPromptTokens,
   }
 }
 
@@ -230,4 +244,129 @@ export function aggregateEstimatorQuality(
     underestimateRate: underestimates / count,
     overestimateRate: overestimates / count,
   }
+}
+
+/** A preflight estimate record extracted from session events. */
+interface PreflightRecord {
+  turn: number
+  step: number
+  attempt: number
+  provider: string
+  model: string
+  estimatedInputTokens: number
+  estimatorId: string
+  estimatorVersion: string
+  routingDecisionId?: string
+}
+
+/** A usage record extracted from session events. */
+interface UsageRecord {
+  turn: number
+  step: number
+  attempt: number
+  provider: string
+  model: string
+  inputTokens: number
+  routingDecisionId?: string
+}
+
+/** Result of joining estimate and actual usage, including mismatch detection. */
+export type TokenEstimationErrorProjection =
+  | { kind: 'joined'; error: TokenEstimationError }
+  | { kind: 'routing-mismatch'; turn: number; step: number; attempt: number; estimateRoutingId: string; usageRoutingId: string }
+  | { kind: 'missing-actual'; turn: number; step: number; attempt: number }
+  | { kind: 'missing-estimate'; turn: number; step: number; attempt: number }
+
+/**
+ * Derive estimation errors by joining preflight estimates to actual usage
+ * records using exact `(turn, step, attempt)` coordinates.
+ *
+ * Routing-decision identity is validated: when both the estimate and the
+ * usage carry a `routingDecisionId` and they differ, the pair is classified
+ * as a routing mismatch rather than joined. This prevents unrelated records
+ * from being joined across routing decisions.
+ *
+ * @param events - the full session event stream.
+ * @returns one projection per preflight estimate, plus mismatch and missing records.
+ */
+export function deriveTokenEstimationErrors(
+  events: readonly { type: string; data: Record<string, unknown> }[],
+): TokenEstimationErrorProjection[] {
+  const preflights: PreflightRecord[] = []
+  const usages: UsageRecord[] = []
+  for (const event of events) {
+    if (event.type === 'model/context-preflight') {
+      const d = event.data
+      if (d.phase !== 'post-routing') continue
+      preflights.push({
+        turn: d.turn as number,
+        step: d.step as number,
+        attempt: d.attempt as number,
+        provider: d.provider as string,
+        model: d.model as string,
+        estimatedInputTokens: d.estimatedInputTokens as number,
+        estimatorId: d.estimatorId as string,
+        estimatorVersion: d.estimatorVersion as string,
+        ...d.routingDecisionId === undefined ? {} : { routingDecisionId: d.routingDecisionId as string },
+      })
+    } else if (event.type === 'model/usage') {
+      const d = event.data
+      usages.push({
+        turn: d.turn as number,
+        step: d.step as number,
+        attempt: d.attempt as number,
+        provider: d.provider as string,
+        model: d.model as string,
+        inputTokens: (d.usage as { inputTokens: number }).inputTokens,
+        ...d.routingDecisionId === undefined ? {} : { routingDecisionId: d.routingDecisionId as string },
+      })
+    }
+  }
+  const results: TokenEstimationErrorProjection[] = []
+  for (const pf of preflights) {
+    const usage = usages.find(u =>
+      u.turn === pf.turn && u.step === pf.step && u.attempt === pf.attempt,
+    )
+    if (usage === undefined) {
+      results.push({ kind: 'missing-actual', turn: pf.turn, step: pf.step, attempt: pf.attempt })
+      continue
+    }
+    if (pf.routingDecisionId !== undefined && usage.routingDecisionId !== undefined
+      && pf.routingDecisionId !== usage.routingDecisionId) {
+      results.push({
+        kind: 'routing-mismatch',
+        turn: pf.turn,
+        step: pf.step,
+        attempt: pf.attempt,
+        estimateRoutingId: pf.routingDecisionId,
+        usageRoutingId: usage.routingDecisionId,
+      })
+      continue
+    }
+    const error = deriveEstimationError(
+      { tokens: pf.estimatedInputTokens, source: 'estimated', estimator: { id: pf.estimatorId, version: pf.estimatorVersion }, precision: 'heuristic' },
+      usage.inputTokens,
+      pf.provider,
+      pf.model,
+    )
+    results.push({
+      kind: 'joined',
+      error: {
+        ...error,
+        turn: pf.turn,
+        step: pf.step,
+        attempt: pf.attempt,
+        ...pf.routingDecisionId === undefined ? {} : { routingDecisionId: pf.routingDecisionId },
+      },
+    })
+  }
+  for (const usage of usages) {
+    const pf = preflights.find(p =>
+      p.turn === usage.turn && p.step === usage.step && p.attempt === usage.attempt,
+    )
+    if (pf === undefined) {
+      results.push({ kind: 'missing-estimate', turn: usage.turn, step: usage.step, attempt: usage.attempt })
+    }
+  }
+  return results
 }
