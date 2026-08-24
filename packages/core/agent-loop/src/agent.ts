@@ -27,8 +27,8 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import type { TokenEstimate, TokenEstimator } from '@deepseek-ai/dsh-llm'
-import { DEFAULT_CONTEXT_BUDGET_POLICY, evaluateContextBudget } from '@deepseek-ai/dsh-llm'
+import type { TokenEstimate, TokenEstimator, ContextUtilization } from '@deepseek-ai/dsh-llm'
+import { ContextBudgetExceededError, DEFAULT_CONTEXT_BUDGET_POLICY, evaluateContextBudget } from '@deepseek-ai/dsh-llm'
 import type { EpochHeader, RequestContext, Session, SessionEvent, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
 import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -154,16 +154,9 @@ function emitContextPreflight(
   phase: 'pre-routing' | 'post-routing',
   request: GenerateOptions,
   estimate: TokenEstimate,
-  contextWindowTokens: number,
-  reservedOutputTokens: number,
+  utilization: ReturnType<typeof evaluateContextBudget>,
   routingDecisionId: string | undefined,
 ): void {
-  const utilization = evaluateContextBudget(
-    estimate,
-    contextWindowTokens,
-    reservedOutputTokens,
-    DEFAULT_CONTEXT_BUDGET_POLICY,
-  )
   session.append('model/context-preflight', {
     turn,
     step,
@@ -172,10 +165,11 @@ function emitContextPreflight(
     provider: request.provider,
     model: request.model,
     estimatedInputTokens: estimate.tokens,
-    reservedOutputTokens,
-    contextWindowTokens,
+    reservedOutputTokens: utilization.reservedOutputTokens,
+    contextWindowTokens: utilization.contextWindowTokens,
     remainingTokens: utilization.remainingTokens,
     usageRatio: utilization.usageRatio,
+    status: utilization.status,
     estimatorId: estimate.estimator.id,
     estimatorVersion: estimate.estimator.version,
     ...routingDecisionId === undefined ? {} : { routingDecisionId },
@@ -470,7 +464,18 @@ export class ReactLoopAgent implements Agent {
       )
       requestAttempt += 1
       const routingDecisionId = latestRoutingDecisionId(this.session.events, turn, step)
-      await this.emitPreflight(turn, step, requestAttempt, request, 'post-routing', routingDecisionId)
+      const preflightUtilization = await this.emitPreflight(turn, step, requestAttempt, request, 'post-routing', routingDecisionId)
+      if (preflightUtilization !== undefined
+        && preflightUtilization.status === 'reject'
+        && preflightUtilization.contextWindowTokens > 0) {
+        throw new ContextBudgetExceededError({
+          contextWindowTokens: preflightUtilization.contextWindowTokens,
+          estimatedInputTokens: preflightUtilization.estimatedInputTokens,
+          reservedOutputTokens: preflightUtilization.reservedOutputTokens,
+          safetyMarginTokens: preflightUtilization.safetyMarginTokens,
+          usageRatio: preflightUtilization.usageRatio,
+        })
+      }
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
       try {
@@ -565,8 +570,9 @@ export class ReactLoopAgent implements Agent {
   }
 
   /** Emit a context preflight estimate if the token estimator is available.
+   * Returns the derived `ContextStatus` so callers can enforce reject.
    * Failures are swallowed because preflight is ignorable and must not break
-   * the agent path. */
+   * the agent path; in that case `undefined` is returned. */
   private async emitPreflight(
     turn: number,
     step: number,
@@ -574,9 +580,9 @@ export class ReactLoopAgent implements Agent {
     request: GenerateOptions,
     phase: 'pre-routing' | 'post-routing',
     routingDecisionId: string | undefined,
-  ): Promise<void> {
+  ): Promise<ContextUtilization | undefined> {
     const estimator = this.tokenEstimator
-    if (estimator === undefined) return
+    if (estimator === undefined) return undefined
     let estimate: TokenEstimate
     try {
       const result = await estimator.estimateInput({
@@ -584,18 +590,24 @@ export class ReactLoopAgent implements Agent {
         model: request.model,
         request,
       })
-      if (!result.available) return
+      if (!result.available) return undefined
       estimate = result.estimate
     } catch {
-      return
+      return undefined
     }
     const contextWindow = this.session.requestContext()?.contextWindow
-    emitContextPreflight(
-      this.session, turn, step, attempt, phase, request, estimate,
+    const utilization = evaluateContextBudget(
+      estimate,
       contextWindow ?? 0,
       request.maxTokens ?? 0,
+      DEFAULT_CONTEXT_BUDGET_POLICY,
+    )
+    emitContextPreflight(
+      this.session, turn, step, attempt, phase, request, estimate,
+      utilization,
       routingDecisionId,
     )
+    return utilization
   }
 
   /**

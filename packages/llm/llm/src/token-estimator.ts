@@ -159,6 +159,40 @@ export const DEFAULT_CONTEXT_BUDGET_POLICY: ContextBudgetPolicy = {
 /** Context pressure status derived from the usage ratio. */
 export type ContextStatus = 'normal' | 'warning' | 'compact' | 'reject'
 
+/** Details for a `ContextBudgetExceededError`: the budget evaluation that
+ * caused the reject. Carried on the error so callers can report the exact
+ * pressure that blocked the request. */
+export interface ContextBudgetExceededDetails {
+  /** Model context window capacity in tokens. */
+  contextWindowTokens: number
+  /** Estimated input tokens from the estimator. */
+  estimatedInputTokens: number
+  /** Reserved output tokens from the request's `maxTokens`. */
+  reservedOutputTokens: number
+  /** Safety margin from the budget policy. */
+  safetyMarginTokens: number
+  /** `estimatedTotal / contextWindow`, clamped to [0, 1]. */
+  usageRatio: number
+}
+
+/** Error thrown when context budget evaluation returns `reject` and
+ * enforcement is enabled. The agent loop catches this to terminate the step
+ * without invoking the provider, ensuring no billing-producing request
+ * occurs. */
+export class ContextBudgetExceededError extends Error {
+  readonly details: ContextBudgetExceededDetails
+  constructor(details: ContextBudgetExceededDetails) {
+    super(
+      `context budget exceeded: estimated ${details.estimatedInputTokens} input + `
+      + `${details.reservedOutputTokens} output + ${details.safetyMarginTokens} safety = `
+      + `${details.estimatedInputTokens + details.reservedOutputTokens + details.safetyMarginTokens} `
+      + `of ${details.contextWindowTokens} window (${(details.usageRatio * 100).toFixed(1)}%)`,
+    )
+    this.name = 'ContextBudgetExceededError'
+    this.details = details
+  }
+}
+
 /** Context budget evaluation: the result of applying a policy to an estimate. */
 export interface ContextUtilization {
   /** Model context window capacity in tokens (from the model registry). */

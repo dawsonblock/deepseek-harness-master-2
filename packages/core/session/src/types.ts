@@ -377,6 +377,10 @@ export interface SessionEventMap {
     contextWindowTokens: number
     remainingTokens: number
     usageRatio: number
+    /** Context budget status: `normal`, `warning`, `compact`, or `reject`.
+     * When `reject` and enforcement is enabled, the agent loop stops before
+     * `model/request` — no provider invocation, no billing. */
+    status: 'normal' | 'warning' | 'compact' | 'reject'
     estimatorId: string
     estimatorVersion: string
     /** Joins to the routing decision that selected this model, when a router was active. */
