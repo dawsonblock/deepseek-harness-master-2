@@ -223,8 +223,9 @@ describe('normalizeSessionLog', () => {
   it('preserves event sequence and zeroes event time', () => {
     const out = normalizeSessionLog(`${header({})}\n${event({ seq: 7, time: 999 })}\n`, ctx)
     expect(out).toContain('"time":0')
-    expect(out).toContain('"seq":7')
+    expect(out).toContain('"seq":1')
     expect(out).not.toContain('999')
+    expect(out).not.toContain('"seq":7')
   })
 
   it('normalizes a projected event without adding a persistence envelope', () => {

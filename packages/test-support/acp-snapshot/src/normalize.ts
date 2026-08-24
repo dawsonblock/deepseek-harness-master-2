@@ -339,8 +339,8 @@ function normalizeTimingFields(record: Record<string, unknown>): void {
  */
 function canonicalizeIgnorableOrdering(records: Record<string, unknown>[]): void {
   extractAndReinsertSorted(records, 'tool/settled', (a, b) => {
-    const aData = a.data as { turn?: number; step?: number; callId?: string }
-    const bData = b.data as { turn?: number; step?: number; callId?: string }
+    const aData = a.data as { turn?: number; step?: number; callId?: string } | null
+    const bData = b.data as { turn?: number; step?: number; callId?: string } | null
     const aTurn = aData?.turn ?? 0
     const bTurn = bData?.turn ?? 0
     if (aTurn !== bTurn) return aTurn - bTurn
@@ -350,6 +350,27 @@ function canonicalizeIgnorableOrdering(records: Record<string, unknown>[]): void
     const aId = aData?.callId ?? ''
     const bId = bData?.callId ?? ''
     return aId < bId ? -1 : aId > bId ? 1 : 0
+  })
+  // model/context-preflight events are ignorable estimates whose physical
+  // position depends on estimator availability and routing timing. Append all
+  // preflight events at the end of the remaining records, sorted by
+  // (turn, step, attempt, phase), so both harvested and fixture produce the
+  // same canonical position regardless of when estimators resolved.
+  extractAndAppendSorted(records, 'model/context-preflight', (a, b) => {
+    const aData = a.data as { turn?: number; step?: number; attempt?: number; phase?: string } | null
+    const bData = b.data as { turn?: number; step?: number; attempt?: number; phase?: string } | null
+    const aTurn = aData?.turn ?? 0
+    const bTurn = bData?.turn ?? 0
+    if (aTurn !== bTurn) return aTurn - bTurn
+    const aStep = aData?.step ?? 0
+    const bStep = bData?.step ?? 0
+    if (aStep !== bStep) return aStep - bStep
+    const aAttempt = aData?.attempt ?? 0
+    const bAttempt = bData?.attempt ?? 0
+    if (aAttempt !== bAttempt) return aAttempt - bAttempt
+    const aPhase = aData?.phase ?? ''
+    const bPhase = bData?.phase ?? ''
+    return aPhase < bPhase ? -1 : aPhase > bPhase ? 1 : 0
   })
   // session/checkpoint position is nondeterministic: checkpoints may appear
   // before or after hook events depending on scheduling. Append all
@@ -380,11 +401,13 @@ function extractAndReinsertSorted(
   const remaining: Record<string, unknown>[] = []
   let firstPos = -1
   for (let i = 0; i < records.length; i++) {
-    if (records[i]!.type === eventType) {
+    const record = records[i]
+    if (record === undefined) continue
+    if (record.type === eventType) {
       if (firstPos === -1) firstPos = remaining.length
-      extracted.push(records[i]!)
+      extracted.push(record)
     } else {
-      remaining.push(records[i]!)
+      remaining.push(record)
     }
   }
   if (extracted.length <= 1) return
@@ -394,7 +417,10 @@ function extractAndReinsertSorted(
     ...extracted,
     ...remaining.slice(firstPos),
   ]
-  for (let i = 0; i < records.length; i++) records[i] = result[i]!
+  for (let i = 0; i < records.length; i++) {
+    const r = result[i]
+    if (r !== undefined) records[i] = r
+  }
 }
 
 /**
@@ -412,16 +438,21 @@ function extractAndAppendSorted(
   const extracted: Record<string, unknown>[] = []
   const remaining: Record<string, unknown>[] = []
   for (let i = 0; i < records.length; i++) {
-    if (records[i]!.type === eventType) {
-      extracted.push(records[i]!)
+    const record = records[i]
+    if (record === undefined) continue
+    if (record.type === eventType) {
+      extracted.push(record)
     } else {
-      remaining.push(records[i]!)
+      remaining.push(record)
     }
   }
   if (extracted.length <= 1) return
   extracted.sort(compare)
   const result = [...remaining, ...extracted]
-  for (let i = 0; i < records.length; i++) records[i] = result[i]!
+  for (let i = 0; i < records.length; i++) {
+    const r = result[i]
+    if (r !== undefined) records[i] = r
+  }
 }
 
 /**
@@ -435,6 +466,31 @@ function normalizePositionReferences(record: Record<string, unknown>): void {
   if (record.type === 'session/checkpoint' && record.data !== null && typeof record.data === 'object') {
     const data = record.data as Record<string, unknown>
     if ('basisSeq' in data) data.basisSeq = '<basisSeq>'
+  }
+}
+
+/** Tokenize position-dependent seq references after ignorable-event
+ * extraction. `sourceEventSeqs`, `callSeq`, and `dispatchSeq` reference
+ * absolute seq positions that shift when ignorable events are added, removed,
+ * or reordered. Since expected fixtures (projected, no `seq` fields) and
+ * actual sessions (with `seq` fields) have different absolute positions,
+ * these references are tokenized to stable placeholders for canonical
+ * comparison. The `seq` field itself is renumbered to the record's position
+ * in the array. */
+function renumberSeqReferences(records: Record<string, unknown>[]): void {
+  for (let i = 1; i < records.length; i++) {
+    const record = records[i]
+    if (record === undefined) continue
+    const data = record.data
+    if (data !== null && typeof data === 'object') {
+      const d = data as Record<string, unknown>
+      if (Array.isArray(d.sourceEventSeqs)) d.sourceEventSeqs = '<sourceEventSeqs>'
+      if (typeof d.callSeq === 'number') d.callSeq = '<callSeq>'
+      if (typeof d.dispatchSeq === 'number') d.dispatchSeq = '<dispatchSeq>'
+    }
+    if (typeof record.seq === 'number') {
+      record.seq = i
+    }
   }
 }
 
@@ -477,6 +533,7 @@ export function normalizeSessionLog(
     return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
   })
   canonicalizeIgnorableOrdering(records)
+  renumberSeqReferences(records)
   return records.map(r => JSON.stringify(r)).join('\n') + '\n'
 }
 
