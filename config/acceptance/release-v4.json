@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 4,
+  "release": "v0.13.0",
+  "targetMode": "enforce",
+  "requirePromotionReceipt": true,
+  "trustedCheckVersion": "v0.13-reviewed-1",
+  "trustedChecks": [
+    "qualification-pass",
+    "package-consumer-pass",
+    "tests-pass",
+    "typecheck-pass",
+    "claim-provenance",
+    "source-quality",
+    "required-experiments",
+    "build-pass",
+    "healthcheck-pass",
+    "smoke-test-pass",
+    "rollback-ready",
+    "schema-valid",
+    "referential-integrity",
+    "outcome-engine-tests",
+    "agent-hardening-tests",
+    "python-reference-tests",
+    "failure-injection-tests",
+    "process-kill-tests",
+    "packed-consumer-pass",
+    "source-guards-pass",
+    "archive-manifest-valid"
+  ],
+  "releaseTrustedChecks": [
+    "outcome-engine-tests",
+    "agent-hardening-tests",
+    "python-reference-tests",
+    "failure-injection-tests",
+    "process-kill-tests",
+    "packed-consumer-pass",
+    "source-guards-pass",
+    "archive-manifest-valid"
+  ],
+  "promotion": {
+    "minimumCases": 2100,
+    "minimumValidCases": 600,
+    "minimumInvalidCases": 1500,
+    "requirePerPackGates": true
+  },
+  "benchmarkGate": {
+    "maximumFalseAcceptanceRate": 0,
+    "maximumFalseRejectionRate": 0,
+    "maximumFalseAcceptanceUpperBound95": 0.003
+  },
+  "requiredPacks": {
+    "runtime": {
+      "minimumCases": 350,
+      "minimumValidCases": 100,
+      "minimumInvalidCases": 250,
+      "maximumFalseAcceptanceRate": 0,
+      "maximumFalseRejectionRate": 0,
+      "maximumFalseAcceptanceUpperBound95": 0.016,
+      "requiredFaultClasses": ["qualification-fail", "consumer-fail", "unresolved-side-effect", "recovery-blocked"],
+      "minimumMutationCases": 150,
+      "minimumMutationKillRate": 1
+    },
+    "coding": {
+      "minimumCases": 350,
+      "minimumValidCases": 100,
+      "minimumInvalidCases": 250,
+      "maximumFalseAcceptanceRate": 0,
+      "maximumFalseRejectionRate": 0,
+      "maximumFalseAcceptanceUpperBound95": 0.016,
+      "requiredFaultClasses": ["tests-fail", "typecheck-fail", "unresolved-side-effect", "dual-check-fail"],
+      "minimumMutationCases": 150,
+      "minimumMutationKillRate": 1
+    },
+    "research": {
+      "minimumCases": 350,
+      "minimumValidCases": 100,
+      "minimumInvalidCases": 250,
+      "maximumFalseAcceptanceRate": 0,
+      "maximumFalseRejectionRate": 0,
+      "maximumFalseAcceptanceUpperBound95": 0.016,
+      "requiredFaultClasses": ["claim-provenance-fail", "contradiction-present", "source-quality-fail", "experiment-missing"],
+      "minimumMutationCases": 150,
+      "minimumMutationKillRate": 1
+    },
+    "deployment": {
+      "minimumCases": 350,
+      "minimumValidCases": 100,
+      "minimumInvalidCases": 250,
+      "maximumFalseAcceptanceRate": 0,
+      "maximumFalseRejectionRate": 0,
+      "maximumFalseAcceptanceUpperBound95": 0.016,
+      "requiredFaultClasses": ["build-fail", "deployment-missing", "healthcheck-fail", "smoke-test-fail", "rollback-missing"],
+      "minimumMutationCases": 150,
+      "minimumMutationKillRate": 1
+    },
+    "data-pipeline": {
+      "minimumCases": 350,
+      "minimumValidCases": 100,
+      "minimumInvalidCases": 250,
+      "maximumFalseAcceptanceRate": 0,
+      "maximumFalseRejectionRate": 0,
+      "maximumFalseAcceptanceUpperBound95": 0.016,
+      "requiredFaultClasses": ["schema-invalid", "referential-integrity-fail", "row-count-low", "null-rate-high", "duplicate-rate-high"],
+      "minimumMutationCases": 150,
+      "minimumMutationKillRate": 1
+    },
+    "release": {
+      "minimumCases": 350,
+      "minimumValidCases": 100,
+      "minimumInvalidCases": 250,
+      "maximumFalseAcceptanceRate": 0,
+      "maximumFalseRejectionRate": 0,
+      "maximumFalseAcceptanceUpperBound95": 0.016,
+      "requiredFaultClasses": ["trusted-check-fail", "unresolved-side-effect", "recovery-blocked", "multi-fault"],
+      "minimumMutationCases": 150,
+      "minimumMutationKillRate": 1
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "release": "v0.15.4",
+  "base": "v0.15.3",
+  "modelRouterPackage": "0.1.1-rc.4",
+  "routerPolicyVersion": 2,
+  "authoritySchemaVersion": 2,
+  "focus": "control-plane correctness: one durable ModelSelectionState, append-on-every-semantic-change, Auto fixed after real process restarts and exposed through the production API, crash-durable manual selections, exhaustive fail-closed reconstruction, deterministic decision identity, scorer/config telemetry stamps, and the runtime authority-invariant layer",
+  "fixes": [
+    "releaseToAuto derives current state from the DURABLE event log — Auto works after a true process restart (fresh-Session regression), never gated on the WeakMap",
+    "session.selectModel accepts the discriminated mode:'auto' payload (RPC type + wire schema + handler): releases manual authority and resets the effective selection to the deployment default through a NON-CLAIMING reset, so stale or foreign picked routes cannot impersonate manual choices",
+    "the API-proxy selection getter consults the durable manual state (complete selection, reasoning effort included) BEFORE the logged request header — manual selections are crash-durable ahead of the header",
+    "event suppression compares the COMPLETE semantic state (mode/authority/provider/model/reasoningEffort/source): same-authority Pro-to-Flash switches and provenance changes record; only true no-ops are skipped",
+    "ModelSelectionState is one durable union (auto: router|default; manual: user|sdk|policy|subagent-owner + complete selection); the WeakMap is explicitly a cache",
+    "reconstruction is exhaustive (default is a real state) and conservative: future authority schema versions fail CLOSED (router defers) instead of resurrecting superseded history; v0.15.3 schema-1 events map forward",
+    "claimModelSelection validates authority/source combinations against an allowlist; manual claims without a complete route are rejected at the write boundary",
+    "routingDecisionId is DETERMINISTIC — sha256(session:turn:step:policyVersion:configFingerprint) via routingDecisionIdentity — decideRoute contains no randomness",
+    "every decision stamps scorerVersion and configFingerprint (canonical SHA-256 over the effective configuration): experiments can attribute decisions to the exact scoring implementation and configuration",
+    "the ./invariant companion polices the control plane at runtime: epoch monotonicity, manual-states-carry-selections / auto-states-carry-none, router decisions never supersede manual authority without an Auto release, deterministic ids and telemetry stamps present, future schemas rejected",
+    "packaging: the shared runtime chunk (lib/types-*.js, extracted from the common types module) is declared in files and taught to the workspace-constraint extras; the tarball consumer is whole again",
+    "release-wide version bump 0.1.1-rc.3 to 0.1.1-rc.4 (root + all 231 matching release members)"
+  ],
+  "adversarialBattery": {
+    "scenarios": 8,
+    "status": "all proven (fresh-Session restarts, crash-before-request, same-authority switches, foreign-to-Auto, Auto without a router, default state, future schema, replayed identity)"
+  },
+  "authorityModel": {
+    "event": "model/selection-authority",
+    "state": "ModelSelectionState: auto (router|default) | manual (user|sdk|policy|subagent-owner + complete selection)",
+    "schemaVersion": 2,
+    "policyVersionIndependent": true,
+    "epoch": "session-level, monotonic across restarts, policy migrations, and schema versions",
+    "auto": "first-class API state (selectModel mode:'auto'); durable; resets stale routes"
+  },
+  "routingTelemetry": {
+    "decisionIdentity": "deterministic execution coordinates + policy + config",
+    "stamps": ["scorerVersion", "configFingerprint"],
+    "invariants": "runtime companion over both durable streams"
+  },
+  "targetedExecutableChecks": {
+    "passed": 1630,
+    "total": 1630,
+    "routerSpecific": 62,
+    "note": "62 router-package tests (including the 8-test invariant suite) plus broad surrounding regression coverage"
+  },
+  "sourceGuards": "verify:model-router-v15/-v152/-v153/-v154 pass; verify:model-router-packed pass (version + chunk + isolated consumer)",
+  "persistenceCatalog": "regenerated; --check pass",
+  "translationPairing": "llm-model-router README pair consistent",
+  "workspaceConstraints": "no findings for any touched package",
+  "preExistingBaselines": [
+    "packages/core/session repair.spec.ts expectation mismatch present in the original v0.14.1 upload, untouched",
+    "packages/runtime/* compile and constraint failures identical in the unmodified baseline; full-workspace tsc -b still cannot complete in the clean archive environment"
+  ],
+  "remainingBoundaries": [
+    "routingDecisionId propagation into model/usage events is v0.16 join work (coordinates already join)",
+    "structural workload signals (repo scope, verification failures, repair rounds) are the v0.16 measurement motive — no more keyword tuning",
+    "router remains opt-in composition",
+    "recordAllDecisions stays false in production; evaluation runs enable it"
+  ],
+  "fullMonorepoCiClaimed": false,
+  "fullMonorepoCiBoundary": "Pre-existing packages/runtime/* failures block the full workspace build in the clean archive environment; the packed gate builds and verifies the router's own closure from a clean tree instead."
+}

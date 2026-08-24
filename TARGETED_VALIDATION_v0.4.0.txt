@@ -1,0 +1,19 @@
+DeepSeek Harness Full Corrective Upgrade v0.4.0
+Targeted validation record
+
+PASS  @deepseek-ai/dsh-agent-kernel-hardening semantic qualification: 14/14
+PASS  packed clean-consumer import through declared package export
+PASS  python/agent-kernel-ref pytest: 12/12
+PASS  python/agent-kernel-ref compileall
+PASS  generated persistence catalog freshness check
+PASS  TypeScript syntax transpilation:
+      packages/core/session/src/types.ts
+      packages/core/session/src/index.ts
+      packages/core/session/src/repair.ts
+      packages/core/session/src/invariant.ts
+      packages/core/agent-loop/src/agent.ts
+      packages/core/agent-loop/src/tool-calls.ts
+      packages/core/session/tests/repair.spec.ts
+      packages/core/session/tests/session.spec.ts
+
+NOT CLAIMED: complete upstream pnpm workspace CI. The extracted source archive did not contain the complete installed workspace dependency graph required to execute all project-reference checks in this environment.

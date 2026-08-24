@@ -1,0 +1,21 @@
+{
+  "version": "0.15.1",
+  "role": "frozen comparison baseline for v0.15.2 routing-correctness work (audit Phase 0); do not modify after freeze",
+  "archive": {
+    "file": "deepseek-harness-master-FULL-upgraded-v0.15.1-router-hardening.zip",
+    "files": 8102,
+    "manifestEntries": 8101,
+    "sha256": "75e6db98d0c1765ea06be745056d59f67ab59b07d73dd15200b644bc925a4681"
+  },
+  "routerPolicyVersion": 2,
+  "fastModel": "deepseek-v4-flash",
+  "heavyModel": "deepseek-v4-pro",
+  "escalationThreshold": 4,
+  "midTurnToolCallThreshold": 8,
+  "midTurnToolResultCharsThreshold": 24000,
+  "frozenMetrics": {
+    "routerTests": 32,
+    "totalTargetedChecks": 1560,
+    "note": "Routing distribution, tokens/task, cost/task, latency/task, verified task success, false-escalation rates, cache-hit ratio, and mid-turn escalation rate are runtime corpus metrics — they require the v0.16 empirical harness and are intentionally not claimed here. This file freezes the deterministic policy constants and the shipped test counts."
+  }
+}

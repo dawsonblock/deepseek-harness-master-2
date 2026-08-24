@@ -1,0 +1,29 @@
+DeepSeek Harness FULL upgraded corrected v0.11.0
+Targeted validation summary
+
+Outcome Verification Engine package tests: 37/37 PASS
+Agent-kernel hardening package tests: 22/22 PASS
+Python reference kernel tests: 12/12 PASS
+v0.6 failure injection: 12/12 PASS
+v0.7 policy / Code Mode: 10/10 PASS
+v0.7 real process-kill lifecycle: 8/8 PASS
+v0.8 checkpoint / recovery: 15/15 PASS
+v0.8 checkpoint process-kill: 16/16 PASS
+v0.9 outcome integration: 11/11 PASS
+v0.10 verifier corpus: 12/12 PASS; FAR=0; FRR=0
+v0.11 calibration corpus: 150/150 PASS; 50 valid; 100 invalid; FAR=0; FRR=0
+v0.11 FAR 95% Wilson upper bound: ~0.0370
+
+Total targeted executable cases/checks above: 315/315 PASS
+
+Outcome packed clean-consumer import: PASS
+Agent-hardening packed clean-consumer import: PASS
+v0.5-v0.11 source guards: PASS
+Outcome-verification TypeScript package build: PASS
+Agent-hardening TypeScript package build: PASS
+Python compile/test runtime: PASS
+
+Important boundary:
+A complete upstream dependency-backed pnpm monorepo CI pass is not claimed from this
+clean extracted source environment. Targeted upgraded packages and qualifications
+are validated independently.

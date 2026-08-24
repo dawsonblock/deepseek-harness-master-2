@@ -1,0 +1,41 @@
+{
+  "release": "v0.14.0",
+  "base": "v0.13.0",
+  "agentKernelHardeningPackage": "0.9.0",
+  "outcomeVerificationPackage": "0.5.0",
+  "runtimeResourceGovernorPackage": "0.1.0",
+  "runtimePerformanceTelemetryPackage": "0.1.0",
+  "focus": "runtime performance telemetry, root-scoped resource governance, PTY reliability, and backpressure",
+  "features": [
+    "root-scoped process-local subagent/model/reasoning/event/wall-time budgets",
+    "transactional SubagentAdmissionGuard integration",
+    "bounded FIFO abortable one-shot subagent backpressure",
+    "native replay-aware reasoning-context token measurement",
+    "first-party turn performance telemetry with parallel tool interval unioning",
+    "persistent Bash and PowerShell terminal settlement telemetry",
+    "runtime performance/resource metrics in agent-kernel-hardening",
+    "required orchestration/reasoning/PTY/backpressure qualification gates",
+    "base-bundle and frozen-lockfile distribution integration",
+    "opt-in v0.14 Cordis runtime policy example"
+  ],
+  "runtimePerformanceGates": {
+    "maxOrchestrationOverheadRatio": 0.15,
+    "maxP95ReasoningContextRatio": 0.5,
+    "maxTerminalFallbackRate": 0.05,
+    "maxBackpressureDrops": 0
+  },
+  "targetedExecutableChecks": {
+    "passed": 4233,
+    "total": 4233
+  },
+  "typescriptSyntaxTranspilation": {
+    "passed": 17,
+    "total": 17
+  },
+  "packedConsumerImports": {
+    "agentKernelHardening": "pass",
+    "outcomeVerification": "pass"
+  },
+  "fullMonorepoCiClaimed": false,
+  "fullMonorepoCiBoundary": "Clean archive lacks installed workspace dependency graph/@types/node; targeted dependency-backed tsc probes stop with TS2688."
+}

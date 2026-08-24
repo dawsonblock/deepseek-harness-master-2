@@ -1,0 +1,46 @@
+{
+  "release": "v0.14.1",
+  "base": "v0.14.0",
+  "agentKernelHardeningPackage": "0.9.1",
+  "outcomeVerificationPackage": "0.5.0",
+  "runtimeResourceGovernorPackage": "0.1.1",
+  "runtimePerformanceTelemetryPackage": "0.1.1",
+  "focus": "runtime correctness hardening: canonical event ownership, monotonic execution timing, pre-model budget admission, and PTY metric semantics",
+  "features": [
+    "canonical SessionEventMap ownership for all five v0.14 diagnostic event types",
+    "regenerated known-event and persistence catalogs with no duplicate terminal event ownership",
+    "monotonic physical llm/stream and tools/execute timing spans",
+    "runtime/performance-sample v2 timingSource discriminator",
+    "pre-provider model-call resource admission at agent/request",
+    "PTY protocol fallback separated from timeout/exit/reset diagnostics",
+    "forward-compatible v0.14 source guard and dedicated v0.14.1 source/runtime qualification"
+  ],
+  "runtimePerformanceGates": {
+    "maxOrchestrationOverheadRatio": 0.15,
+    "maxP95ReasoningContextRatio": 0.5,
+    "maxTerminalProtocolFallbackRate": 0.05,
+    "maxBackpressureDrops": 0
+  },
+  "targetedExecutableChecks": {
+    "passed": 4258,
+    "total": 4258
+  },
+  "typescriptSyntaxTranspilation": {
+    "passed": 8,
+    "total": 8
+  },
+  "packedConsumerImports": {
+    "agentKernelHardening": "pass",
+    "outcomeVerification": "pass"
+  },
+  "persistenceCatalogGenerator": "pass",
+  "sourceGuards": "v0.5-v0.14.1 pass",
+  "remainingBoundaries": [
+    "resource accounting remains process-local and is not automatically reconstructed after restart",
+    "reasoning/event/wall-time overrun blocks subsequent governed admissions rather than interrupting the crossing operation",
+    "first-party bounded backpressure remains concentrated on one-shot subagent admission",
+    "full dependency-installed upstream pnpm monorepo CI is not claimed in the clean archive environment"
+  ],
+  "fullMonorepoCiClaimed": false,
+  "fullMonorepoCiBoundary": "Clean archive lacks installed workspace dependency graph/@types/node; targeted qualification and syntax checks are reported instead of a full semantic workspace build."
+}

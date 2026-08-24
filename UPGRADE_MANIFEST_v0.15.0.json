@@ -1,0 +1,40 @@
+{
+  "release": "v0.15.0",
+  "base": "v0.14.1",
+  "modelRouterPackage": "0.1.1-rc.2",
+  "focus": "tiered model routing: complexity-scored fast/heavy turn routing over the two DeepSeek V4 GA routes, dated GA catalog aliases, and reverse-proxy SSE hardening folded in from the v0.14.2 hotfix",
+  "features": [
+    "new @deepseek-ai/dsh-llm-model-router function plugin routing each turn through the agent/request waterfall",
+    "deterministic per-family-capped complexity scoring over the turn's human-authored text",
+    "foreign-route passthrough, explicit-heavy retention, per-turn re-scoring, turn-sticky routes, and opt-in subagent routing",
+    "tier-scoped reasoningEffort with sampling scalars preserved across tier switches",
+    "request/header change events remain the durable routing record; no new session-event vocabulary",
+    "dated GA aliases deepseek-v4-flash-0731 and deepseek-v4-pro-0813 in the default DeepSeek catalog",
+    "x-accel-buffering: no and cache-control: no-cache, no-transform on /api/events.mux, /api/events.host, and the HMR event channel",
+    "regression test pinning the SSE proxy-disable headers on both event channels"
+  ],
+  "routingPolicy": {
+    "defaultEscalationThreshold": 4,
+    "explicitReasoningPoints": 3,
+    "mathMarkerPoints": 2,
+    "architectureMarkerPoints": 2,
+    "codeBlockPoints": 1,
+    "lengthBandChars": 400,
+    "subagentsRoutedByDefault": false
+  },
+  "targetedExecutableChecks": {
+    "passed": 1546,
+    "total": 1546
+  },
+  "workspaceConstraints": "new package manifest clean",
+  "translationPairing": "llm-model-router README pair consistent",
+  "fileManifest": "regenerated; all entries verified against disk",
+  "remainingBoundaries": [
+    "complexity scoring is text-only with an English marker vocabulary; non-English prompts escalate through length and code-block signals only",
+    "routing memory is process-local, so a restart treats the persisted heavy header as an explicit selection until re-scored",
+    "routing weights are package constants; deployments tune only the threshold",
+    "full dependency-installed upstream pnpm monorepo CI is not claimed in the clean archive environment"
+  ],
+  "fullMonorepoCiClaimed": false,
+  "fullMonorepoCiBoundary": "Clean archive lacks installed workspace dependency graph/@types/node; targeted qualification is reported instead of a full semantic workspace build."
+}

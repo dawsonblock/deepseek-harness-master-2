@@ -1,0 +1,24 @@
+DeepSeek Harness FULL native autonomy upgrade v0.5.0
+Targeted validation record
+
+PASS  @deepseek-ai/dsh-agent-kernel-hardening 0.3.0 semantic suite: 15/15
+PASS  hardening packed clean-consumer import
+PASS  python/agent-kernel-ref pytest: 12/12
+PASS  python/agent-kernel-ref compileall
+PASS  scripts/verify-agent-kernel-v05.mjs native enforcement/source-order invariants
+PASS  modified native TypeScript source/test syntax transpilation: 20/20
+PASS  core tools semantic project typecheck progressed past modified recovery code after correcting union/exact-optional integration defects
+LIMIT full referenced TypeScript build stops on absent extracted-environment third-party dependencies: zod, @standard-schema/spec, diff
+LIMIT new upstream Vitest regression fixtures are shipped but not executed here because the installed pnpm workspace dependency graph is absent
+LIMIT full persistence-catalog generator cannot run because markdown parser dependencies are absent; targeted v0.5 guard verifies new known-event and catalog entries
+LIMIT full upstream workspace CI is not claimed
+
+New native enforcement:
+- autonomous goal-round completion -> independent GoalService verification -> all checks pass -> complete
+- registered verifier failure/exception -> fail closed, goal remains active
+- reconcile-mode ambiguous prior side effect -> reconciler before dispatch
+- reconciliation completed -> reconstruct value, no body redispatch
+- reconciliation not-executed -> dispatch permitted
+- reconciliation unknown -> TOOL_RECONCILIATION_REQUIRED
+- read/read_image/grep/glob explicitly idempotent
+- full-file write includes exact-final-state reconciler

@@ -1,0 +1,36 @@
+{
+  "name": "@deepseek-ai/dsh-agent-kernel-hardening",
+  "description": "Replay-derived recovery, verification, performance/resource-governor and ablation diagnostics for DeepSeek Harness agent sessions",
+  "version": "0.9.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/runtime/agent-kernel-hardening"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/*.js.map",
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.json && node scripts/copy-runtime.mjs",
+    "test": "npm run build && node --test tests/qualification.mjs",
+    "test:packed": "npm run build && node tests/packed-consumer.mjs"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,50 @@
+DeepSeek Harness v0.14.0 targeted validation
+
+Agent-kernel hardening package: 28/28 PASS
+Outcome Verification Engine package: 45/45 PASS
+Python agent-kernel reference: 12/12 PASS
+v0.6 failure injection: 12/12 PASS
+v0.7 policy binding + Code Mode: 10/10 PASS
+v0.7 process-kill lifecycle: 8/8 PASS
+v0.8 checkpoint/recovery: 15/15 PASS
+v0.8 checkpoint process-kill: 16/16 PASS
+v0.9 outcome integration: 11/11 PASS
+v0.10 verifier corpus: 12/12 PASS
+v0.11 calibration: 150/150 PASS
+v0.12 adversarial calibration: 1600/1600 PASS
+v0.12 executable coding fixtures: 40/40 PASS
+v0.13 six-pack calibration: 2100/2100 PASS
+v0.13 executable mutation fixtures: 160/160 PASS
+v0.14 runtime performance/resource qualification: 14/14 PASS
+
+Total targeted executable checks counted above: 4233/4233 PASS
+
+v0.14 performance/resource qualification:
+- healthy runtime telemetry: PASS
+- deliberately overloaded telemetry: rejected by all 4 required performance gates
+- root resource budget behavior: PASS
+- bounded FIFO backpressure behavior: PASS
+
+RUNTIME_PERFORMANCE_GATES defaults:
+- orchestration overhead ratio <= 0.15
+- p95 reasoning-context ratio <= 0.50
+- terminal fallback rate <= 0.05
+- backpressure drops == 0
+
+Packed consumer imports:
+- agent-kernel-hardening: PASS
+- outcome-verification: PASS
+
+Source integration guards:
+- v0.5 through v0.14: PASS
+
+Other release validation:
+- modified/new TypeScript syntax transpilation: 17/17 PASS
+- Python compileall: PASS
+- pnpm-lock.yaml YAML parse: PASS
+- base-bundle dependency / lock importer checks: PASS
+- v0.13 calibrated release verification policy remains ENFORCE
+
+Boundary:
+Full dependency-installed upstream pnpm monorepo CI is not claimed in this clean archive environment.
+Targeted dependency-backed tsc probes for the native token-meter/resource/performance packages are blocked at startup by TS2688 (missing installed @types/node/workspace dependency graph), so they are not represented as successful semantic workspace builds.

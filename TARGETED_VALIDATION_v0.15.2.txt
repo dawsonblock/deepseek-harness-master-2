@@ -1,0 +1,80 @@
+DeepSeek Harness v0.15.2 targeted validation (routing correctness & authority, audit response)
+
+Model router package: 44/44 PASS
+  - scorer calibration: no-family-alone contract, the audit prompt table,
+    cross-family corroboration, family caps, multilingual + configured
+    vocabulary, long-trivial-input immunity: 8
+  - turn text extraction (user + coordinator, plugin excluded, turn-bounded): 1
+  - discovered-facts counting (tool calls, result chars, turn-scoped): 1
+  - config resolution (validation, defaults, marker and bound checks): 3
+  - THRESHOLD ENFORCEMENT (audit Phase 5): 1/2/3 rejected, 4/5/9 accepted: 1
+  - MARKER INDEPENDENCE (audit Phase 6): cross-family, normalized, intra-family,
+    built-in same-family, built-in cross-family, clean pass: 1
+  - authority: explicit mark owns both directions; THE AUDIT BUG
+    (explicit Pro after router-owned Pro, mark and field-rewrite forms);
+    router-owned continuation re-scored; subagent passthrough + routed
+    coordinator scoring: 5
+  - mid-turn: quiet retention, one-way escalation at the bound, stays heavy
+    after escalation, disable switch: 4
+  - lazy facts (passthrough/retention never read request text): 1
+  - durable records: lean by default, escalation record shape,
+    recordAllDecisions mode: 1
+  - RECORDALLDECISIONS TRUTHFULNESS (audit Phase 8): subagent-owner,
+    foreign-route, and retention records in telemetry mode; lean mode
+    records none of them: 1
+  - DISCOVERED TELEMETRY (audit Phase 9): tool-calls, tool-result-volume,
+    and composite triggers with measured facts: 1
+  - AUTHORITY EPOCHS: strictly increasing across transitions; fresh-session
+    explicit claim recorded durably; reconstructed claim suppresses
+    re-recording: 2
+  - reconstruction: router-owned heavy re-scored; pre-v0.15.2 epoch-0 records;
+    THE AUDIT RESTART BUG (newer explicit record terminates older router
+    ownership); newer router record wins; foreign/subagent records end
+    ownership; stale-policy records ignored: 6
+  - agent-loop integration: simple stays fast; audit's concise hard coding
+    prompt stays fast; escalation + durable record; per-turn re-routing;
+    step retention within a turn; mid-turn escalation through a real tool
+    loop at the flip point; foreign model untouched; explicit mark disables
+    routing with one transition record; DoD 6 restart (router Pro -> explicit
+    Pro -> restart -> still explicit Pro); DoD 7 restart (router Pro ->
+    explicit Flash -> restart -> router must not reassert Pro): 10
+  - real Loader composition with config-driven tiers: 1
+
+SDK JSON-RPC server: 33/33 PASS
+  - DoD 14: initialize-supplied model earns the explicit-selection mark on a
+    live session (new regression)
+
+Host API proxy: 378/378 PASS
+Client connection + HMR: 117/117 PASS
+Core agent + agent-default-model: 92/92 PASS
+Core agent-loop: 335/335 PASS
+Core agent-tool-presentation: 7/7 PASS
+DeepSeek adapter (llm-deepseek): 339/339 PASS
+LLM retry: 66/66 PASS
+Compaction family: 194/194 PASS
+
+Total targeted executable checks: 1605/1605 PASS
+(Read as: 44 router-specific tests plus broad surrounding regression coverage.)
+
+Definition of Done (audit's 18 scenarios): all 18 proven —
+see FULL_UPGRADE_v0.15.2.md for the scenario-to-test table.
+
+Additional gates:
+- verify:model-router-v15 (structural source guard): pass
+- verify:model-router-v152 (v0.15.2 guard; every check maps to a shipped
+  defect: threshold enforcement call, marker validation, latest-authority
+  reconstruction, epoch/discovered vocabulary, SDK wiring, record
+  truthfulness, release-chain membership, frozen baseline, README pairing,
+  canonical catalog): pass
+- verify:model-router-packed: pass — clean-tree closure build (schemastery
+  dual-format included), npm pack, isolated tarball consumer importing only
+  the public API, threshold enforcement asserted in the published artifact
+- gen-persistence-catalog --check (authorityEpoch + discovered payload): pass
+- verify-translation-pairing (llm-model-router pair): consistent
+- check-workspace-constraints: clean for every touched package
+
+Pre-existing baseline (verified against the original v0.14.1 upload, untouched):
+- packages/core/session repair.spec.ts: 1 deterministic expectation mismatch
+- packages/runtime/* compile/constraint failures identical to the unmodified
+  baseline; full-workspace tsc -b remains blocked in the clean archive
+  environment, so the packed gate scopes to the router's own closure

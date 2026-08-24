@@ -1,0 +1,58 @@
+DeepSeek Harness v0.14.1 targeted validation
+
+Agent-kernel hardening package: 29/29 PASS
+Outcome Verification Engine package: 45/45 PASS
+Python agent-kernel reference: 12/12 PASS
+v0.6 failure injection: 12/12 PASS
+v0.7 policy binding + Code Mode: 10/10 PASS
+v0.7 process-kill lifecycle: 8/8 PASS
+v0.8 checkpoint/recovery: 15/15 PASS
+v0.8 checkpoint process-kill: 16/16 PASS
+v0.9 outcome integration: 11/11 PASS
+v0.10 verifier corpus: 12/12 PASS
+v0.11 calibration: 150/150 PASS
+v0.12 adversarial calibration: 1600/1600 PASS
+v0.12 executable coding fixtures: 40/40 PASS
+v0.13 six-pack calibration: 2100/2100 PASS
+v0.13 executable mutation fixtures: 160/160 PASS
+v0.14 runtime performance/resource qualification: 14/14 PASS
+v0.14.1 runtime correctness qualification: 24/24 PASS
+
+Total targeted executable checks counted above: 4258/4258 PASS
+
+v0.14.1 corrections validated:
+- all 5 v0.14 diagnostic event types have canonical SessionEventMap ownership
+- generated known-event catalog contains all 5 diagnostic event types
+- persistence catalog generator check passes
+- Bash/PowerShell do not independently own terminal/settlement
+- shared terminal/settlement schema accepts bash | pwsh
+- physical model timing wraps llm/stream with performance.now()
+- physical tool timing wraps tools/execute with performance.now()
+- runtime/performance-sample v2 declares monotonic-execution-spans timing source
+- model-call budget is admitted/charged before provider dispatch at agent/request
+- terminal protocol fallback is split from timeout/exit/reset metrics
+- runtime performance acceptance gate uses terminalProtocolFallbackRate
+
+Backward-regression validation:
+- v0.6-v0.8 crash/recovery/process-kill suites: PASS
+- v0.9-v0.13 outcome/calibration suites: PASS
+- v0.14 performance/resource qualification: 14/14 PASS
+- v0.13 calibrated release verification policy: ENFORCE
+
+Packed consumer imports:
+- agent-kernel-hardening: PASS
+- outcome-verification: PASS
+
+Source integration guards:
+- v0.5 through v0.14.1: PASS
+
+Other validation:
+- modified/new TypeScript syntax transpilation: 8/8 PASS
+- Python compileall: PASS
+- persistence catalog / known-event generator synchronization: PASS
+
+Known boundaries:
+- root resource counters are still process-local and are not automatically reconstructed after restart
+- reasoning/event/wall-time overruns block subsequent governed admissions rather than interrupting the current crossing operation
+- bounded FIFO backpressure is first-party integrated mainly on one-shot subagent starts
+- full dependency-installed upstream pnpm monorepo CI is not claimed in the clean archive environment because the complete installed workspace dependency graph/@types/node is absent

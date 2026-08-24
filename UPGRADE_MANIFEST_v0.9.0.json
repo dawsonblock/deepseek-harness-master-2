@@ -1,0 +1,312 @@
+{
+  "upgrade": "outcome-verification-engine-evidence-backed-completion",
+  "version": "0.9.0",
+  "base_archive": {
+    "name": "deepseek-harness-master-FULL-upgraded-corrected-v0.8.0.zip",
+    "sha256": "c8d2d8749f60eefaedd6675373e948ca66c8dabb9869059cb0f15c1f1575b9b6"
+  },
+  "validation": {
+    "outcome_verification_semantic_suite": "24/24 passed",
+    "outcome_verification_packed_consumer": "passed",
+    "hardening_semantic_suite": "20/20 passed",
+    "hardening_packed_consumer": "passed",
+    "python_reference_pytest": "12/12 passed",
+    "python_reference_compileall": "passed",
+    "v06_failure_injection": "12/12 passed",
+    "v07_policy_binding_and_code_mode": "10/10 passed",
+    "v07_process_kill_lifecycle": "8/8 passed",
+    "v08_checkpoint_recovery": "15/15 passed",
+    "v08_checkpoint_process_kill": "16/16 passed",
+    "v09_outcome_integration": "11/11 passed",
+    "targeted_executable_checks": "128/128 passed",
+    "source_guards": "v0.5, v0.6, v0.7, v0.8, v0.9 passed",
+    "typescript_syntax_transpile": "22/22 new or modified TypeScript files passed",
+    "goal_project_typecheck": "attempted; blocked immediately by absent @types/node / installed pnpm workspace graph",
+    "full_workspace_ci": "not claimed in clean archive environment"
+  },
+  "highlights": [
+    "new @deepseek-ai/dsh-outcome-verification workspace package implements Acceptance Contracts, versioned verifier policy, immutable evidence, invalidation, repair plans and Outcome Receipts",
+    "goal package registerOutcomeContract() persists log-only goal/outcome-receipt before existing goal/verification and completeVerified() authorization",
+    "required criteria can require deterministic verifiers; integrity-category failures fail closed regardless of severity",
+    "verifyStale() reuses fresh evidence and reruns invalidated criteria only",
+    "Outcome Receipt SHA-256 binds contract, verifier policy, criterion evidence, artifact hashes, warnings and lineage",
+    "trusted named-check verifier supports reviewed test/build/security gates without arbitrary command strings in contracts",
+    "hardening package 0.7.0 counts Outcome Receipts separately from verification attempts",
+    "root check/release chains include v0.9 package, packed-consumer, source and integration qualification"
+  ],
+  "remaining_work": [
+    "persist Acceptance Contracts, evidence and invalidations as first-class durable session events",
+    "wire verification status/repair plans into Code Mode and DAG APIs",
+    "ship first-party named check packs for tests, typecheck, packaging, security and benchmarks",
+    "protect acceptance fixtures and golden artifacts with explicit mutation authority",
+    "add model-verifier contradiction review for non-deterministic criteria",
+    "dogfood a release Acceptance Contract on the Harness release pipeline",
+    "run dependency-backed full monorepo CI and paired verified-success experiments"
+  ],
+  "changed_files": [
+    {
+      "path": "FULL_UPGRADE_v0.9.0.md",
+      "status": "added",
+      "bytes": 9265,
+      "sha256": "037a8e55c2be1aa175ac4654ecbd804f0ae8de21ba00af141c81cd8f498cffe4"
+    },
+    {
+      "path": "TARGETED_VALIDATION_v0.9.0.txt",
+      "status": "added",
+      "bytes": 1140,
+      "sha256": "092b0b0981e74cbed8af792252cd4945c422c8d00f674d8d70de426cb430ba4a"
+    },
+    {
+      "path": "docs/persistence-catalog.md",
+      "status": "modified",
+      "bytes": 40757,
+      "sha256": "46abd26a0e5103d44e227ec2d85ca90be1553aa2755cf08ef955c5d9f96b7435"
+    },
+    {
+      "path": "docs/persistence-catalog.zh.md",
+      "status": "modified",
+      "bytes": 38289,
+      "sha256": "10217fb00219ad803bcf94b19666e9052cfdd512653fb2475151c233a14f9158"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "bytes": 14067,
+      "sha256": "02f700d589f62de2135853f4bd3c2432fb5529c484295102677a92ae82217455"
+    },
+    {
+      "path": "packages/core/session/src/known-event-types.ts",
+      "status": "modified",
+      "bytes": 2170,
+      "sha256": "9ea7ebbf1622d5208b58fc190272e9f7e5d51a3b95e110d4140de0dcd4480108"
+    },
+    {
+      "path": "packages/goal/goal/README.md",
+      "status": "modified",
+      "bytes": 8251,
+      "sha256": "87f1814ccae1bfeffde621c704f6a7a5051d13cec9b6e27832d3ba19c08df6f9"
+    },
+    {
+      "path": "packages/goal/goal/README.zh.md",
+      "status": "modified",
+      "bytes": 7611,
+      "sha256": "c3f225aac7c4d577fee06c422db33c38a5ec31550ff359697470784a1147547a"
+    },
+    {
+      "path": "packages/goal/goal/package.json",
+      "status": "modified",
+      "bytes": 2560,
+      "sha256": "c7df2a3ea027c1715b4204b46d3112b87f3484872133a33e5d5bf5e022e1299e"
+    },
+    {
+      "path": "packages/goal/goal/src/domain.ts",
+      "status": "modified",
+      "bytes": 5524,
+      "sha256": "75e0c1573287c3a7edb8c076e6ed741e0decd463ccdf661e299772472a3da6ec"
+    },
+    {
+      "path": "packages/goal/goal/src/index.ts",
+      "status": "modified",
+      "bytes": 32944,
+      "sha256": "d2e59e07b24f88d38f0d3d71a537f0e9b7a6eb5ea18cbd81e5700e2e553de87e"
+    },
+    {
+      "path": "packages/goal/goal/src/outcome.ts",
+      "status": "added",
+      "bytes": 2366,
+      "sha256": "39bf4ec08332302a3535cb2fa4018bf3ba47edee9467ff182ccf4f86e9b57949"
+    },
+    {
+      "path": "packages/goal/goal/tests/goal.spec.ts",
+      "status": "modified",
+      "bytes": 43362,
+      "sha256": "4c3e8a40ea40de9e99daf2df572b4b5fd7ac2fbf9973f30bccf1958be021ccd8"
+    },
+    {
+      "path": "packages/goal/goal/tsconfig.json",
+      "status": "modified",
+      "bytes": 810,
+      "sha256": "00b0c8a70c0114809c6df4618606dc813115ea2fb9acac567c3eabc5d1bde994"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/README.md",
+      "status": "added",
+      "bytes": 2593,
+      "sha256": "28dead8aa143f024f82937261a0b0d4e4b0e3814e91b7e5fa5eecca541b28fc6"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/package.json",
+      "status": "added",
+      "bytes": 1035,
+      "sha256": "4d9821e58cd46ad17aa753d61f2f0a9c6658932532a893ff3b6b4adde75ca7a2"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/scripts/build.mjs",
+      "status": "added",
+      "bytes": 816,
+      "sha256": "df16bc9d76d474645ca22c1c0fa97d0f144bbbcd1660f0792a63f8f1217c6d99"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/adapter.ts",
+      "status": "added",
+      "bytes": 2509,
+      "sha256": "d37f759875c2c0cef73d774f6dea31f82957f7a4b36f854bb0a23534873f20e7"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/builtins.ts",
+      "status": "added",
+      "bytes": 6738,
+      "sha256": "014f8b18ee2b13df065a208d72b278f22e0016673f0d8e7d1aa3a3b1d28b014e"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/canonical.ts",
+      "status": "added",
+      "bytes": 4191,
+      "sha256": "fd1abae510c03afa4381b0b5339faffaaa116aceab26dca271e0dafbbcc60f1e"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/compiler.ts",
+      "status": "added",
+      "bytes": 1574,
+      "sha256": "d8095a237ecc62881b3bbbe267d21cc214ebf510fe3d1d1175d01e37ed247dd5"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/contract.ts",
+      "status": "added",
+      "bytes": 3310,
+      "sha256": "ac08a438ff1fac54bd1fcae0444a710867923c26649836d9eb8b64c8c8f7174b"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/engine.ts",
+      "status": "added",
+      "bytes": 9681,
+      "sha256": "e677b59814ab6567b8fcaa7a17bd5f15cb353935f8e0bb03788bc42ad48fd9d6"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/evidence.ts",
+      "status": "added",
+      "bytes": 2763,
+      "sha256": "71d50aaf174d1347cbab228f6ba7ccac9d75b80beaa8f29d011f293c9ac21c46"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/factories.ts",
+      "status": "added",
+      "bytes": 1848,
+      "sha256": "38f7abc79c791a1c11abc651be2d7d92d416f079fae21eefde490f333aada38b"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/graph.ts",
+      "status": "added",
+      "bytes": 962,
+      "sha256": "75b93a5cbb985ba04d385e7b23e7251ac070c4c98cf7e02116be9f573a88a3cb"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/index.ts",
+      "status": "added",
+      "bytes": 416,
+      "sha256": "45be7a3cc79d8765617619b6dff375d7367d2b85b2cde61e62e8d0859b847de2"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/packs.ts",
+      "status": "added",
+      "bytes": 2816,
+      "sha256": "905a193dd9219135edace8ca32f5724827f869a61a5cfb8e252c159df0f68a5b"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/registry.ts",
+      "status": "added",
+      "bytes": 1459,
+      "sha256": "61275750674e4f7d07c712cb39787a348258a993f681391a075cfd211c0963ed"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/state-machine.ts",
+      "status": "added",
+      "bytes": 2766,
+      "sha256": "509c952c872d7419705902a0104f2a730d7b96376cf2bdcd39269bb23ee299fc"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/telemetry.ts",
+      "status": "added",
+      "bytes": 1890,
+      "sha256": "bab5fe1f2a7d1ca95c3bee436f73c2d8f970f0b1caa1c81fc9acc73ba0080a38"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/types.ts",
+      "status": "added",
+      "bytes": 5834,
+      "sha256": "a11499dd0261e6e8e3e77bd41321482b621fa5f7b9ef58e0d30e1c9fe3ee744f"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/tests/packed-consumer.mjs",
+      "status": "added",
+      "bytes": 1740,
+      "sha256": "18f173b93ee102f9a7e9bbad4d93aa620204bc16a9abc4bc1276ca76c7180f99"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/tests/qualification.mjs",
+      "status": "added",
+      "bytes": 16954,
+      "sha256": "f757cfae4cfbe1cb4900f3e2b9f8dce72971e8e7567b92bbee87fc75c82a706c"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/tsconfig.json",
+      "status": "added",
+      "bytes": 482,
+      "sha256": "b9e535ee783467f419e086e4d47865a5c7c1d088344c24c5a465588579cfeefa"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/README.md",
+      "status": "modified",
+      "bytes": 7053,
+      "sha256": "ba089d2dd7e14872449f7297560a37134e99fd93808e3cb0b94c9217e3bc7caf"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/package.json",
+      "status": "modified",
+      "bytes": 1087,
+      "sha256": "0db8953338ad5f40c1254f9cd5c2445146c69525a357656cf7d30cce9552d3d1"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/metrics.ts",
+      "status": "modified",
+      "bytes": 11745,
+      "sha256": "d6487d4be09f24810536ae965f5d8db3372115318d9793e6506050bc3425aa34"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/types.ts",
+      "status": "modified",
+      "bytes": 6884,
+      "sha256": "78e3e6fa028d13de7150ccdc1ac5815d9baee5653b2201b38cb8895530beac32"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/tests/qualification.mjs",
+      "status": "modified",
+      "bytes": 16428,
+      "sha256": "179ec371a700feaf751303c4062d597975118d8b81ddde0b0f6398fda4256e66"
+    },
+    {
+      "path": "scripts/qualification-outcome-v09.mjs",
+      "status": "added",
+      "bytes": 3303,
+      "sha256": "2b6db3a36f5822f369b640881de1293afec6e89ad58fae4717a75fc9b710d1c3"
+    },
+    {
+      "path": "scripts/verify-agent-kernel-v09.mjs",
+      "status": "added",
+      "bytes": 1971,
+      "sha256": "f828d299f00b43e06a8befc5505294d75bc88d32ba826d456863285d21592cd2"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "status": "modified",
+      "bytes": 19561,
+      "sha256": "509a8a8640806a9de63ae8cd547bdce6321af3a16876ce30324cb7e362c41780"
+    },
+    {
+      "path": "tsconfig.host.json",
+      "status": "modified",
+      "bytes": 15152,
+      "sha256": "f869d17bd53d4b8b33a1ffe34de99efdeb5f2ee83054731e1774beafdae90ce0"
+    }
+  ]
+}

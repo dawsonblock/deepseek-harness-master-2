@@ -1,0 +1,43 @@
+{
+  "release": "v0.13.0",
+  "base": "v0.12.0",
+  "outcomeVerificationPackage": "0.5.0",
+  "focus": "per-pack calibration, adversarial mutation testing, and policy-bound enforcement",
+  "features": [
+    "required per-pack calibration gates",
+    "per-pack Wilson FAR/FRR confidence bounds",
+    "required adversarial fault-class coverage",
+    "mutation seed/operator provenance",
+    "mutation kill-rate promotion gates",
+    "stable optional-field benchmark fingerprint normalization",
+    "v2 promotion receipts with packCalibrationHash",
+    "six-pack release calibration",
+    "executable JavaScript mutation fixture qualification"
+  ],
+  "calibration": {
+    "cases": 2100,
+    "valid": 600,
+    "invalid": 1500,
+    "falseAccepts": 0,
+    "falseRejects": 0,
+    "far": 0,
+    "frr": 0,
+    "farUpper95Approx": 0.00255,
+    "packs": 6,
+    "mutationCasesPerPack": 150,
+    "mutationKillRatePerPack": 1
+  },
+  "executableMutationFixture": {
+    "cases": 160,
+    "valid": 40,
+    "mutations": 120,
+    "killed": 120,
+    "survived": 0,
+    "killRate": 1
+  },
+  "targetedExecutableChecks": {
+    "passed": 2440,
+    "total": 2440
+  },
+  "fullMonorepoCiClaimed": false
+}

@@ -1,0 +1,82 @@
+DeepSeek Harness v0.15.4 targeted validation (control-plane correctness, audit response)
+
+Model router package: 62/62 PASS
+  - scorer calibration + config resolution + marker independence (carried
+    from v0.15.2/v0.15.3): 15
+  - turn text / discovered facts: 2
+  - authority + mid-turn policy (carried): 14
+  - durable-record shape v0.15.3 (id + activeAuthority; authorityEpoch no
+    longer written on routing decisions): 1
+  - first-ever explicit claims; foreign/subagent ownership-end records: 2
+  - reconstruction: router-owned re-score, the audit restart bug, v0.15.3
+    authority events at any policy version, POLICY-VERSION INDEPENDENCE,
+    foreign/subagent barriers, stale-policy-only logs: 6
+  - agent-loop integration (carried DoD battery: restarts, Auto, SDK,
+    lean-mode durability, mid-turn tool-loop escalation, foreign models,
+    per-turn re-routing, step retention): 14
+  - v0.15.4 DETERMINISTIC IDENTITY: coordinate-derived ids reproducible and
+    turn-distinct; scorerVersion + configFingerprint stamped on every
+    decision: 1
+  - v0.15.4 AUDIT F1: Auto after a REAL process restart (fresh Session from
+    persisted events; release derives from durable state): 1
+  - v0.15.4 AUDIT F3: manual selection survives a crash before any request: 1
+  - v0.15.4 AUDIT F4: same-authority Pro-to-Flash switch durable across a
+    crash (two transitions recorded): 1
+  - v0.15.4 AUDIT F2/F6: foreign manual -> Auto reclaims the default route;
+    the default authority state reconstructs: 1
+  - v0.15.4 AUDIT F7: a future-schema authority state fails CLOSED — never
+    resurrects older history: 1
+  - real Loader composition: 1
+
+Router invariant companion (new): 8/8 PASS
+  - healthy manual -> auto -> router-decision stream accepted
+  - manual state without a complete selection rejected
+  - auto state carrying a manual selection rejected
+  - router decision superseding manual authority rejected (missing auto release)
+  - router decisions legal when no manual state exists
+  - epoch regression rejected (loaded + freshly appended)
+  - decisions missing id / scorerVersion / configFingerprint rejected
+  - future-schema authority states rejected
+
+dsh-agent authority suite: included in core/agent below.
+Core agent + default model: 97/97 PASS
+Core agent-loop: 335/335 PASS
+Core agent-tool-presentation: 7/7 PASS
+Host API proxy: 380/380 PASS
+  - v0.15.4: selectModel mode auto releases durable manual authority AND
+    resets the picked model to the deployment default (non-claiming reset)
+  - v0.15.4: a manual selection is crash-durable ahead of the logged header
+    (fresh-context proxy over the same session log resolves the claim)
+Client connection + HMR: 117/117 PASS
+DeepSeek adapter (llm-deepseek): 339/339 PASS
+LLM retry: 66/66 PASS
+Compaction family: 194/194 PASS
+SDK JSON-RPC server: 33/33 PASS
+
+Total targeted executable checks: 1630/1630 PASS
+(Read as: 62 router-package tests, including the 8-test invariant suite,
+plus broad surrounding regression coverage.)
+
+Adversarial battery (audit item 9): 8/8 scenarios proven — see
+FULL_UPGRADE_v0.15.4.md for the scenario-to-test table.
+
+Release hygiene:
+- version identity: root + 231 release members 0.1.1-rc.3 -> 0.1.1-rc.4;
+  guards and the packed gate assert rc.4, including on the built tarball
+- packaging: the shared runtime chunk (lib/types-*.js) is declared in files
+  and taught to the workspace-constraint extras; the isolated tarball
+  consumer imports the whole package successfully
+
+Additional gates:
+- verify:model-router-v15 / -v152 / -v153 / -v154: pass
+- verify:model-router-packed: pass (clean-tree closure, version assertion,
+  tarball, isolated consumer)
+- gen-persistence-catalog --check: pass
+- verify-translation-pairing (llm-model-router pair): consistent
+- check-workspace-constraints: no findings for any touched package
+
+Pre-existing baseline (verified against the original v0.14.1 upload, untouched):
+- packages/core/session repair.spec.ts: 1 deterministic expectation mismatch
+- packages/runtime/* compile/constraint failures identical to the unmodified
+  baseline; full-workspace tsc -b remains blocked in the clean archive
+  environment, so the packed gate scopes to the router's own closure

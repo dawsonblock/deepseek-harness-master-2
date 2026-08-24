@@ -1,0 +1,56 @@
+{
+  "release": "v0.12.0",
+  "base": "v0.11.0",
+  "name": "DeepSeek Harness FULL upgraded corrected",
+  "focus": "empirical verifier calibration, failure taxonomy, verified-success uplift, and promotion-receipt-enforced release policy",
+  "outcomeVerificationPackageVersion": "0.4.0",
+  "changes": {
+    "changedOrAddedCount": 20,
+    "removedCount": 0,
+    "changedOrAddedFiles": [
+      "FULL_UPGRADE_v0.12.0.md",
+      "TARGETED_VALIDATION_v0.12.0.txt",
+      "benchmarks/verification/README.md",
+      "benchmarks/verification/v0.12-calibration.json",
+      "config/acceptance/release-v3-promotion.json",
+      "config/acceptance/release-v3.json",
+      "package.json",
+      "packages/outcome/outcome-verification/README.md",
+      "packages/outcome/outcome-verification/package.json",
+      "packages/outcome/outcome-verification/src/benchmark.ts",
+      "packages/outcome/outcome-verification/src/calibration.ts",
+      "packages/outcome/outcome-verification/src/index.ts",
+      "packages/outcome/outcome-verification/src/promotion.ts",
+      "packages/outcome/outcome-verification/src/types.ts",
+      "packages/outcome/outcome-verification/tests/qualification.mjs",
+      "scripts/qualification-coding-fixtures-v12.mjs",
+      "scripts/qualification-outcome-v12.mjs",
+      "scripts/resolve-release-verification-v12.mjs",
+      "scripts/verify-agent-kernel-v11.mjs",
+      "scripts/verify-agent-kernel-v12.mjs"
+    ],
+    "removedFiles": []
+  },
+  "validation": {
+    "outcomeVerificationTests": "40/40 PASS",
+    "agentHardeningTests": "22/22 PASS",
+    "pythonReferenceTests": "12/12 PASS",
+    "v06FailureInjection": "12/12 PASS",
+    "v07PolicyCodeMode": "10/10 PASS",
+    "v07ProcessKill": "8/8 PASS",
+    "v08Recovery": "15/15 PASS",
+    "v08CheckpointProcessKill": "16/16 PASS",
+    "v09OutcomeIntegration": "11/11 PASS",
+    "v10VerifierCorpus": "12/12 PASS; FAR=0; FRR=0",
+    "v11CalibrationCorpus": "150/150 PASS; valid=50; invalid=100; FAR=0; FRR=0",
+    "v12CalibrationCorpus": "1600/1600 PASS; valid=500; invalid=1100; FAR=0; FRR=0; FAR95 upper\u22480.00348",
+    "v12ExecutableCodingFixtures": "40/40 PASS; FAR=0; FRR=0; accepted precision 25% -> 100%; valid retention=100%",
+    "promotionReceipt": "VALID; exact calibrated fingerprints resolve release verification to ENFORCE",
+    "sourceGuards": "v0.5-v0.12 PASS",
+    "targetedExecutableChecks": "1948/1948 PASS"
+  },
+  "limitations": [
+    "Complete dependency-backed upstream pnpm monorepo CI is not claimed from the clean extracted source environment.",
+    "The bundled FAR/FRR and precision-uplift results describe the labeled calibration/fixture corpora and are not a universal real-world guarantee."
+  ]
+}

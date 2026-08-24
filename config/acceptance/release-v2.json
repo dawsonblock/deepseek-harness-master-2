@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 2,
+  "pack": "release",
+  "packVersion": "1",
+  "defaultMode": "observe",
+  "trustedChecks": [
+    "outcome-engine-tests",
+    "agent-hardening-tests",
+    "python-reference-tests",
+    "failure-injection-tests",
+    "process-kill-tests",
+    "packed-consumer-pass",
+    "source-guards-pass",
+    "archive-manifest-valid"
+  ],
+  "benchmarkGate": {
+    "maximumFalseAcceptanceRate": 0,
+    "maximumFalseRejectionRate": 0.05,
+    "maximumFalseAcceptanceUpperBound95": 0.04
+  },
+  "promotion": {
+    "from": "observe",
+    "to": "enforce",
+    "minimumCases": 150,
+    "minimumValidCases": 50,
+    "minimumInvalidCases": 100,
+    "requirePerPackGates": true,
+    "policyBindingRequired": true
+  }
+}

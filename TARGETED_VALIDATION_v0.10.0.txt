@@ -1,0 +1,25 @@
+DeepSeek Harness FULL upgraded corrected v0.10.0
+Targeted validation summary
+
+Outcome Verification Engine semantic suite: 30/30 PASS
+Outcome Verification packed clean-consumer import: PASS
+Agent-kernel hardening semantic suite: 22/22 PASS
+Agent-kernel hardening packed clean-consumer import: PASS
+Python reference kernel: 12/12 PASS
+Python reference compileall: PASS
+v0.6 failure injection: 12/12 PASS
+v0.7 policy-binding + Code Mode: 10/10 PASS
+v0.7 real process-kill lifecycle: 8/8 PASS
+v0.8 checkpoint/recovery: 15/15 PASS
+v0.8 checkpoint process-kill: 16/16 PASS
+v0.9 outcome integration: 11/11 PASS
+v0.10 labeled verifier corpus: 12/12 classified correctly
+v0.10 corpus false-acceptance rate (FAR): 0
+v0.10 corpus false-rejection rate (FRR): 0
+v0.5-v0.10 source guards: PASS
+Release Acceptance Contract scaffold generation: PASS
+
+Targeted executable checks: 148/148 PASS
+
+Package-level TypeScript builds for outcome-verification and agent-kernel-hardening: PASS.
+The dependency-backed goal/workspace project typecheck was attempted and is blocked in this clean archive environment by the absent installed @types/node / pnpm dependency graph. Full upstream monorepo CI is therefore not claimed.

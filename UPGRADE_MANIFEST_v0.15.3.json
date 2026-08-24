@@ -1,0 +1,60 @@
+{
+  "release": "v0.15.3",
+  "base": "v0.15.2",
+  "modelRouterPackage": "0.1.1-rc.3",
+  "routerPolicyVersion": 2,
+  "focus": "routing authority and release hygiene: release-wide version identity, a policy-version-independent durable authority event, first-class Auto, monotonic epochs, lean-mode authority durability, provenance labels, and v0.15.3 release gates",
+  "fixes": [
+    "release-wide version bump to 0.1.1-rc.3 (root + all 231 matching release members): v0.15.1/v0.15.2 code no longer shares one immutable package identity; guards and the packed gate assert the new version, including on the built tarball",
+    "new durable model/selection-authority event declared in dsh-agent (always composed, not the opt-in router), carrying authority, source, authorityEpoch, and its own authoritySchemaVersion — never a router policy version",
+    "authority reconstruction is latest-deciding-record-wins with policy asymmetry: authority events and legacy explicit/foreign/subagent barriers decide at ANY policy version; only router-owned route continuity is policy-version filtered — a future router upgrade cannot erase a recorded user or SDK choice",
+    "clearExplicitModelSelection: Auto is a first-class state — explicit authority releases back to automatic routing durably, surviving restarts; the router re-scores leftover heavy headers under automatic authority",
+    "nextAuthorityEpoch never resets: continues above every persisted epoch across authority events of all schema versions and the legacy v0.15.2 routing-decision carrier",
+    "authority events are unconditionally durable (never gated by router config or recordAllDecisions); foreign/subagent passthroughs that end prior router ownership record even in lean mode",
+    "provenance labels on every deliberate selection surface: web picker (source web, authority user), SDK initialize (source sdk, authority sdk), with api/cli/system sources available; same-authority re-selections do not spam the stream",
+    "model/routing-decision gains routingDecisionId (outcome/cost join key) and activeAuthority (session authority in force); its authorityEpoch becomes a read-only legacy field",
+    "verify:model-router-v153 source guard + qualify:model-router-authority-v153 executable suite wired into check:all, check:ci, and release:verify alongside the existing gates",
+    "packed verification asserts the package version on the built artifact"
+  ],
+  "authorityModel": {
+    "event": "model/selection-authority",
+    "authorities": ["default", "router", "user", "sdk", "policy", "subagent-owner"],
+    "sources": ["web", "sdk", "api", "cli", "router", "subagent", "system"],
+    "schemaVersion": 1,
+    "policyVersionIndependent": true,
+    "epoch": "session-level, monotonic across restarts, policy migrations, and schema versions",
+    "auto": "clearExplicitModelSelection releases authority to automatic routing durably"
+  },
+  "routingPolicy": {
+    "defaultEscalationThreshold": 4,
+    "familyCaps": { "explicitReasoning": 3, "math": 3, "architecture": 3, "codeBlocks": 2, "length": 2 },
+    "calibrationContract": "no single family can reach the default threshold alone; enforced at config load",
+    "markerIndependence": "normalized cross-family, intra-family, and built-in collision checks at config load",
+    "discoveredEscalationDefaults": { "minToolCalls": 8, "minToolResultChars": 24000 },
+    "discoveredTriggers": ["tool-calls", "tool-result-volume", "composite"],
+    "oneWay": "fast-to-heavy only, never downgraded mid-turn",
+    "subagentsRoutedByDefault": false
+  },
+  "targetedExecutableChecks": {
+    "passed": 1614,
+    "total": 1614,
+    "routerSpecific": 48,
+    "note": "48 router tests plus broad surrounding regression coverage; the new dsh-agent authority suite (5 tests) is counted under core/agent"
+  },
+  "sourceGuards": "verify:model-router-v15 pass; verify:model-router-v152 pass; verify:model-router-v153 pass; verify:model-router-packed pass (version assertion + tarball + isolated consumer)",
+  "persistenceCatalog": "regenerated for model/selection-authority; --check pass",
+  "translationPairing": "llm-model-router README pair consistent",
+  "workspaceConstraints": "clean for every touched package; no new findings",
+  "preExistingBaselines": [
+    "packages/core/session repair.spec.ts expectation mismatch present in the original v0.14.1 upload, untouched",
+    "packages/runtime/* compile and constraint failures identical in the unmodified baseline; full-workspace tsc -b still cannot complete in the clean archive environment"
+  ],
+  "remainingBoundaries": [
+    "first-class AuthorizedModelSelection contract on LlmCallConfig remains deferred; the authority event stream is now the durable authority record",
+    "web picker Auto button is Control Center frontend work; the library operation ships in v0.15.3",
+    "discovered-escalation triggers remain volume heuristics; verification failures, repair rounds, tool errors, and reasoning pressure are v0.16 signals",
+    "router remains opt-in composition"
+  ],
+  "fullMonorepoCiClaimed": false,
+  "fullMonorepoCiBoundary": "Pre-existing packages/runtime/* failures block the full workspace build in the clean archive environment; the packed gate builds and verifies the router's own closure from a clean tree instead."
+}

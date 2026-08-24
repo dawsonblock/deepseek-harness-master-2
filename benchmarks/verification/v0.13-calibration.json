@@ -1,0 +1,737 @@
+{
+  "schemaVersion": 2,
+  "release": "v0.13.0",
+  "policyBinding": {
+    "packRegistryFingerprint": "e539b01942e481397431b2b9b5a71b6461bcc51c8c680d54e6b6c2ab3a8a63e4",
+    "verifierRegistryFingerprint": "374208db2c891af3c09629dc0930a5442ba9a15dfb313b3e467529a455578713",
+    "trustedCheckRegistryFingerprint": "c8bbb4193672b79b85ca21b58bfcf5fa0cdd0b903759526240cbdf5e714c89a3"
+  },
+  "policy": {
+    "from": "observe",
+    "to": "enforce",
+    "minimumCases": 2100,
+    "minimumValidCases": 600,
+    "minimumInvalidCases": 1500,
+    "maximumFalseAcceptanceRate": 0,
+    "maximumFalseRejectionRate": 0,
+    "maximumFalseAcceptanceUpperBound95": 0.003,
+    "requirePerPackGates": true,
+    "requiredPacks": {
+      "runtime": {
+        "minimumCases": 350,
+        "minimumValidCases": 100,
+        "minimumInvalidCases": 250,
+        "maximumFalseAcceptanceRate": 0,
+        "maximumFalseRejectionRate": 0,
+        "maximumFalseAcceptanceUpperBound95": 0.016,
+        "requiredFaultClasses": [
+          "qualification-fail",
+          "consumer-fail",
+          "unresolved-side-effect",
+          "recovery-blocked"
+        ],
+        "minimumMutationCases": 150,
+        "minimumMutationKillRate": 1
+      },
+      "coding": {
+        "minimumCases": 350,
+        "minimumValidCases": 100,
+        "minimumInvalidCases": 250,
+        "maximumFalseAcceptanceRate": 0,
+        "maximumFalseRejectionRate": 0,
+        "maximumFalseAcceptanceUpperBound95": 0.016,
+        "requiredFaultClasses": [
+          "tests-fail",
+          "typecheck-fail",
+          "unresolved-side-effect",
+          "dual-check-fail"
+        ],
+        "minimumMutationCases": 150,
+        "minimumMutationKillRate": 1
+      },
+      "research": {
+        "minimumCases": 350,
+        "minimumValidCases": 100,
+        "minimumInvalidCases": 250,
+        "maximumFalseAcceptanceRate": 0,
+        "maximumFalseRejectionRate": 0,
+        "maximumFalseAcceptanceUpperBound95": 0.016,
+        "requiredFaultClasses": [
+          "claim-provenance-fail",
+          "contradiction-present",
+          "source-quality-fail",
+          "experiment-missing"
+        ],
+        "minimumMutationCases": 150,
+        "minimumMutationKillRate": 1
+      },
+      "deployment": {
+        "minimumCases": 350,
+        "minimumValidCases": 100,
+        "minimumInvalidCases": 250,
+        "maximumFalseAcceptanceRate": 0,
+        "maximumFalseRejectionRate": 0,
+        "maximumFalseAcceptanceUpperBound95": 0.016,
+        "requiredFaultClasses": [
+          "build-fail",
+          "deployment-missing",
+          "healthcheck-fail",
+          "smoke-test-fail",
+          "rollback-missing"
+        ],
+        "minimumMutationCases": 150,
+        "minimumMutationKillRate": 1
+      },
+      "data-pipeline": {
+        "minimumCases": 350,
+        "minimumValidCases": 100,
+        "minimumInvalidCases": 250,
+        "maximumFalseAcceptanceRate": 0,
+        "maximumFalseRejectionRate": 0,
+        "maximumFalseAcceptanceUpperBound95": 0.016,
+        "requiredFaultClasses": [
+          "schema-invalid",
+          "referential-integrity-fail",
+          "row-count-low",
+          "null-rate-high",
+          "duplicate-rate-high"
+        ],
+        "minimumMutationCases": 150,
+        "minimumMutationKillRate": 1
+      },
+      "release": {
+        "minimumCases": 350,
+        "minimumValidCases": 100,
+        "minimumInvalidCases": 250,
+        "maximumFalseAcceptanceRate": 0,
+        "maximumFalseRejectionRate": 0,
+        "maximumFalseAcceptanceUpperBound95": 0.016,
+        "requiredFaultClasses": [
+          "trusted-check-fail",
+          "unresolved-side-effect",
+          "recovery-blocked",
+          "multi-fault"
+        ],
+        "minimumMutationCases": 150,
+        "minimumMutationKillRate": 1
+      }
+    }
+  },
+  "summary": {
+    "cases": 2100,
+    "validCases": 600,
+    "invalidCases": 1500,
+    "trueAccepts": 600,
+    "trueRejects": 1500,
+    "falseAccepts": 0,
+    "falseRejects": 0,
+    "falseAcceptanceRate": 0,
+    "falseRejectionRate": 0,
+    "meanVerificationMs": 0.23511686047618982,
+    "meanVerifierRuns": 5.5,
+    "meanEvidenceRecords": 5.38,
+    "meanRepairRounds": 0
+  },
+  "far": {
+    "observed": 0,
+    "lower95": 0,
+    "upper95": 0.002554430720181488,
+    "errors": 0,
+    "trials": 1500
+  },
+  "frr": {
+    "observed": 0,
+    "lower95": 4.336808689942018e-19,
+    "upper95": 0.00636170101370071,
+    "errors": 0,
+    "trials": 600
+  },
+  "packCalibrations": {
+    "coding": {
+      "pack": "coding",
+      "summary": {
+        "cases": 350,
+        "validCases": 100,
+        "invalidCases": 250,
+        "trueAccepts": 100,
+        "trueRejects": 250,
+        "falseAccepts": 0,
+        "falseRejects": 0,
+        "falseAcceptanceRate": 0,
+        "falseRejectionRate": 0,
+        "meanVerificationMs": 0.1464619428571421,
+        "meanVerifierRuns": 3,
+        "meanEvidenceRecords": 3,
+        "meanRepairRounds": 0
+      },
+      "far": {
+        "observed": 0,
+        "lower95": 8.673617379884035e-19,
+        "upper95": 0.015133299495444574,
+        "errors": 0,
+        "trials": 250
+      },
+      "frr": {
+        "observed": 0,
+        "lower95": 3.469446951953614e-18,
+        "upper95": 0.03699349820698568,
+        "errors": 0,
+        "trials": 100
+      },
+      "faultClasses": [
+        "dual-check-fail",
+        "tests-fail",
+        "typecheck-fail",
+        "unresolved-side-effect"
+      ],
+      "mutation": {
+        "cases": 150,
+        "killed": 150,
+        "survived": 0,
+        "killRate": 1,
+        "operators": [
+          "coding:dual-check-fail",
+          "coding:tests-fail",
+          "coding:typecheck-fail",
+          "coding:unresolved-side-effect"
+        ]
+      }
+    },
+    "data-pipeline": {
+      "pack": "data-pipeline",
+      "summary": {
+        "cases": 350,
+        "validCases": 100,
+        "invalidCases": 250,
+        "trueAccepts": 100,
+        "trueRejects": 250,
+        "falseAccepts": 0,
+        "falseRejects": 0,
+        "falseAcceptanceRate": 0,
+        "falseRejectionRate": 0,
+        "meanVerificationMs": 0.2638487599999965,
+        "meanVerifierRuns": 6,
+        "meanEvidenceRecords": 6,
+        "meanRepairRounds": 0
+      },
+      "far": {
+        "observed": 0,
+        "lower95": 8.673617379884035e-19,
+        "upper95": 0.015133299495444574,
+        "errors": 0,
+        "trials": 250
+      },
+      "frr": {
+        "observed": 0,
+        "lower95": 3.469446951953614e-18,
+        "upper95": 0.03699349820698568,
+        "errors": 0,
+        "trials": 100
+      },
+      "faultClasses": [
+        "duplicate-rate-high",
+        "null-rate-high",
+        "referential-integrity-fail",
+        "row-count-low",
+        "schema-invalid",
+        "unresolved-side-effect"
+      ],
+      "mutation": {
+        "cases": 150,
+        "killed": 150,
+        "survived": 0,
+        "killRate": 1,
+        "operators": [
+          "data-pipeline:duplicate-rate-high",
+          "data-pipeline:null-rate-high",
+          "data-pipeline:referential-integrity-fail",
+          "data-pipeline:row-count-low",
+          "data-pipeline:schema-invalid",
+          "data-pipeline:unresolved-side-effect"
+        ]
+      }
+    },
+    "deployment": {
+      "pack": "deployment",
+      "summary": {
+        "cases": 350,
+        "validCases": 100,
+        "invalidCases": 250,
+        "trueAccepts": 100,
+        "trueRejects": 250,
+        "falseAccepts": 0,
+        "falseRejects": 0,
+        "falseAcceptanceRate": 0,
+        "falseRejectionRate": 0,
+        "meanVerificationMs": 0.25610490857142787,
+        "meanVerifierRuns": 6,
+        "meanEvidenceRecords": 5.28,
+        "meanRepairRounds": 0
+      },
+      "far": {
+        "observed": 0,
+        "lower95": 8.673617379884035e-19,
+        "upper95": 0.015133299495444574,
+        "errors": 0,
+        "trials": 250
+      },
+      "frr": {
+        "observed": 0,
+        "lower95": 3.469446951953614e-18,
+        "upper95": 0.03699349820698568,
+        "errors": 0,
+        "trials": 100
+      },
+      "faultClasses": [
+        "build-fail",
+        "deployment-missing",
+        "healthcheck-fail",
+        "rollback-missing",
+        "smoke-test-fail",
+        "unresolved-side-effect"
+      ],
+      "mutation": {
+        "cases": 150,
+        "killed": 150,
+        "survived": 0,
+        "killRate": 1,
+        "operators": [
+          "deployment:build-fail",
+          "deployment:deployment-missing",
+          "deployment:healthcheck-fail",
+          "deployment:rollback-missing",
+          "deployment:smoke-test-fail",
+          "deployment:unresolved-side-effect"
+        ]
+      }
+    },
+    "release": {
+      "pack": "release",
+      "summary": {
+        "cases": 350,
+        "validCases": 100,
+        "invalidCases": 250,
+        "trueAccepts": 100,
+        "trueRejects": 250,
+        "falseAccepts": 0,
+        "falseRejects": 0,
+        "falseAcceptanceRate": 0,
+        "falseRejectionRate": 0,
+        "meanVerificationMs": 0.31406225999999965,
+        "meanVerifierRuns": 10,
+        "meanEvidenceRecords": 10,
+        "meanRepairRounds": 0
+      },
+      "far": {
+        "observed": 0,
+        "lower95": 8.673617379884035e-19,
+        "upper95": 0.015133299495444574,
+        "errors": 0,
+        "trials": 250
+      },
+      "frr": {
+        "observed": 0,
+        "lower95": 3.469446951953614e-18,
+        "upper95": 0.03699349820698568,
+        "errors": 0,
+        "trials": 100
+      },
+      "faultClasses": [
+        "multi-fault",
+        "recovery-blocked",
+        "trusted-check-fail",
+        "unresolved-side-effect"
+      ],
+      "mutation": {
+        "cases": 150,
+        "killed": 150,
+        "survived": 0,
+        "killRate": 1,
+        "operators": [
+          "release:multi-fault",
+          "release:recovery-blocked",
+          "release:trusted-check-fail",
+          "release:unresolved-side-effect"
+        ]
+      }
+    },
+    "research": {
+      "pack": "research",
+      "summary": {
+        "cases": 350,
+        "validCases": 100,
+        "invalidCases": 250,
+        "trueAccepts": 100,
+        "trueRejects": 250,
+        "falseAccepts": 0,
+        "falseRejects": 0,
+        "falseAcceptanceRate": 0,
+        "falseRejectionRate": 0,
+        "meanVerificationMs": 0.1724751857142868,
+        "meanVerifierRuns": 4,
+        "meanEvidenceRecords": 4,
+        "meanRepairRounds": 0
+      },
+      "far": {
+        "observed": 0,
+        "lower95": 8.673617379884035e-19,
+        "upper95": 0.015133299495444574,
+        "errors": 0,
+        "trials": 250
+      },
+      "frr": {
+        "observed": 0,
+        "lower95": 3.469446951953614e-18,
+        "upper95": 0.03699349820698568,
+        "errors": 0,
+        "trials": 100
+      },
+      "faultClasses": [
+        "claim-provenance-fail",
+        "contradiction-present",
+        "experiment-missing",
+        "source-quality-fail"
+      ],
+      "mutation": {
+        "cases": 150,
+        "killed": 150,
+        "survived": 0,
+        "killRate": 1,
+        "operators": [
+          "research:claim-provenance-fail",
+          "research:contradiction-present",
+          "research:experiment-missing",
+          "research:source-quality-fail"
+        ]
+      }
+    },
+    "runtime": {
+      "pack": "runtime",
+      "summary": {
+        "cases": 350,
+        "validCases": 100,
+        "invalidCases": 250,
+        "trueAccepts": 100,
+        "trueRejects": 250,
+        "falseAccepts": 0,
+        "falseRejects": 0,
+        "falseAcceptanceRate": 0,
+        "falseRejectionRate": 0,
+        "meanVerificationMs": 0.257748105714286,
+        "meanVerifierRuns": 4,
+        "meanEvidenceRecords": 4,
+        "meanRepairRounds": 0
+      },
+      "far": {
+        "observed": 0,
+        "lower95": 8.673617379884035e-19,
+        "upper95": 0.015133299495444574,
+        "errors": 0,
+        "trials": 250
+      },
+      "frr": {
+        "observed": 0,
+        "lower95": 3.469446951953614e-18,
+        "upper95": 0.03699349820698568,
+        "errors": 0,
+        "trials": 100
+      },
+      "faultClasses": [
+        "consumer-fail",
+        "dual-fault",
+        "qualification-fail",
+        "recovery-blocked",
+        "unresolved-side-effect"
+      ],
+      "mutation": {
+        "cases": 150,
+        "killed": 150,
+        "survived": 0,
+        "killRate": 1,
+        "operators": [
+          "runtime:consumer-fail",
+          "runtime:dual-fault",
+          "runtime:qualification-fail",
+          "runtime:recovery-blocked",
+          "runtime:unresolved-side-effect"
+        ]
+      }
+    }
+  },
+  "uplift": {
+    "cases": 2100,
+    "baselineAcceptedCount": 2100,
+    "verifierAcceptedCount": 600,
+    "baselineAcceptedPrecision": 0.2857142857142857,
+    "verifierAcceptedPrecision": 1,
+    "acceptedPrecisionUplift": 0.7142857142857143,
+    "validRetentionRate": 1,
+    "falseAcceptsPrevented": 1500
+  },
+  "taxonomy": [
+    {
+      "faultClass": "build-fail",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "claim-provenance-fail",
+      "cases": 63,
+      "validCases": 0,
+      "invalidCases": 63,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "consumer-fail",
+      "cases": 50,
+      "validCases": 0,
+      "invalidCases": 50,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "contradiction-present",
+      "cases": 63,
+      "validCases": 0,
+      "invalidCases": 63,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "deployment-missing",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "dual-check-fail",
+      "cases": 62,
+      "validCases": 0,
+      "invalidCases": 62,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "dual-fault",
+      "cases": 50,
+      "validCases": 0,
+      "invalidCases": 50,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "duplicate-rate-high",
+      "cases": 41,
+      "validCases": 0,
+      "invalidCases": 41,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "experiment-missing",
+      "cases": 62,
+      "validCases": 0,
+      "invalidCases": 62,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "healthcheck-fail",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "multi-fault",
+      "cases": 62,
+      "validCases": 0,
+      "invalidCases": 62,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "null-rate-high",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "qualification-fail",
+      "cases": 50,
+      "validCases": 0,
+      "invalidCases": 50,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "recovery-blocked",
+      "cases": 112,
+      "validCases": 0,
+      "invalidCases": 112,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "referential-integrity-fail",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "rollback-missing",
+      "cases": 41,
+      "validCases": 0,
+      "invalidCases": 41,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "row-count-low",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "schema-invalid",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "smoke-test-fail",
+      "cases": 42,
+      "validCases": 0,
+      "invalidCases": 42,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "source-quality-fail",
+      "cases": 62,
+      "validCases": 0,
+      "invalidCases": 62,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "tests-fail",
+      "cases": 63,
+      "validCases": 0,
+      "invalidCases": 63,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "trusted-check-fail",
+      "cases": 63,
+      "validCases": 0,
+      "invalidCases": 63,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "typecheck-fail",
+      "cases": 63,
+      "validCases": 0,
+      "invalidCases": 63,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "unresolved-side-effect",
+      "cases": 257,
+      "validCases": 0,
+      "invalidCases": 257,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    },
+    {
+      "faultClass": "valid-control",
+      "cases": 600,
+      "validCases": 600,
+      "invalidCases": 0,
+      "falseAccepts": 0,
+      "falseRejects": 0,
+      "falseAcceptanceRate": 0,
+      "falseRejectionRate": 0
+    }
+  ],
+  "promotionReceipt": {
+    "receiptVersion": 2,
+    "benchmarkFingerprint": "f90f7f7a07cabb1bfd9dac78fc66eb79a1d7e430044367c827f239d8814a3a4f",
+    "benchmarkSummaryHash": "ee650eef4b3fd4b154545de5d73f7c32b135f75b79f06c91fba5844b8ed1dff3",
+    "packCalibrationHash": "06511c5076f6eee4150c8d2777b55879a1bf5391e4026dd6648d05d46cef6231",
+    "policyHash": "862fc775a568973aea5be8a48eff619acdb499acb95846f589c568a7e0fa144a",
+    "policyBinding": {
+      "packRegistryFingerprint": "e539b01942e481397431b2b9b5a71b6461bcc51c8c680d54e6b6c2ab3a8a63e4",
+      "verifierRegistryFingerprint": "374208db2c891af3c09629dc0930a5442ba9a15dfb313b3e467529a455578713",
+      "trustedCheckRegistryFingerprint": "c8bbb4193672b79b85ca21b58bfcf5fa0cdd0b903759526240cbdf5e714c89a3"
+    },
+    "evaluatedAt": 1778100000000,
+    "receiptHash": "8d6efb05e45226b9a7d2c321b3238ce074d99ae6a4536a11598047e5b0a3a16b"
+  }
+}

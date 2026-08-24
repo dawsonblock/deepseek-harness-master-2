@@ -1,0 +1,217 @@
+{
+  "upgrade": "acceptance-pack-library-trusted-checks-verifier-calibration",
+  "version": "0.10.0",
+  "base_archive": {
+    "name": "deepseek-harness-master-FULL-upgraded-corrected-v0.9.0.zip",
+    "sha256": "b270fb7b93438aefa95075e2530226859dd557f5c7214de37e8cbefd1a21407b"
+  },
+  "validation": {
+    "outcome_verification_semantic_suite": "30/30 passed",
+    "outcome_verification_packed_consumer": "passed",
+    "hardening_semantic_suite": "22/22 passed",
+    "hardening_packed_consumer": "passed",
+    "python_reference_pytest": "12/12 passed",
+    "python_reference_compileall": "passed",
+    "v06_failure_injection": "12/12 passed",
+    "v07_policy_binding_and_code_mode": "10/10 passed",
+    "v07_process_kill_lifecycle": "8/8 passed",
+    "v08_checkpoint_recovery": "15/15 passed",
+    "v08_checkpoint_process_kill": "16/16 passed",
+    "v09_outcome_integration": "11/11 passed",
+    "v10_labeled_verifier_corpus": "12/12 correctly classified; FAR=0; FRR=0",
+    "targeted_executable_checks": "148/148 passed",
+    "source_guards": "v0.5, v0.6, v0.7, v0.8, v0.9, v0.10 passed",
+    "release_contract_scaffold": "passed",
+    "package_typescript_builds": "outcome-verification and agent-kernel-hardening passed",
+    "goal_project_typecheck": "attempted; blocked immediately by absent @types/node / installed pnpm workspace graph",
+    "full_workspace_ci": "not claimed in clean archive environment"
+  },
+  "highlights": [
+    "versioned acceptance packs @1 for runtime, coding, research, deployment, data-pipeline and Harness release workflows",
+    "TrustedCheckRegistry provides a fingerprintable deployment-owned allow-list so contracts reference reviewed check ids instead of arbitrary command strings",
+    "new deterministic artifact.exists, artifact.nonempty, runtime.recovery-clean, evidence.no-contradictions and external.resource-exists verifier primitives",
+    "goal outcome adapter supports observe mode for would-reject calibration and enforce mode for fail-closed completion",
+    "labeled verifier benchmark computes false-acceptance rate (FAR), false-rejection rate (FRR), latency, verifier runs, evidence volume and repair rounds",
+    "hardening experiment layer can summarize verification observations and compare pack versions by FAR/FRR deltas",
+    "release-v1 dogfooding configuration defines trusted check ids, observe-mode rollout and a zero-FAR promotion policy",
+    "root check/release chains include v0.10 source and labeled verifier qualification"
+  ],
+  "remaining_work": [
+    "grow each pack benchmark from synthetic qualification fixtures to at least 50 labeled real-world valid/invalid cases before enforce-mode promotion",
+    "bind first-party trusted check ids to dependency-backed CI implementations for tests, typecheck, security, packaging, deployment and research evidence quality",
+    "persist pack calibration runs and FAR/FRR history as release artifacts and compare pack versions on identical corpora",
+    "protect acceptance fixtures/golden outputs from worker mutation with explicit filesystem/tool authority enforcement",
+    "dogfood release@1 in enforce mode only after observe-mode corpus demonstrates acceptable false-rejection rate with zero false acceptance",
+    "run dependency-backed full monorepo CI and verified-success paired experiments on real coding tasks"
+  ],
+  "changed_files": [
+    {
+      "path": "FULL_UPGRADE_v0.10.0.md",
+      "status": "added",
+      "bytes": 2816,
+      "sha256": "e39378ff306ccd0169dfa99fbff9f75d789eb676f1e4fe4b926d355b017ed136"
+    },
+    {
+      "path": "TARGETED_VALIDATION_v0.10.0.txt",
+      "status": "added",
+      "bytes": 1199,
+      "sha256": "a5b8c46b46bee5a031dc96051dfe6b5a9976d1bda338533b0b52e312ed6d3e96"
+    },
+    {
+      "path": "config/acceptance/release-v1.json",
+      "status": "added",
+      "bytes": 589,
+      "sha256": "4f7ee0ce38bcde44316815ec942b5c80be157b7af7233b1e1f6d111be4a6d2fb"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "bytes": 14545,
+      "sha256": "2c2b2a812f34c24f00dcf8e0c8ee2600f14c4a9824bd4d738253fa222bd3923b"
+    },
+    {
+      "path": "packages/goal/goal/src/outcome.ts",
+      "status": "modified",
+      "bytes": 2995,
+      "sha256": "10137fc9bee8ea87435aba32d0bd3ae36ba65e760065ae246b1e7b9f61885dff"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/README.md",
+      "status": "modified",
+      "bytes": 3356,
+      "sha256": "9fb1b3b6fdd7a5fceea9c89950230c559f9841e865b62b9f2279b224bf8b135c"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/package.json",
+      "status": "modified",
+      "bytes": 1083,
+      "sha256": "5a2d0202bf0f76671c19e7846e1609bccffcd6914324e7ae21b127b79a7e8778"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/adapter.ts",
+      "status": "modified",
+      "bytes": 3275,
+      "sha256": "bfe1e33c8cbe41268eb4c435ba140642042643943197785aa7dc82e35deaafce"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/benchmark.ts",
+      "status": "added",
+      "bytes": 4823,
+      "sha256": "bec2882134b3037f1165d251d8ae66232be4f7b6ac254287970bab4ff75e81a4"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/builtins.ts",
+      "status": "modified",
+      "bytes": 10710,
+      "sha256": "ce4f688f3394bdf1cdaca318a7dcd8410401a16945b0ddfa36d2f5e7b39b5705"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/compiler.ts",
+      "status": "modified",
+      "bytes": 2574,
+      "sha256": "24306645ed757a7d9836b464394d2c65d07e5129016ff1a9be4fed4f0a5d6736"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/contract.ts",
+      "status": "modified",
+      "bytes": 3519,
+      "sha256": "57be945cb44a655b4ec3308d5f4b026e4bea0cb47959c43060783fce8a36ad92"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/factories.ts",
+      "status": "modified",
+      "bytes": 1366,
+      "sha256": "ab0345a34cd36154dc5014b7e357a07ed99bf771cb8c167e8c3d0577e3082201"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/index.ts",
+      "status": "modified",
+      "bytes": 483,
+      "sha256": "4fe2287927c069c5e409505c5636d9eddb2358a98110a1a604a8cc562c6d7bfb"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/packs.ts",
+      "status": "modified",
+      "bytes": 9685,
+      "sha256": "96d6353d62e1c0f97dd830d0f9c8133e99839b368e253a412657f903911c0d1c"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/trusted-checks.ts",
+      "status": "added",
+      "bytes": 2958,
+      "sha256": "55448100dd68501e7cf06367467f1e86f98f397416ab217f922e8f1fc5ca8a38"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/src/types.ts",
+      "status": "modified",
+      "bytes": 7336,
+      "sha256": "cd3d33d9994ef627f5ec6f0782604f95957af647bcd7caa44487f0a86a894212"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/tests/packed-consumer.mjs",
+      "status": "modified",
+      "bytes": 2129,
+      "sha256": "a6dc90c72b6a343483f04faf8f917801e3b10a0ecaeb8268e59ab2ed09356166"
+    },
+    {
+      "path": "packages/outcome/outcome-verification/tests/qualification.mjs",
+      "status": "modified",
+      "bytes": 22948,
+      "sha256": "856ca93cfe587d6a5bfe9e40e25f4b5289c0fa1884006a6887359f9617ae8b9f"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/README.md",
+      "status": "modified",
+      "bytes": 7379,
+      "sha256": "b4ab1309a0e4f2941a3bdaffe2c2196e0d987b5ed0a21999d07141a14cd8f7b2"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/package.json",
+      "status": "modified",
+      "bytes": 1087,
+      "sha256": "396e52ed0451986582f6dabae96c8050c0a2ef3c5d250b6e2ba04764701f78e4"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/experiments.ts",
+      "status": "modified",
+      "bytes": 5430,
+      "sha256": "6ba358636bd7a07060a38fcc819afdc368203bef871fea0f043d4b633daad182"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/types.ts",
+      "status": "modified",
+      "bytes": 7739,
+      "sha256": "f21842ca106db14a24feb4fa8328d349b3ad2099793588352b7694a4bfa04eb8"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/tests/qualification.mjs",
+      "status": "modified",
+      "bytes": 18012,
+      "sha256": "2ff7da33048edb05da965605706b2dac77df250078be985416b83cb4f2a8cf0a"
+    },
+    {
+      "path": "scripts/generate-release-contract-v10.mjs",
+      "status": "added",
+      "bytes": 946,
+      "sha256": "d9e3414ce976953b3a0fe9235d564608af45dbf3275c18993811381bba087347"
+    },
+    {
+      "path": "scripts/qualification-outcome-v09.mjs",
+      "status": "modified",
+      "bytes": 3666,
+      "sha256": "46f9fdb2e27e033d29b6f5215d8c61232a277932629561e29170274c23f25431"
+    },
+    {
+      "path": "scripts/qualification-outcome-v10.mjs",
+      "status": "added",
+      "bytes": 6092,
+      "sha256": "f125d16b5e5aaafa8fb639df1e1ac91c27d5c989e0c6a608fc5229fbe04d32f8"
+    },
+    {
+      "path": "scripts/verify-agent-kernel-v10.mjs",
+      "status": "added",
+      "bytes": 2820,
+      "sha256": "b8dbb80de70df15e5822f547e75d697ad0b71e4bdbac9d5385c1a12d832f7146"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "receiptVersion": 1,
+  "benchmarkFingerprint": "789eeba1e21e7068474006721364a96160c3b88632a81198edfdcdfebbcda533",
+  "benchmarkSummaryHash": "1c81df85609a5f5e34c35444d203a6bcfa266deefd30596f95f027c6499f10c9",
+  "policyHash": "ad8643ca1099f4a550d84db6204ba3e99ea556e778e40a2b36bda3a6188b1978",
+  "policyBinding": {
+    "packRegistryFingerprint": "e539b01942e481397431b2b9b5a71b6461bcc51c8c680d54e6b6c2ab3a8a63e4",
+    "verifierRegistryFingerprint": "374208db2c891af3c09629dc0930a5442ba9a15dfb313b3e467529a455578713",
+    "trustedCheckRegistryFingerprint": "1bc18d0e82b5e9d3d254b8a2aec673070dfa8debeb6bdf0af5364df27f0fdae4"
+  },
+  "evaluatedAt": 1778000000000,
+  "receiptHash": "786e69b4e3a0bf5f1cf818058bbb029410bdf86ece516e3473bb6ba358f7247f"
+}

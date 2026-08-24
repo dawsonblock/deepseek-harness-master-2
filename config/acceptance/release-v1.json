@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "pack": "release",
+  "packVersion": "1",
+  "defaultMode": "observe",
+  "trustedChecks": [
+    "outcome-engine-tests",
+    "agent-hardening-tests",
+    "python-reference-tests",
+    "failure-injection-tests",
+    "process-kill-tests",
+    "packed-consumer-pass",
+    "source-guards-pass",
+    "archive-manifest-valid"
+  ],
+  "benchmarkGate": {
+    "maximumFalseAcceptanceRate": 0,
+    "maximumFalseRejectionRate": 0.05
+  },
+  "promotion": {
+    "from": "observe",
+    "to": "enforce",
+    "requiresLabeledCases": 50,
+    "requiresZeroFalseAcceptances": true
+  }
+}

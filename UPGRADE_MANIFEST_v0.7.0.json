@@ -1,0 +1,158 @@
+{
+  "upgrade": "policy-bound-verification-code-mode-telemetry-process-kill-chaos",
+  "version": "0.7.0",
+  "base_archive": {
+    "name": "deepseek-harness-master-FULL-upgraded-corrected-v0.6.0.zip",
+    "sha256": "3807dcc13c1ac6fd61eb1edf5cd33f372b58a7fe98399da65a5f3022f26052b9"
+  },
+  "validation": {
+    "hardening_semantic_suite": "16/16 passed",
+    "hardening_packed_consumer": "passed",
+    "python_reference_pytest": "12/12 passed",
+    "python_reference_compileall": "passed",
+    "v06_failure_injection": "12/12 passed",
+    "v07_policy_binding_and_code_mode": "10/10 passed",
+    "v07_process_kill_lifecycle": "8/8 passed",
+    "source_guards": "v0.5, v0.6, v0.7 passed",
+    "typescript_syntax_transpile": "5/5 modified TypeScript files passed",
+    "goal_project_typecheck": "attempted; blocked by missing @types/node / installed pnpm workspace dependency graph",
+    "full_workspace_ci": "not claimed in clean archive environment"
+  },
+  "highlights": [
+    "goal/verification receipt upgraded to v2 with basisSeq and verifier-registry SHA-256 fingerprint",
+    "verification checks persist acceptance/integrity role and optional deployment verifier version",
+    "completeVerified rejects receipts created under a different current verifier registry",
+    "hardening telemetry measures native Code Mode runs, nested subdispatches, errors, latency, calls/run and durable nested-result bytes",
+    "real child-process force-kill qualification validates call/dispatch/settled/result crash boundaries",
+    "root check/release chains include v0.7 source, policy and process-kill qualification"
+  ],
+  "remaining_work": [
+    "dependency-backed full monorepo CI and native Vitest execution",
+    "first-party objective acceptance verifier packages for tests, artifacts, benchmark thresholds and external-state assertions",
+    "domain reconcilers for more side-effecting first-party tools",
+    "process-kill tests against the actual dependency-backed Session persistence implementations",
+    "paired production task experiments measuring success-per-cost and success-per-latency"
+  ],
+  "changed_files": [
+    {
+      "path": "FULL_UPGRADE_v0.7.0.md",
+      "status": "added",
+      "bytes": 4884,
+      "sha256": "f90e6a2d82c9e2ddf152da13c4415ed3ef24958acdfbd2633ff068f3df65aaaf"
+    },
+    {
+      "path": "TARGETED_VALIDATION_v0.7.0.txt",
+      "status": "added",
+      "bytes": 5554,
+      "sha256": "92b3cf101b59c3662e818ef5a6576900dcac9a1137273944ef68403d33596b9e"
+    },
+    {
+      "path": "docs/persistence-catalog.md",
+      "status": "modified",
+      "bytes": 38850,
+      "sha256": "b842a7bd71c533d8c97ccc96ce50c5dc8b412848602d5f439fc5baf71760e907"
+    },
+    {
+      "path": "docs/persistence-catalog.zh.md",
+      "status": "modified",
+      "bytes": 36379,
+      "sha256": "c58d037735c8eaca2269c08ff3115c28ec21eab947d29e636f7b90a6ee420ab1"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "bytes": 12551,
+      "sha256": "4a3d82cd86b267973ebdab3471787b6fe3d452b64082e7ea670ae6045a7ac704"
+    },
+    {
+      "path": "packages/goal/goal/README.md",
+      "status": "modified",
+      "bytes": 7439,
+      "sha256": "b60983f4ecda958ffc93a9ad99b7de79de8c3cae6fd05dbdfd2faf2dc6f2837b"
+    },
+    {
+      "path": "packages/goal/goal/README.zh.md",
+      "status": "modified",
+      "bytes": 6983,
+      "sha256": "921399b37fc51615f77b944f89c0903fa978be228164f3c26c91a9a08ca9869b"
+    },
+    {
+      "path": "packages/goal/goal/src/domain.ts",
+      "status": "modified",
+      "bytes": 5100,
+      "sha256": "d5958fc38021d3f8c53e5fa95df40524a34ee9b15dc84d63245299309f540839"
+    },
+    {
+      "path": "packages/goal/goal/src/index.ts",
+      "status": "modified",
+      "bytes": 32822,
+      "sha256": "a7552abe7753e1064c59defe3101d50eeb940403e8c281a954556fed2baf2b0f"
+    },
+    {
+      "path": "packages/goal/goal/tests/goal.spec.ts",
+      "status": "modified",
+      "bytes": 40115,
+      "sha256": "97b4a5b0e5b24c4f1989cb99a2b12e8b4a71cae2aa27ee02de05ac51264bb6ea"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/README.md",
+      "status": "modified",
+      "bytes": 6347,
+      "sha256": "092ada0dba10f06cdaa850e8494fb6278919c1c0094585704f19fa046ed6856f"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/package.json",
+      "status": "modified",
+      "bytes": 1087,
+      "sha256": "32c42c68e6d35be6477b39f98e707b10fd14d01098384e759c53fe6cb5a88c09"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/metrics.ts",
+      "status": "modified",
+      "bytes": 10219,
+      "sha256": "16ded95f9a5a65455035b9ada4617e0c72ddad0cefebd31082e473d1f3cebe27"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/types.ts",
+      "status": "modified",
+      "bytes": 6483,
+      "sha256": "87df4d4be5c62ad26de8220d5fe085a4eeaa71ace049d12fab7ae4e7d6346e4b"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/tests/qualification.mjs",
+      "status": "modified",
+      "bytes": 13493,
+      "sha256": "23290bea3f532efe7b3e62635fb8cd4cc525a8d4d2adfa7d79ea78ac4bac1120"
+    },
+    {
+      "path": "scripts/fixtures/agent-kernel-v07-crash-child.mjs",
+      "status": "added",
+      "bytes": 1018,
+      "sha256": "f81c847b23e5586342e5c8b16df5e207d340824c2b7f6c23e954e730735abf09"
+    },
+    {
+      "path": "scripts/qualification-agent-kernel-v07-process-kill.mjs",
+      "status": "added",
+      "bytes": 2173,
+      "sha256": "ec8a9f808376e16aaa04318c62ef4ffded9c230bd2fbd21e7c2386d88c3ffa58"
+    },
+    {
+      "path": "scripts/qualification-agent-kernel-v07.mjs",
+      "status": "added",
+      "bytes": 3083,
+      "sha256": "ce82f437449c588f15291af2ef9cdaf700cd5b664457d2f8079e73e94b7e8c5a"
+    },
+    {
+      "path": "scripts/verify-agent-kernel-v05.mjs",
+      "status": "modified",
+      "bytes": 3957,
+      "sha256": "33f027f855bfd054638e11b1d778e73b2059ac34e15ab4e2e2323ecae05eebf4"
+    },
+    {
+      "path": "scripts/verify-agent-kernel-v07.mjs",
+      "status": "added",
+      "bytes": 1516,
+      "sha256": "e30db19eeb11a6473fb06893e18c1b25f1f4086363e31c679cb328a09cb22f8a"
+    }
+  ]
+}

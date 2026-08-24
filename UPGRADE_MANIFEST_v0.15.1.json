@@ -1,0 +1,62 @@
+{
+  "release": "v0.15.1",
+  "base": "v0.15.0",
+  "modelRouterPackage": "0.1.1-rc.2",
+  "routerPolicyVersion": 2,
+  "focus": "router hardening responding to the external audit: routing-authority provenance, scorer calibration, durable routing telemetry, restart safety, one-way mid-turn escalation, multilingual vocabulary, lazy evaluation, cloud-catalog hygiene, SSE heartbeat, packed-consumer gate, and root release guards",
+  "fixes": [
+    "explicit-selection provenance: markExplicitModelSelection in dsh-agent, earned only by live in-process selections; a marked session is not router-managed in either direction",
+    "heavy-route ownership requires a field-wise continuity proof (callConfigEquals) or durable history; model equality alone is never proof — fixes the audit's explicit-Pro-after-router-Pro downgrade",
+    "scorer v2: every family cap strictly below the default threshold, machine-verified by noFamilyAloneReaches; the audit's prompt table is a regression test",
+    "length bands 800 chars with cap 2: long trivial input cannot escalate at any length",
+    "one-way mid-turn escalation on discovered complexity (8+ tool calls or 24000+ tool-result chars, configurable, disableable); heavy never downgraded mid-turn",
+    "durable log-only ignorable model/routing-decision events (proposed/selected routes, authority, reason, score, signals, threshold, policyVersion) with lean transition-only default and recordAllDecisions telemetry mode",
+    "restart-safe ownership reconstruction from durable routing decisions, honoring policy versions and ignoring explicit-authority records",
+    "coordinator-authored subagent requests score when routeSubagents is enabled",
+    "built-in Simplified Chinese marker vocabulary plus configurable extraMarkers (plain substrings, no config regexes)",
+    "lazy turn-facts extraction: passthrough and retention paths never scan the session log",
+    "unverified cloud aliases deepseek-v4-flash-0731 / deepseek-v4-pro-0813 removed from the default catalog; documented as open-weight snapshot identifiers for explicit models entries",
+    "SSE heartbeat (: hb every 15s) on /api/events.mux, /api/events.host, and the HMR channel; HMR header/heartbeat regression test added",
+    "verify:model-router-packed — builds the runtime peer closure with the repo toolchain and imports the built bundle as a plain Node consumer through the exports map",
+    "verify:model-router-v15 structural source guard wired into check:all and check:ci alongside the packed gate"
+  ],
+  "routingPolicy": {
+    "defaultEscalationThreshold": 4,
+    "explicitReasoningPoints": 3,
+    "explicitReasoningCap": 3,
+    "mathPoints": 1,
+    "mathCap": 3,
+    "architecturePoints": 1,
+    "architectureCap": 3,
+    "codeBlockPoints": 1,
+    "codeBlockCap": 2,
+    "lengthBandChars": 800,
+    "lengthCap": 2,
+    "calibrationContract": "no single family can reach the default threshold alone",
+    "discoveredEscalationDefaults": { "minToolCalls": 8, "minToolResultChars": 24000 },
+    "oneWay": "fast-to-heavy only, never downgraded mid-turn",
+    "subagentsRoutedByDefault": false
+  },
+  "targetedExecutableChecks": {
+    "passed": 1560,
+    "total": 1560,
+    "routerSpecific": 32,
+    "note": "32 router tests plus broad surrounding regression coverage, per the audit's reading guidance"
+  },
+  "sourceGuards": "verify:model-router-v15 pass; verify:model-router-packed pass",
+  "persistenceCatalog": "regenerated for model/routing-decision; --check pass",
+  "translationPairing": "llm-model-router and llm-deepseek README pairs consistent",
+  "workspaceConstraints": "clean for every touched package",
+  "preExistingBaselines": [
+    "packages/core/session repair.spec.ts expectation mismatch present in the original v0.14.1 upload (byte-verified), untouched",
+    "packages/runtime/* compile and constraint failures identical in the unmodified baseline; full-workspace tsc -b still cannot complete in the clean archive environment"
+  ],
+  "remainingBoundaries": [
+    "an explicit selection byte-identical to the router's own last config remains ambiguous; a selection-side authority field on LlmCallConfig is the deferred full fix",
+    "discovered-escalation triggers are volume heuristics; calibration against verified outcomes is the deferred follow-up the durable events enable",
+    "built-in vocabulary covers English and Simplified Chinese; other languages use extraMarkers",
+    "router remains opt-in composition, not part of the default bundle"
+  ],
+  "fullMonorepoCiClaimed": false,
+  "fullMonorepoCiBoundary": "Pre-existing packages/runtime/* failures block the full workspace build in the clean archive environment; the packed-consumer gate builds and verifies the router's own closure instead."
+}

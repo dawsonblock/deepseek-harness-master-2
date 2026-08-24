@@ -1,0 +1,198 @@
+{
+  "upgrade": "durable-recovery-checkpoints-machine-readable-resume-plans",
+  "version": "0.8.0",
+  "base_archive": {
+    "name": "deepseek-harness-master-FULL-upgraded-corrected-v0.7.0.zip",
+    "sha256": "9b4445c2c051a053057f43c93552e40796f9a37c1e111ce2b53a919e846801da"
+  },
+  "validation": {
+    "hardening_semantic_suite": "19/19 passed",
+    "hardening_packed_consumer": "passed",
+    "python_reference_pytest": "12/12 passed",
+    "python_reference_compileall": "passed",
+    "v06_failure_injection": "12/12 passed",
+    "v07_policy_binding_and_code_mode": "10/10 passed",
+    "v07_process_kill_lifecycle": "8/8 passed",
+    "v08_checkpoint_recovery": "15/15 passed",
+    "v08_checkpoint_process_kill": "16/16 passed",
+    "targeted_executable_checks": "92/92 passed",
+    "source_guards": "v0.5, v0.6, v0.7, v0.8 passed",
+    "typescript_syntax_transpile": "10/10 modified TypeScript files passed",
+    "core_session_project_typecheck": "attempted; blocked by absent built workspace references / @standard-schema/spec dependency",
+    "full_workspace_ci": "not claimed in clean archive environment"
+  },
+  "highlights": [
+    "native session/checkpoint marker binds every semantic durability flush to the preceding event sequence",
+    "checkpointed crash repair appends a model-invisible session/recovery receipt with retry/reconciliation buckets",
+    "hardening package 0.6.0 exposes deriveLatestRecoveryPlan() and canAutoResume fail-closed disposition",
+    "recovery telemetry counts checkpoints, receipts, retry-safe work, reconciliation blockers and crash-tail size",
+    "real child-process SIGKILL qualification validates checkpointed recovery categories",
+    "root check/release chains include v0.8 source, semantic and process-kill qualification"
+  ],
+  "remaining_work": [
+    "dependency-backed full monorepo CI and native Vitest execution",
+    "wire recovery-plan disposition into configured goal-round automatic resume control",
+    "first-party objective acceptance verifier packages for tests, artifacts and benchmark thresholds",
+    "domain reconcilers for more side-effecting first-party tools",
+    "process-kill tests against actual JSONL/SQLite Session persistence implementations",
+    "paired production restart experiments measuring success-per-cost and success-per-latency"
+  ],
+  "changed_files": [
+    {
+      "path": "FULL_UPGRADE_v0.8.0.md",
+      "status": "added",
+      "bytes": 6059,
+      "sha256": "6dd5df3c491139ed17502bee8fded843f26456bccf8f59d42e262082450ec711"
+    },
+    {
+      "path": "TARGETED_VALIDATION_v0.8.0.txt",
+      "status": "added",
+      "bytes": 1839,
+      "sha256": "e47fd160bf3b3dc8b3ecfd809803003c3efce3ad9f9a1c470e2dd30e6d2d2f28"
+    },
+    {
+      "path": "docs/persistence-catalog.md",
+      "status": "modified",
+      "bytes": 40423,
+      "sha256": "bdf5bf7e23ca611ad4017f476ca278a446b91f774ad8a55c1f501d7943bc5bc5"
+    },
+    {
+      "path": "docs/persistence-catalog.zh.md",
+      "status": "modified",
+      "bytes": 37954,
+      "sha256": "7aa2b59d564fdb6a86e8274a03676e59377170717a6ac8c18d896cc528a8dab9"
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "bytes": 13178,
+      "sha256": "60d90a7b1793033da0f547908d94b9b400268d7c103424973f5f72ac6fae2150"
+    },
+    {
+      "path": "packages/core/session/README.md",
+      "status": "modified",
+      "bytes": 18573,
+      "sha256": "eaeb45a8a2b6a0858cbb7868f38d10a192012d76c03ff8f7f3eaaa93b0ccf0eb"
+    },
+    {
+      "path": "packages/core/session/README.zh.md",
+      "status": "modified",
+      "bytes": 17713,
+      "sha256": "ccd673b3d34e89be0642ef7d2ff41d203b7717ae7dd466927dd308f33fa1c11b"
+    },
+    {
+      "path": "packages/core/session/src/known-event-types.ts",
+      "status": "modified",
+      "bytes": 2144,
+      "sha256": "353a05e95a97e94c199e3cb47e58972277f55b0bfd342388ceda2b9ec5d78139"
+    },
+    {
+      "path": "packages/core/session/src/repair.ts",
+      "status": "modified",
+      "bytes": 8699,
+      "sha256": "239b97e427cc464a755dfc1ea6b4ce9328acb8c07bad847095228821e91d8698"
+    },
+    {
+      "path": "packages/core/session/src/types.ts",
+      "status": "modified",
+      "bytes": 22915,
+      "sha256": "9086cd1a410592beb773d1994a77e8309cfe3a14f98ceea89a6eed11b7692a0b"
+    },
+    {
+      "path": "packages/core/session/tests/repair.spec.ts",
+      "status": "modified",
+      "bytes": 15576,
+      "sha256": "daac07ca4fafb8df10653c52122b14d2590ad6335e56b4fa6ad48bf8f2fc7afb"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/README.md",
+      "status": "modified",
+      "bytes": 6732,
+      "sha256": "2cb8c3ace87dfb9470e1f8b6d6a2c827351489845af22862c961b291d188cb71"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/package.json",
+      "status": "modified",
+      "bytes": 1087,
+      "sha256": "4e0d0a4286a30f253a9728ccaa81b16969f0d218474d7163ba1214b106bfa550"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/index.ts",
+      "status": "modified",
+      "bytes": 310,
+      "sha256": "eedfcc3b38ecd74fc433dd6c17f70be20af4ed99bb54207f8986cb3ed486fb91"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/metrics.ts",
+      "status": "modified",
+      "bytes": 11443,
+      "sha256": "3a2e94c4a8ddcfb07cf28856f74d67d22de0c2a0d38d792abea9aebbe21d1137"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/recovery-plan.ts",
+      "status": "added",
+      "bytes": 3360,
+      "sha256": "8c41fd9b7021034b21310e771d55dc6539d1330ad194b1863a08c52692e8e811"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/src/types.ts",
+      "status": "modified",
+      "bytes": 6802,
+      "sha256": "a591c8f8afcecc02af4e60b5557156fbc13ed726512507f61fba892d7024a8e0"
+    },
+    {
+      "path": "packages/runtime/agent-kernel-hardening/tests/qualification.mjs",
+      "status": "modified",
+      "bytes": 15945,
+      "sha256": "0a9ceca085d27717f016a6209ea755f56b1ed8e86074e096a12ed0b5d8bccb3c"
+    },
+    {
+      "path": "packages/session/session-checkpoint-policy/README.md",
+      "status": "modified",
+      "bytes": 4947,
+      "sha256": "11f1f86396d35ec171594a4efd2414ac1d2f2080515e0d88c4d1fdd2e324b11f"
+    },
+    {
+      "path": "packages/session/session-checkpoint-policy/README.zh.md",
+      "status": "modified",
+      "bytes": 4336,
+      "sha256": "dda8b49ae6e71d34b95fd3d6a4ab19043de0dc1d3d767d3a0e70ed28e7c84ac7"
+    },
+    {
+      "path": "packages/session/session-checkpoint-policy/src/index.ts",
+      "status": "modified",
+      "bytes": 4150,
+      "sha256": "3047dedefaa14aa5f8a36dfd4291e3ce3a819ef9a99bc9ad9b7abb6532f3e8a2"
+    },
+    {
+      "path": "packages/session/session-checkpoint-policy/tests/session-checkpoint-policy.spec.ts",
+      "status": "modified",
+      "bytes": 12635,
+      "sha256": "6cf000832cc04eeba0bca102fa72acb658f2c007d712aba6058d4670c78f8817"
+    },
+    {
+      "path": "scripts/fixtures/agent-kernel-v08-checkpoint-crash-child.mjs",
+      "status": "added",
+      "bytes": 1621,
+      "sha256": "611ae5ed922fc98d259a021536f169c88840c70a278ad7629f895ad62a068a0b"
+    },
+    {
+      "path": "scripts/qualification-agent-kernel-v08-process-kill.mjs",
+      "status": "added",
+      "bytes": 3198,
+      "sha256": "d976b5edb104620a5f4e0c6ddf739e494d209d8dc717f99ccd42061a0987a96f"
+    },
+    {
+      "path": "scripts/qualification-agent-kernel-v08.mjs",
+      "status": "added",
+      "bytes": 2971,
+      "sha256": "9d47d1d1dbb1f710eeebe933d3c2caa00e47c391ad5f9b5586b3aa8d4ede6194"
+    },
+    {
+      "path": "scripts/verify-agent-kernel-v08.mjs",
+      "status": "added",
+      "bytes": 1914,
+      "sha256": "f74c5ba12a925651935cc986f501b3e26f5c39b4c602966e6f8a19189a7dc10e"
+    }
+  ]
+}

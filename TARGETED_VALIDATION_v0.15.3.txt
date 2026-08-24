@@ -1,0 +1,92 @@
+DeepSeek Harness v0.15.3 targeted validation (routing authority & release hygiene, audit response)
+
+Model router package: 48/48 PASS
+  - scorer calibration: no-family-alone contract, the audit prompt table,
+    cross-family corroboration, family caps, multilingual + configured
+    vocabulary, long-trivial-input immunity: 8
+  - turn text extraction (user + coordinator, plugin excluded, turn-bounded): 1
+  - discovered-facts counting (tool calls, result chars, turn-scoped): 1
+  - config resolution (validation, defaults, marker and bound checks): 3
+  - THRESHOLD ENFORCEMENT (v0.15.2 audit): 1/2/3 rejected, 4/5/9 accepted: 1
+  - MARKER INDEPENDENCE (v0.15.2 audit): cross-family, normalized,
+    intra-family, built-in same-family, built-in cross-family, clean pass: 1
+  - authority: explicit mark owns both directions; explicit Pro after
+    router-owned Pro (mark and field-rewrite forms); router-owned continuation
+    re-scored; subagent passthrough + routed coordinator scoring: 5
+  - mid-turn: quiet retention, one-way escalation at the bound, stays heavy
+    after escalation, disable switch: 4
+  - lazy facts (passthrough/retention never read request text): 1
+  - durable records: lean by default, escalation record shape,
+    recordAllDecisions mode: 1
+  - RECORDALLDECISIONS TRUTHFULNESS (v0.15.2 audit): subagent-owner,
+    foreign-route, and retention records in telemetry mode: 1
+  - DISCOVERED TELEMETRY (v0.15.2 audit): tool-calls, tool-result-volume,
+    composite triggers with measured facts: 1
+  - v0.15.3 record shape: routingDecisionId + activeAuthority; authorityEpoch
+    no longer written on routing decisions; explicit passthrough stamps the
+    session authority: 1
+  - first-ever explicit routing-stream claim; foreign/subagent passthroughs
+    record when they END router ownership (lean mode): 2
+  - reconstruction: router-owned heavy re-scored; THE AUDIT RESTART BUG (newer
+    explicit record terminates older router ownership); v0.15.3 authority
+    events at any policy version (user/sdk/policy/router/subagent-owner,
+    ordering vs routing records); POLICY-VERSION INDEPENDENCE (stale-policy
+    explicit barriers honored, stale router eras never resurrect); foreign/
+    subagent barriers; stale-policy-only logs yield no ownership: 6
+  - agent-loop integration: simple stays fast; concise hard coding prompt
+    stays fast; escalation + durable record; per-turn re-routing; step
+    retention; mid-turn escalation through a real tool loop; foreign model
+    untouched; explicit mark disables routing; DoD 6 restart (router Pro ->
+    explicit Pro -> restart -> still explicit Pro); DoD 7 restart (router Pro
+    -> explicit Flash -> restart -> no reassert); v0.15.3 Auto (router Pro ->
+    explicit Pro -> Auto -> router re-scores to Flash, re-escalates on
+    complexity, durable [user, router] authority stream at epochs [1, 2],
+    restart keeps Auto); v0.15.3 SDK authority (sdk claim survives restart,
+    activeAuthority sdk on every record); v0.15.3 lean-mode authority
+    durability (claim durable without recordAllDecisions): 13
+  - real Loader composition with config-driven tiers: 1
+
+dsh-agent authority suite (new): 5/5 PASS
+  - explicit claim sets live mark AND records durably with surface source
+  - sdk claim labels authority sdk; same-authority re-selection writes no new
+    event; different-authority transition records
+  - Auto (clear) releases authority durably; clearing an automatic session is
+    a no-op; idempotent
+  - nextAuthorityEpoch never resets: continues above legacy routing-decision
+    epochs (27 -> 28) and future-schema authority epochs (99 -> 100)
+  - fresh sessions start at epoch 1
+
+Core agent + default model: 97/97 PASS (authority suite included)
+Core agent-loop: 335/335 PASS
+Core agent-tool-presentation: 7/7 PASS
+SDK JSON-RPC server: 33/33 PASS (explicit-authority regression with source sdk)
+Host API proxy: 378/378 PASS (surface-range test hardened for non-surface
+authority events)
+Client connection + HMR: 117/117 PASS
+DeepSeek adapter (llm-deepseek): 339/339 PASS
+LLM retry: 66/66 PASS
+Compaction family: 194/194 PASS
+
+Total targeted executable checks: 1614/1614 PASS
+(Read as: 48 router-specific tests plus broad surrounding regression coverage.)
+
+Release-wide version bump: 231 manifests 0.1.1-rc.2 -> 0.1.1-rc.3 (root + all
+matching release members); check-workspace-constraints reports no new findings.
+
+Additional gates:
+- verify:model-router-v15 (structural source guard): pass
+- verify:model-router-v152 (v0.15.2 defect checks at their v0.15.3 locations): pass
+- verify:model-router-v153 (version identity, authority event canonical +
+  policy-independent, Auto operation, surface provenance, legacy migration,
+  chain membership, frozen baselines, README pairing): pass
+- verify:model-router-packed: pass — clean-tree closure build, package version
+  assertion, npm pack, isolated tarball consumer importing only the public API
+- gen-persistence-catalog --check (model/selection-authority): pass
+- verify-translation-pairing (llm-model-router pair): consistent
+- check-workspace-constraints: clean for every touched package
+
+Pre-existing baseline (verified against the original v0.14.1 upload, untouched):
+- packages/core/session repair.spec.ts: 1 deterministic expectation mismatch
+- packages/runtime/* compile/constraint failures identical to the unmodified
+  baseline; full-workspace tsc -b remains blocked in the clean archive
+  environment, so the packed gate scopes to the router's own closure

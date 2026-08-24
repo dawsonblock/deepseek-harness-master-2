@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 3,
+  "pack": "release",
+  "packVersion": "1",
+  "defaultMode": "observe",
+  "targetMode": "enforce",
+  "requirePromotionReceipt": true,
+  "trustedCheckVersion": "qualification-v12",
+  "trustedChecks": [
+    "typecheck-pass",
+    "tests-pass",
+    "outcome-engine-tests",
+    "agent-hardening-tests",
+    "python-reference-tests",
+    "failure-injection-tests",
+    "process-kill-tests",
+    "packed-consumer-pass",
+    "source-guards-pass",
+    "archive-manifest-valid"
+  ],
+  "benchmarkGate": {
+    "maximumFalseAcceptanceRate": 0,
+    "maximumFalseRejectionRate": 0.02,
+    "maximumFalseAcceptanceUpperBound95": 0.005
+  },
+  "promotion": {
+    "from": "observe",
+    "to": "enforce",
+    "minimumCases": 1600,
+    "minimumValidCases": 500,
+    "minimumInvalidCases": 1100,
+    "requirePerPackGates": true,
+    "policyBindingRequired": true,
+    "promotionReceiptRequired": true
+  },
+  "releaseTrustedChecks": [
+    "outcome-engine-tests",
+    "agent-hardening-tests",
+    "python-reference-tests",
+    "failure-injection-tests",
+    "process-kill-tests",
+    "packed-consumer-pass",
+    "source-guards-pass",
+    "archive-manifest-valid"
+  ]
+}

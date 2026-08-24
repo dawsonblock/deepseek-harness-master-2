@@ -1,0 +1,20 @@
+# Optional v0.14 runtime performance/resource-governor overlay.
+# Apply after the base bundle. These plugins are shipped by @deepseek-ai/dsh-base
+# but intentionally are not enabled by default.
+- insert:
+    - id: runtime-performance-telemetry
+      name: '@deepseek-ai/dsh-runtime-performance-telemetry'
+
+    - id: runtime-resource-governor
+      name: '@deepseek-ai/dsh-runtime-resource-governor'
+      config:
+        # Root-scoped, process-local safety ceilings. Tune against measured workloads.
+        maxConcurrentOneShotChildren: 4
+        maxQueuedSubagentStarts: 8
+        subagentQueueTimeoutMs: 30000
+        maxDescendantsStarted: 32
+        maxSubagentStartsPerMinute: 20
+        maxModelCalls: 200
+        maxReasoningTokens: 500000
+        maxEventBytes: 268435456
+        maxWallTimeMs: 3600000

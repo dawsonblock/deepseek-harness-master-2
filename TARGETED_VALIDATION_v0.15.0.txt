@@ -1,0 +1,41 @@
+DeepSeek Harness v0.15.0 targeted validation
+
+Model router package: 20/20 PASS
+  - complexity scoring (families, caps, disjoint patterns): 5
+  - turn text extraction (human-only, turn-bounded): 1
+  - config resolution (validation, defaults): 2
+  - routing policy (subagent, foreign, turn retention, explicit heavy, re-score, effort): 6
+  - agent-loop integration (fast stays, escalation, per-turn re-route, step retention, foreign): 5
+  - real Loader composition with config-driven tiers: 1
+
+DeepSeek adapter (llm-deepseek): 339/339 PASS
+  - adapter registration, catalog, defaults, dated GA aliases: 143
+  - request-level dynamic configuration: 9
+  - Files API store: 20
+  - Files API client: 49
+  - loader composition: 3
+  - request serialization: 52
+  - SSE framing: 7
+  - stream translation (reasoning_content + content): 30
+  - upload index: 26
+
+Host API proxy: 377/377 PASS
+  - includes fetch-carrier SSE proxy-disable header regression: 36
+
+Client connection + HMR: 116/116 PASS
+  - HTTP bridge, trust fence, HMR event channel
+
+Core agent + agent default model: 99/99 PASS
+Agent loop: 335/335 PASS
+  - request seam, model selection, resume/replay regressions
+
+LLM retry (neighbor waterfall policy): 66/66 PASS
+Compaction family (tool-pairing balance): 194/194 PASS
+
+Total targeted executable checks: 1546/1546 PASS
+
+Additional checks:
+- check-workspace-constraints: new package manifest clean
+- verify-translation-pairing (llm-model-router README pair): consistent
+- FULL_FILE_MANIFEST.sha256 regenerated: all 8095 entries verified against disk
+- pre-existing baseline constraint findings in packages/runtime/* unchanged from v0.14.1 (not introduced by this release)

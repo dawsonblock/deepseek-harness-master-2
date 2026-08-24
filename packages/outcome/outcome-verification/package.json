@@ -1,0 +1,36 @@
+{
+  "name": "@deepseek-ai/dsh-outcome-verification",
+  "description": "Versioned acceptance packs, trusted checks, outcome verification, FAR/FRR calibration, per-pack confidence gates, adversarial mutation testing, failure taxonomy, verified-success uplift, policy-bound promotion receipts, repair plans, and immutable outcome receipts for DeepSeek Harness",
+  "version": "0.5.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/outcome/outcome-verification"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/*.js.map",
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/build.mjs && node --test tests/qualification.mjs",
+    "test:packed": "node scripts/build.mjs && node tests/packed-consumer.mjs"
+  },
+  "license": "MIT"
+}

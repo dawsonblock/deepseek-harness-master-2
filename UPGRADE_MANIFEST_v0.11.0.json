@@ -1,0 +1,48 @@
+{
+  "release": "v0.11.0",
+  "base": "v0.10.0",
+  "name": "DeepSeek Harness FULL upgraded corrected",
+  "focus": "statistically gated verifier promotion and policy-bound observe-to-enforce rollout",
+  "outcomeVerificationPackageVersion": "0.3.0",
+  "changes": {
+    "changedOrAddedCount": 16,
+    "removedCount": 0,
+    "changedOrAddedFiles": [
+      "FULL_UPGRADE_v0.11.0.md",
+      "TARGETED_VALIDATION_v0.11.0.txt",
+      "config/acceptance/release-v2.json",
+      "package.json",
+      "packages/outcome/outcome-verification/README.md",
+      "packages/outcome/outcome-verification/package.json",
+      "packages/outcome/outcome-verification/src/index.ts",
+      "packages/outcome/outcome-verification/src/pack-registry.ts",
+      "packages/outcome/outcome-verification/src/packs.ts",
+      "packages/outcome/outcome-verification/src/promotion.ts",
+      "packages/outcome/outcome-verification/src/types.ts",
+      "packages/outcome/outcome-verification/tests/qualification.mjs",
+      "scripts/evaluate-verifier-promotion-v11.mjs",
+      "scripts/qualification-outcome-v11.mjs",
+      "scripts/verify-agent-kernel-v10.mjs",
+      "scripts/verify-agent-kernel-v11.mjs"
+    ],
+    "removedFiles": []
+  },
+  "validation": {
+    "outcomeVerificationTests": "37/37 PASS",
+    "agentHardeningTests": "22/22 PASS",
+    "pythonReferenceTests": "12/12 PASS",
+    "v06FailureInjection": "12/12 PASS",
+    "v07PolicyCodeMode": "10/10 PASS",
+    "v07ProcessKill": "8/8 PASS",
+    "v08Recovery": "15/15 PASS",
+    "v08CheckpointProcessKill": "16/16 PASS",
+    "v09OutcomeIntegration": "11/11 PASS",
+    "v10VerifierCorpus": "12/12 PASS; FAR=0; FRR=0",
+    "v11CalibrationCorpus": "150/150 PASS; valid=50; invalid=100; FAR=0; FRR=0; FAR95 upper\u22480.0370",
+    "sourceGuards": "v0.5-v0.11 PASS",
+    "targetedExecutableChecks": "315/315 PASS"
+  },
+  "limitations": [
+    "Complete dependency-backed upstream pnpm monorepo CI is not claimed from the clean extracted source environment."
+  ]
+}

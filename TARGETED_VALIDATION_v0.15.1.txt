@@ -1,0 +1,59 @@
+DeepSeek Harness v0.15.1 targeted validation (router hardening, audit response)
+
+Model router package: 32/32 PASS
+  - scorer calibration: no-family-alone contract, the audit prompt table,
+    cross-family corroboration, family caps, multilingual + configured
+    vocabulary, long-trivial-input immunity: 8
+  - turn text extraction (user + coordinator, plugin excluded, turn-bounded): 1
+  - discovered-facts counting (tool calls, result chars, turn-scoped): 1
+  - config resolution (validation, defaults, marker and bound checks): 3
+  - authority: explicit mark owns both directions; THE AUDIT BUG
+    (explicit Pro after router-owned Pro, mark and field-rewrite forms);
+    router-owned continuation re-scored; subagent passthrough + routed
+    coordinator scoring: 5
+  - mid-turn: quiet retention, one-way escalation at the bound, stays heavy
+    after escalation, disable switch: 4
+  - lazy facts (passthrough/retention never read request text): 1
+  - durable records: lean by default, escalation record shape,
+    recordAllDecisions mode: 1
+  - restart reconstruction: router-owned heavy re-scored after restart;
+    explicit-authority and stale-policy records ignored: 2
+  - agent-loop integration: simple stays fast; audit's concise hard coding
+    prompt stays fast; escalation + durable record; per-turn re-routing;
+    step retention within a turn; mid-turn escalation through a real tool
+    loop at the flip point; foreign model untouched; explicit mark disables
+    routing with one transition record: 8
+  - real Loader composition with config-driven tiers: 1
+
+DeepSeek adapter (llm-deepseek): 339/339 PASS
+  - default catalog reverted to the three documented cloud API ids
+
+Host API proxy: 378/378 PASS
+  - SSE proxy-disable headers (both channels)
+  - SSE heartbeat: idle comment lands every 15s, cleared on cancel
+
+Client connection + HMR: 117/117 PASS
+  - HMR events channel: proxy headers, heartbeat cadence, close cleanup
+
+Core agent + agent-default-model: 92/92 PASS (provenance exports added)
+Core agent-loop: 335/335 PASS (request seam, resume/replay regressions)
+Core agent-tool-presentation: 7/7 PASS
+LLM retry: 66/66 PASS
+Compaction family: 194/194 PASS
+
+Total targeted executable checks: 1560/1560 PASS
+(Read as: 32 router-specific tests plus broad surrounding regression coverage.)
+
+Additional gates:
+- verify:model-router-v15 (structural source guard): pass
+- verify:model-router-packed (built-bundle plain-Node consumer): pass
+- gen-persistence-catalog --check (model/routing-decision canonical): pass
+- verify-translation-pairing (llm-model-router, llm-deepseek pairs): consistent
+- check-workspace-constraints: clean for every touched package
+
+Pre-existing baseline (verified against the original v0.14.1 upload, untouched):
+- packages/core/session repair.spec.ts: 1 deterministic expectation mismatch
+  ("Retry only if" vs "retry only if"); present in the pristine archive.
+- packages/runtime/* compile/constraint failures identical to the unmodified
+  baseline; full-workspace tsc -b remains blocked in the clean archive
+  environment, so the packed gate scopes to the router's own closure.
