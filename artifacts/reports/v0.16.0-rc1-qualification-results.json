@@ -1,0 +1,199 @@
+{
+  "release": "v0.16.0-rc.1",
+  "generatedAt": "2026-08-24T23:23:16.177Z",
+  "commit": "0bfc83ca7d1b7f17fca6f146fb92cd786041086a",
+  "results": [
+    {
+      "scenario": {
+        "id": "Q1",
+        "model": "deepseek-v4-flash",
+        "thinking": "off",
+        "description": "Flash with thinking disabled",
+        "task": "What is 2+2? Reply with just the number."
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 60,
+          "outputTokens": 1,
+          "cacheReadTokens": 12032,
+          "cacheMissTokens": 60,
+          "totalTokens": 12093,
+          "source": "provider"
+        }
+      ],
+      "routingOutcomes": [],
+      "invariants": {
+        "promptTokensEqualCacheHitPlusCacheMiss": true,
+        "totalTokensEqualPromptPlusCompletion": true,
+        "inputTokensEqualCacheMiss": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "estimates": {}
+    },
+    {
+      "scenario": {
+        "id": "Q2",
+        "model": "deepseek-v4-flash",
+        "thinking": "on",
+        "description": "Flash with thinking enabled",
+        "task": "What is 2+2? Reply with just the number."
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 24,
+          "outputTokens": 2,
+          "cacheReadTokens": 12160,
+          "cacheMissTokens": 24,
+          "totalTokens": 12186,
+          "reasoningTokens": 0,
+          "source": "provider"
+        }
+      ],
+      "routingOutcomes": [],
+      "invariants": {
+        "promptTokensEqualCacheHitPlusCacheMiss": true,
+        "totalTokensEqualPromptPlusCompletion": true,
+        "inputTokensEqualCacheMiss": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "estimates": {}
+    },
+    {
+      "scenario": {
+        "id": "Q3",
+        "model": "deepseek-v4-pro",
+        "thinking": "off",
+        "description": "Pro with thinking disabled",
+        "task": "What is 2+2? Reply with just the number."
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 59,
+          "outputTokens": 1,
+          "cacheReadTokens": 12032,
+          "cacheMissTokens": 59,
+          "totalTokens": 12092,
+          "source": "provider"
+        }
+      ],
+      "routingOutcomes": [],
+      "invariants": {
+        "promptTokensEqualCacheHitPlusCacheMiss": true,
+        "totalTokensEqualPromptPlusCompletion": true,
+        "inputTokensEqualCacheMiss": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "estimates": {}
+    },
+    {
+      "scenario": {
+        "id": "Q4",
+        "model": "deepseek-v4-pro",
+        "thinking": "on",
+        "description": "Pro with thinking enabled",
+        "task": "What is 2+2? Reply with just the number."
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 23,
+          "outputTokens": 2,
+          "cacheReadTokens": 12160,
+          "cacheMissTokens": 23,
+          "totalTokens": 12185,
+          "reasoningTokens": 0,
+          "source": "provider"
+        }
+      ],
+      "routingOutcomes": [],
+      "invariants": {
+        "promptTokensEqualCacheHitPlusCacheMiss": true,
+        "totalTokensEqualPromptPlusCompletion": true,
+        "inputTokensEqualCacheMiss": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "estimates": {}
+    },
+    {
+      "scenario": {
+        "id": "Q5",
+        "model": "deepseek-v4-flash",
+        "thinking": "on",
+        "description": "Flash with repeated prefix for cache-hit accounting",
+        "task": "The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call. What is 2+2? Reply with just the number.",
+        "repeatedPrefix": "The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call."
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 35,
+          "outputTokens": 271,
+          "cacheReadTokens": 12160,
+          "cacheMissTokens": 35,
+          "totalTokens": 12466,
+          "reasoningTokens": 162,
+          "source": "provider"
+        },
+        {
+          "inputTokens": 91,
+          "outputTokens": 19,
+          "cacheReadTokens": 12416,
+          "cacheMissTokens": 91,
+          "totalTokens": 12526,
+          "reasoningTokens": 17,
+          "source": "provider"
+        }
+      ],
+      "routingOutcomes": [],
+      "invariants": {
+        "promptTokensEqualCacheHitPlusCacheMiss": true,
+        "totalTokensEqualPromptPlusCompletion": true,
+        "inputTokensEqualCacheMiss": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "estimates": {}
+    },
+    {
+      "scenario": {
+        "id": "Q6",
+        "model": "deepseek-v4-pro",
+        "thinking": "on",
+        "description": "Pro with repeated prefix for cache-hit accounting",
+        "task": "The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call. What is 2+2? Reply with just the number.",
+        "repeatedPrefix": "The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call."
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 34,
+          "outputTokens": 146,
+          "cacheReadTokens": 12160,
+          "cacheMissTokens": 34,
+          "totalTokens": 12340,
+          "reasoningTokens": 109,
+          "source": "provider"
+        },
+        {
+          "inputTokens": 93,
+          "outputTokens": 27,
+          "cacheReadTokens": 12288,
+          "cacheMissTokens": 93,
+          "totalTokens": 12408,
+          "reasoningTokens": 25,
+          "source": "provider"
+        }
+      ],
+      "routingOutcomes": [],
+      "invariants": {
+        "promptTokensEqualCacheHitPlusCacheMiss": true,
+        "totalTokensEqualPromptPlusCompletion": true,
+        "inputTokensEqualCacheMiss": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "estimates": {}
+    }
+  ]
+}
