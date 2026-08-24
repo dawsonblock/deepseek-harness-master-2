@@ -1,10 +1,11 @@
 {
   "release": "v0.16.0-rc.1",
-  "generatedAt": "2026-08-24T23:23:16.177Z",
-  "commit": "0bfc83ca7d1b7f17fca6f146fb92cd786041086a",
+  "generatedAt": "2026-08-24T23:34:43.851Z",
+  "milestone": "provider-accounting-qualification + routed-path-qualification",
   "results": [
     {
       "scenario": {
+        "kind": "direct",
         "id": "Q1",
         "model": "deepseek-v4-flash",
         "thinking": "off",
@@ -22,17 +23,28 @@
         }
       ],
       "routingOutcomes": [],
+      "routingDecisions": [],
+      "routingIdConsistency": {
+        "consistent": true,
+        "eventTypes": []
+      },
+      "estimates": {},
       "invariants": {
-        "promptTokensEqualCacheHitPlusCacheMiss": true,
-        "totalTokensEqualPromptPlusCompletion": true,
-        "inputTokensEqualCacheMiss": true,
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
         "reasoningNotDoubleBilled": true,
         "pricingVersionRecorded": true
       },
-      "estimates": {}
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.000042369599999999995,
+      "costConfidence": "exact"
     },
     {
       "scenario": {
+        "kind": "direct",
         "id": "Q2",
         "model": "deepseek-v4-flash",
         "thinking": "on",
@@ -42,26 +54,37 @@
       "usageRecords": [
         {
           "inputTokens": 24,
-          "outputTokens": 2,
+          "outputTokens": 40,
           "cacheReadTokens": 12160,
           "cacheMissTokens": 24,
-          "totalTokens": 12186,
-          "reasoningTokens": 0,
+          "totalTokens": 12224,
+          "reasoningTokens": 38,
           "source": "provider"
         }
       ],
       "routingOutcomes": [],
+      "routingDecisions": [],
+      "routingIdConsistency": {
+        "consistent": true,
+        "eventTypes": []
+      },
+      "estimates": {},
       "invariants": {
-        "promptTokensEqualCacheHitPlusCacheMiss": true,
-        "totalTokensEqualPromptPlusCompletion": true,
-        "inputTokensEqualCacheMiss": true,
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
         "reasoningNotDoubleBilled": true,
         "pricingVersionRecorded": true
       },
-      "estimates": {}
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.000048608000000000006,
+      "costConfidence": "exact"
     },
     {
       "scenario": {
+        "kind": "direct",
         "id": "Q3",
         "model": "deepseek-v4-pro",
         "thinking": "off",
@@ -79,17 +102,28 @@
         }
       ],
       "routingOutcomes": [],
+      "routingDecisions": [],
+      "routingIdConsistency": {
+        "consistent": true,
+        "eventTypes": []
+      },
+      "estimates": {},
       "invariants": {
-        "promptTokensEqualCacheHitPlusCacheMiss": true,
-        "totalTokensEqualPromptPlusCompletion": true,
-        "inputTokensEqualCacheMiss": true,
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
         "reasoningNotDoubleBilled": true,
         "pricingVersionRecorded": true
       },
-      "estimates": {}
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.000070151,
+      "costConfidence": "exact"
     },
     {
       "scenario": {
+        "kind": "direct",
         "id": "Q4",
         "model": "deepseek-v4-pro",
         "thinking": "on",
@@ -99,26 +133,37 @@
       "usageRecords": [
         {
           "inputTokens": 23,
-          "outputTokens": 2,
+          "outputTokens": 21,
           "cacheReadTokens": 12160,
           "cacheMissTokens": 23,
-          "totalTokens": 12185,
-          "reasoningTokens": 0,
+          "totalTokens": 12204,
+          "reasoningTokens": 19,
           "source": "provider"
         }
       ],
       "routingOutcomes": [],
+      "routingDecisions": [],
+      "routingIdConsistency": {
+        "consistent": true,
+        "eventTypes": []
+      },
+      "estimates": {},
       "invariants": {
-        "promptTokensEqualCacheHitPlusCacheMiss": true,
-        "totalTokensEqualPromptPlusCompletion": true,
-        "inputTokensEqualCacheMiss": true,
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
         "reasoningNotDoubleBilled": true,
         "pricingVersionRecorded": true
       },
-      "estimates": {}
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.00007235500000000001,
+      "costConfidence": "exact"
     },
     {
       "scenario": {
+        "kind": "direct",
         "id": "Q5",
         "model": "deepseek-v4-flash",
         "thinking": "on",
@@ -129,35 +174,46 @@
       "usageRecords": [
         {
           "inputTokens": 35,
-          "outputTokens": 271,
+          "outputTokens": 225,
           "cacheReadTokens": 12160,
           "cacheMissTokens": 35,
-          "totalTokens": 12466,
-          "reasoningTokens": 162,
+          "totalTokens": 12420,
+          "reasoningTokens": 146,
           "source": "provider"
         },
         {
-          "inputTokens": 91,
-          "outputTokens": 19,
+          "inputTokens": 45,
+          "outputTokens": 31,
           "cacheReadTokens": 12416,
-          "cacheMissTokens": 91,
-          "totalTokens": 12526,
-          "reasoningTokens": 17,
+          "cacheMissTokens": 45,
+          "totalTokens": 12492,
+          "reasoningTokens": 29,
           "source": "provider"
         }
       ],
       "routingOutcomes": [],
+      "routingDecisions": [],
+      "routingIdConsistency": {
+        "consistent": true,
+        "eventTypes": []
+      },
+      "estimates": {},
       "invariants": {
-        "promptTokensEqualCacheHitPlusCacheMiss": true,
-        "totalTokensEqualPromptPlusCompletion": true,
-        "inputTokensEqualCacheMiss": true,
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
         "reasoningNotDoubleBilled": true,
         "pricingVersionRecorded": true
       },
-      "estimates": {}
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.0001516928,
+      "costConfidence": "exact"
     },
     {
       "scenario": {
+        "kind": "direct",
         "id": "Q6",
         "model": "deepseek-v4-pro",
         "thinking": "on",
@@ -168,32 +224,220 @@
       "usageRecords": [
         {
           "inputTokens": 34,
-          "outputTokens": 146,
+          "outputTokens": 161,
           "cacheReadTokens": 12160,
           "cacheMissTokens": 34,
-          "totalTokens": 12340,
-          "reasoningTokens": 109,
+          "totalTokens": 12355,
+          "reasoningTokens": 120,
           "source": "provider"
         },
         {
-          "inputTokens": 93,
-          "outputTokens": 27,
+          "inputTokens": 108,
+          "outputTokens": 26,
           "cacheReadTokens": 12288,
-          "cacheMissTokens": 93,
-          "totalTokens": 12408,
-          "reasoningTokens": 25,
+          "cacheMissTokens": 108,
+          "totalTokens": 12422,
+          "reasoningTokens": 24,
           "source": "provider"
         }
       ],
       "routingOutcomes": [],
+      "routingDecisions": [],
+      "routingIdConsistency": {
+        "consistent": true,
+        "eventTypes": []
+      },
+      "estimates": {},
       "invariants": {
-        "promptTokensEqualCacheHitPlusCacheMiss": true,
-        "totalTokensEqualPromptPlusCompletion": true,
-        "inputTokensEqualCacheMiss": true,
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
         "reasoningNotDoubleBilled": true,
         "pricingVersionRecorded": true
       },
-      "estimates": {}
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.00031308400000000004,
+      "costConfidence": "exact"
+    },
+    {
+      "scenario": {
+        "kind": "routed",
+        "id": "R1",
+        "description": "Routed: simple task selected as Flash by model-router",
+        "task": "What is 2+2? Reply with just the number.",
+        "expectedRoute": "fast"
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 12171,
+          "outputTokens": 21,
+          "cacheReadTokens": 0,
+          "cacheMissTokens": 12171,
+          "totalTokens": 12192,
+          "reasoningTokens": 19,
+          "source": "provider",
+          "routingDecisionId": "08228eeb132a64813713f623"
+        }
+      ],
+      "routingOutcomes": [
+        {
+          "routingDecisionId": "08228eeb132a64813713f623",
+          "execution": {
+            "sessionId": "qualification",
+            "turn": 1,
+            "step": 1
+          },
+          "route": {
+            "provider": "deepseek-official",
+            "model": "deepseek-v4-flash",
+            "authority": "router"
+          },
+          "accounting": {
+            "attempts": 1,
+            "inputTokens": 12171,
+            "cacheHitTokens": 0,
+            "cacheMissTokens": 12171,
+            "outputTokens": 21,
+            "reasoningTokens": 19,
+            "costUsd": 0.0017098200000000001,
+            "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+            "costConfidence": "exact"
+          },
+          "executionQuality": {
+            "toolCalls": 0,
+            "toolFailures": 0,
+            "repairIterations": 0
+          },
+          "outcome": {
+            "status": "unverified"
+          },
+          "repairAttribution": {
+            "kind": "none"
+          }
+        }
+      ],
+      "routingDecisions": [
+        {
+          "routingDecisionId": "08228eeb132a64813713f623",
+          "selectedProvider": "deepseek-official",
+          "selectedModel": "deepseek-v4-flash",
+          "turn": 1,
+          "step": 1
+        }
+      ],
+      "routingIdConsistency": {
+        "consistent": true,
+        "routingDecisionId": "08228eeb132a64813713f623",
+        "eventTypes": [
+          "model/routing-decision:08228eeb132a64813713f623",
+          "model/request:08228eeb132a64813713f623",
+          "model/usage:08228eeb132a64813713f623"
+        ]
+      },
+      "estimates": {},
+      "invariants": {
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.0017098200000000001,
+      "costConfidence": "exact"
+    },
+    {
+      "scenario": {
+        "kind": "routed",
+        "id": "R2",
+        "description": "Routed: reasoning task selected as Pro by model-router",
+        "task": "Think step by step. Prove that the sum of two odd integers is always even. Show your reasoning.",
+        "expectedRoute": "heavy"
+      },
+      "usageRecords": [
+        {
+          "inputTokens": 12179,
+          "outputTokens": 284,
+          "cacheReadTokens": 0,
+          "cacheMissTokens": 12179,
+          "totalTokens": 12463,
+          "reasoningTokens": 19,
+          "source": "provider",
+          "routingDecisionId": "9ae462338bd0b0bc0bc5ad19"
+        }
+      ],
+      "routingOutcomes": [
+        {
+          "routingDecisionId": "9ae462338bd0b0bc0bc5ad19",
+          "execution": {
+            "sessionId": "qualification",
+            "turn": 1,
+            "step": 1
+          },
+          "route": {
+            "provider": "deepseek-official",
+            "model": "deepseek-v4-pro",
+            "authority": "router"
+          },
+          "accounting": {
+            "attempts": 1,
+            "inputTokens": 12179,
+            "cacheHitTokens": 0,
+            "cacheMissTokens": 12179,
+            "outputTokens": 284,
+            "reasoningTokens": 19,
+            "costUsd": 0.005544945000000001,
+            "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+            "costConfidence": "exact"
+          },
+          "executionQuality": {
+            "toolCalls": 0,
+            "toolFailures": 0,
+            "repairIterations": 0
+          },
+          "outcome": {
+            "status": "unverified"
+          },
+          "repairAttribution": {
+            "kind": "none"
+          }
+        }
+      ],
+      "routingDecisions": [
+        {
+          "routingDecisionId": "9ae462338bd0b0bc0bc5ad19",
+          "selectedProvider": "deepseek-official",
+          "selectedModel": "deepseek-v4-pro",
+          "turn": 1,
+          "step": 1
+        }
+      ],
+      "routingIdConsistency": {
+        "consistent": true,
+        "routingDecisionId": "9ae462338bd0b0bc0bc5ad19",
+        "eventTypes": [
+          "model/routing-decision:9ae462338bd0b0bc0bc5ad19",
+          "model/request:9ae462338bd0b0bc0bc5ad19",
+          "model/usage:9ae462338bd0b0bc0bc5ad19"
+        ]
+      },
+      "estimates": {},
+      "invariants": {
+        "raw_promptEqualsHitPlusMiss": true,
+        "raw_totalEqualsPromptPlusCompletion": true,
+        "canonical_inputEqualsCacheMiss": true,
+        "canonical_totalPromptEqualsInputPlusCacheRead": true,
+        "canonical_totalEqualsTotalPromptPlusOutput": true,
+        "reasoningNotDoubleBilled": true,
+        "pricingVersionRecorded": true
+      },
+      "pricingVersion": "deepseek-v4-usd-observed-2026-08-23",
+      "costUsd": 0.005544945000000001,
+      "costConfidence": "exact"
     }
   ]
 }

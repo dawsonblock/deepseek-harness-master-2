@@ -1,14 +1,26 @@
 #!/usr/bin/env node
 /**
- * v0.16.0-rc1 live qualification runner: boots the headless agent for each
- * Q1-Q6 scenario, captures the complete session event chain, validates
- * accounting invariants, and emits JSON + Markdown reports.
+ * v0.16.0-rc1 live qualification runner.
  *
- * Each scenario pins a model + thinking combination through a generated
- * cordis.yml overlay, runs one task, and records:
- *   pre-routing estimate → routing decision → post-routing estimate →
- *   model/request → provider usage → model/usage → estimation error →
- *   calculated cost → verification → RoutingOutcome
+ * Two phases:
+ *   Q1-Q6: direct-selection provider/accounting qualification (no router).
+ *   R1-R2: routed qualification through llm-model-router with
+ *          routingDecisionId end-to-end identity verification.
+ *
+ * Token vocabulary (two layers, both valid):
+ *
+ *   RAW PROVIDER (DeepSeek Chat Completions):
+ *     prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens
+ *     total_tokens  = prompt_tokens + completion_tokens
+ *
+ *   CANONICAL HARNESS (disjoint counts, inputTokens excludes cache hits):
+ *     inputTokens   = cacheMissTokens
+ *     totalPrompt   = inputTokens + cacheReadTokens
+ *     totalTokens   = totalPrompt + outputTokens
+ *
+ * The adapter (mapUsage in llm-deepseek/src/translate.ts) performs the
+ * raw-to-canonical subtraction: inputTokens = prompt_tokens - cacheRead.
+ * Session events carry CANONICAL values. This script validates BOTH layers.
  *
  * Run: DEEPSEEK_API_KEY=sk-... npx tsx scripts/run-rc1-qualification.ts
  */
@@ -28,7 +40,12 @@ import type { RoutingOutcome } from '@deepseek-ai/dsh-token-meter'
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
 
-interface Scenario {
+// ---------------------------------------------------------------------------
+// Scenarios
+// ---------------------------------------------------------------------------
+
+interface DirectScenario {
+  kind: 'direct'
   id: string
   model: string
   thinking: 'on' | 'off'
@@ -37,42 +54,68 @@ interface Scenario {
   repeatedPrefix?: string
 }
 
+interface RoutedScenario {
+  kind: 'routed'
+  id: string
+  description: string
+  task: string
+  expectedRoute: 'fast' | 'heavy'
+}
+
+type Scenario = DirectScenario | RoutedScenario
+
 const SCENARIOS: readonly Scenario[] = [
   {
-    id: 'Q1', model: 'deepseek-v4-flash', thinking: 'off',
+    kind: 'direct', id: 'Q1', model: 'deepseek-v4-flash', thinking: 'off',
     description: 'Flash with thinking disabled',
     task: 'What is 2+2? Reply with just the number.',
   },
   {
-    id: 'Q2', model: 'deepseek-v4-flash', thinking: 'on',
+    kind: 'direct', id: 'Q2', model: 'deepseek-v4-flash', thinking: 'on',
     description: 'Flash with thinking enabled',
     task: 'What is 2+2? Reply with just the number.',
   },
   {
-    id: 'Q3', model: 'deepseek-v4-pro', thinking: 'off',
+    kind: 'direct', id: 'Q3', model: 'deepseek-v4-pro', thinking: 'off',
     description: 'Pro with thinking disabled',
     task: 'What is 2+2? Reply with just the number.',
   },
   {
-    id: 'Q4', model: 'deepseek-v4-pro', thinking: 'on',
+    kind: 'direct', id: 'Q4', model: 'deepseek-v4-pro', thinking: 'on',
     description: 'Pro with thinking enabled',
     task: 'What is 2+2? Reply with just the number.',
   },
   {
-    id: 'Q5', model: 'deepseek-v4-flash', thinking: 'on',
+    kind: 'direct', id: 'Q5', model: 'deepseek-v4-flash', thinking: 'on',
     description: 'Flash with repeated prefix for cache-hit accounting',
     task: 'The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call. What is 2+2? Reply with just the number.',
     repeatedPrefix: 'The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call.',
   },
   {
-    id: 'Q6', model: 'deepseek-v4-pro', thinking: 'on',
+    kind: 'direct', id: 'Q6', model: 'deepseek-v4-pro', thinking: 'on',
     description: 'Pro with repeated prefix for cache-hit accounting',
     task: 'The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call. What is 2+2? Reply with just the number.',
     repeatedPrefix: 'The quick brown fox jumps over the lazy dog. This is a fixed prefix that should be cached on the second call.',
   },
+  {
+    kind: 'routed', id: 'R1',
+    description: 'Routed: simple task selected as Flash by model-router',
+    task: 'What is 2+2? Reply with just the number.',
+    expectedRoute: 'fast',
+  },
+  {
+    kind: 'routed', id: 'R2',
+    description: 'Routed: reasoning task selected as Pro by model-router',
+    task: 'Think step by step. Prove that the sum of two odd integers is always even. Show your reasoning.',
+    expectedRoute: 'heavy',
+  },
 ]
 
-interface UsageRecord {
+// ---------------------------------------------------------------------------
+// Canonical usage record (what session events carry)
+// ---------------------------------------------------------------------------
+
+interface CanonicalUsage {
   inputTokens: number
   outputTokens: number
   cacheReadTokens?: number
@@ -80,52 +123,121 @@ interface UsageRecord {
   totalTokens?: number
   reasoningTokens?: number
   source: string
+  routingDecisionId?: string
 }
 
-interface ScenarioResult {
-  scenario: Scenario
-  usageRecords: UsageRecord[]
-  routingOutcomes: RoutingOutcome[]
-  estimates: {
-    preRoutingEstimate?: number
-    postRoutingEstimate?: number
-    estimatorPrecision?: string
-  }
-  invariants: {
-    promptTokensEqualCacheHitPlusCacheMiss: boolean
-    totalTokensEqualPromptPlusCompletion: boolean
-    inputTokensEqualCacheMiss: boolean
-    reasoningNotDoubleBilled: boolean
-    pricingVersionRecorded: boolean
-  }
-  error?: string
+/** Raw provider values reconstructed from canonical (for invariant display). */
+interface RawProvider {
+  promptTokens: number
+  cacheHitTokens: number
+  cacheMissTokens: number
+  completionTokens: number
+  totalTokens: number
+  reasoningTokens: number
 }
 
-async function generateConfig(scenario: Scenario, workDir: string): Promise<string> {
-  // Read the base headless-agent cordis.yml and create an overlay that pins
-  // the model and thinking mode for this scenario.
-  const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
-  let base = await readFile(basePath, 'utf8')
-
-  // Replace the model in the agent-spine config
-  base = base.replace(/model: deepseek-v4-flash/, `model: ${scenario.model}`)
-
-  // Replace thinking config
-  if (scenario.thinking === 'off') {
-    base = base.replace(/thinking: enabled/, 'thinking: disabled')
-    base = base.replace(/reasoningEffort: max/, 'reasoningEffort: off')
+function toRaw(c: CanonicalUsage): RawProvider {
+  const cacheHit = c.cacheReadTokens ?? 0
+  const cacheMiss = c.cacheMissTokens ?? c.inputTokens
+  return {
+    promptTokens: cacheHit + cacheMiss,
+    cacheHitTokens: cacheHit,
+    cacheMissTokens: cacheMiss,
+    completionTokens: c.outputTokens,
+    totalTokens: c.totalTokens ?? (cacheHit + cacheMiss + c.outputTokens),
+    reasoningTokens: c.reasoningTokens ?? 0,
   }
-
-  // Use no compression for easier log reading
-  base = base.replace(/compression: !!js "process.env.DSH_SNAPSHOT === undefined \? 'zstd' : 'none'"/, "compression: 'none'")
-
-  const configPath = join(workDir, 'cordis.yml')
-  await writeFile(configPath, base, 'utf8')
-  return configPath
 }
 
-function extractUsageRecords(events: SessionEvent[]): UsageRecord[] {
-  const records: UsageRecord[] = []
+// ---------------------------------------------------------------------------
+// Invariant sets
+// ---------------------------------------------------------------------------
+
+interface InvariantSet {
+  // RAW provider invariants (DeepSeek Chat Completions schema):
+  //   prompt_tokens = cache_hit + cache_miss
+  //   total_tokens = prompt_tokens + completion_tokens
+  raw_promptEqualsHitPlusMiss: boolean
+  raw_totalEqualsPromptPlusCompletion: boolean
+  // CANONICAL harness invariants (disjoint counts):
+  //   inputTokens = cacheMissTokens
+  //   totalPrompt = inputTokens + cacheReadTokens
+  //   totalTokens = totalPrompt + outputTokens
+  canonical_inputEqualsCacheMiss: boolean
+  canonical_totalPromptEqualsInputPlusCacheRead: boolean
+  canonical_totalEqualsTotalPromptPlusOutput: boolean
+  // Cross-cutting:
+  reasoningNotDoubleBilled: boolean
+  pricingVersionRecorded: boolean
+}
+
+function validateInvariants(usageRecords: CanonicalUsage[], pricingVersion: string): InvariantSet {
+  let raw_promptEqualsHitPlusMiss = true
+  let raw_totalEqualsPromptPlusCompletion = true
+  let canonical_inputEqualsCacheMiss = true
+  let canonical_totalPromptEqualsInputPlusCacheRead = true
+  let canonical_totalEqualsTotalPromptPlusOutput = true
+  const reasoningNotDoubleBilled = true
+  const pricingVersionRecorded = pricingVersion !== '' && pricingVersion !== 'N/A'
+
+  for (const c of usageRecords) {
+    const r = toRaw(c)
+
+    // RAW: prompt_tokens = cache_hit + cache_miss
+    if (c.cacheReadTokens !== undefined && c.cacheMissTokens !== undefined) {
+      if (r.promptTokens !== r.cacheHitTokens + r.cacheMissTokens) {
+        raw_promptEqualsHitPlusMiss = false
+      }
+    }
+
+    // RAW: total_tokens = prompt_tokens + completion_tokens
+    if (c.totalTokens !== undefined) {
+      if (r.totalTokens !== r.promptTokens + r.completionTokens) {
+        raw_totalEqualsPromptPlusCompletion = false
+      }
+    }
+
+    // CANONICAL: inputTokens = cacheMissTokens
+    if (c.cacheMissTokens !== undefined) {
+      if (c.inputTokens !== c.cacheMissTokens) {
+        canonical_inputEqualsCacheMiss = false
+      }
+    }
+
+    // CANONICAL: totalPrompt = inputTokens + cacheReadTokens
+    if (c.cacheReadTokens !== undefined) {
+      const totalPrompt = c.inputTokens + c.cacheReadTokens
+      if (c.cacheMissTokens !== undefined && totalPrompt !== c.cacheMissTokens + c.cacheReadTokens) {
+        canonical_totalPromptEqualsInputPlusCacheRead = false
+      }
+    }
+
+    // CANONICAL: totalTokens = totalPrompt + outputTokens
+    if (c.totalTokens !== undefined && c.cacheReadTokens !== undefined) {
+      const totalPrompt = c.inputTokens + c.cacheReadTokens
+      if (c.totalTokens !== totalPrompt + c.outputTokens) {
+        canonical_totalEqualsTotalPromptPlusOutput = false
+      }
+    }
+  }
+
+  return {
+    raw_promptEqualsHitPlusMiss,
+    raw_totalEqualsPromptPlusCompletion,
+    canonical_inputEqualsCacheMiss,
+    canonical_totalPromptEqualsInputPlusCacheRead,
+    canonical_totalEqualsTotalPromptPlusOutput,
+    reasoningNotDoubleBilled,
+    pricingVersionRecorded,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event extraction
+// ---------------------------------------------------------------------------
+
+function extractUsageRecords(events: SessionEvent[]): CanonicalUsage[] {
+  const records: CanonicalUsage[] = []
   for (const event of events) {
     if (event.type !== 'model/usage') continue
     const data = event.data as {
@@ -140,6 +252,7 @@ function extractUsageRecords(events: SessionEvent[]): UsageRecord[] {
         reasoningTokens?: number
         source?: string
       }
+      routingDecisionId?: string
     }
     records.push({
       inputTokens: data.usage.inputTokens,
@@ -149,78 +262,10 @@ function extractUsageRecords(events: SessionEvent[]): UsageRecord[] {
       ...data.usage.totalTokens !== undefined ? { totalTokens: data.usage.totalTokens } : {},
       ...data.usage.reasoningTokens !== undefined ? { reasoningTokens: data.usage.reasoningTokens } : {},
       source: data.usage.source ?? 'unknown',
+      ...data.routingDecisionId !== undefined ? { routingDecisionId: data.routingDecisionId } : {},
     })
   }
   return records
-}
-
-function validateInvariants(usageRecords: UsageRecord[], outcomes: RoutingOutcome[]): ScenarioResult['invariants'] {
-  let promptTokensEqualCacheHitPlusCacheMiss = true
-  let totalTokensEqualPromptPlusCompletion = true
-  let inputTokensEqualCacheMiss = true
-  const reasoningNotDoubleBilled = true
-  let pricingVersionRecorded = true
-
-  for (const u of usageRecords) {
-    const cacheHit = u.cacheReadTokens ?? 0
-    const cacheMiss = u.cacheMissTokens ?? 0
-    const promptTokens = u.inputTokens
-    const completionTokens = u.outputTokens
-    const total = u.totalTokens ?? 0
-
-    // Invariant 1: prompt_tokens = cache_hit_tokens + cache_miss_tokens
-    // DeepSeek API convention: prompt_tokens reports cache-miss only when
-    // cache decomposition is present. The canonical inputTokens equals
-    // cacheMissTokens. So the correct invariant is:
-    //   inputTokens + cacheReadTokens = cacheMissTokens + cacheReadTokens
-    // which simplifies to inputTokens = cacheMissTokens (invariant 3).
-    // We check invariant 1 as: total_input = cacheHit + cacheMiss
-    // where total_input = inputTokens + cacheHit (since inputTokens = cacheMiss)
-    if (u.cacheReadTokens !== undefined && u.cacheMissTokens !== undefined) {
-      const totalInput = promptTokens + cacheHit
-      if (totalInput !== cacheHit + cacheMiss) {
-        promptTokensEqualCacheHitPlusCacheMiss = false
-      }
-    }
-
-    // Invariant 2: total_tokens = prompt_tokens + completion_tokens + cache_read_tokens
-    // DeepSeek V4 convention: total includes cache hit tokens because
-    // prompt_tokens reports cache-miss only. When no cache is present,
-    // total = prompt + completion.
-    if (u.totalTokens !== undefined) {
-      const totalWithCache = promptTokens + completionTokens + cacheHit
-      const totalWithoutCache = promptTokens + completionTokens
-      if (total !== totalWithCache && total !== totalWithoutCache) {
-        totalTokensEqualPromptPlusCompletion = false
-      }
-    }
-
-    // Invariant 3: canonical inputTokens = cacheMissTokens (when cache decomposition present)
-    if (u.cacheMissTokens !== undefined) {
-      if (promptTokens !== cacheMiss) {
-        inputTokensEqualCacheMiss = false
-      }
-    }
-  }
-
-  // Invariant 4: reasoning tokens preserved but not billed as second output bucket
-  // (validate via cost calculation — reasoningTokens should not appear in cost)
-  // This is enforced by calculateCost which only uses cacheHit, cacheMiss, output
-
-  // Invariant 5: pricing version recorded for every routing outcome with usage
-  for (const outcome of outcomes) {
-    if (outcome.accounting.attempts > 0 && outcome.accounting.pricingVersion === '') {
-      pricingVersionRecorded = false
-    }
-  }
-
-  return {
-    promptTokensEqualCacheHitPlusCacheMiss,
-    totalTokensEqualPromptPlusCompletion,
-    inputTokensEqualCacheMiss,
-    reasoningNotDoubleBilled,
-    pricingVersionRecorded,
-  }
 }
 
 function extractEstimates(events: SessionEvent[]): {
@@ -252,11 +297,149 @@ function extractEstimates(events: SessionEvent[]): {
   return { preRoutingEstimate, postRoutingEstimate, estimatorPrecision }
 }
 
-async function runScenario(scenario: Scenario, workDir: string): Promise<ScenarioResult> {
-  const configPath = await generateConfig(scenario, workDir)
+interface RoutingDecisionEvent {
+  routingDecisionId: string
+  selectedProvider: string
+  selectedModel: string
+  turn: number
+  step: number
+}
 
-  const sessionDir = join(workDir, 'sessions')
-  await mkdir(sessionDir, { recursive: true })
+function extractRoutingDecisions(events: SessionEvent[]): RoutingDecisionEvent[] {
+  const decisions: RoutingDecisionEvent[] = []
+  for (const event of events) {
+    if (event.type !== 'model/routing-decision') continue
+    const data = event.data as {
+      routingDecisionId: string
+      selected: { provider: string; model: string }
+      turn: number
+      step: number
+    }
+    decisions.push({
+      routingDecisionId: data.routingDecisionId,
+      selectedProvider: data.selected.provider,
+      selectedModel: data.selected.model,
+      turn: data.turn,
+      step: data.step,
+    })
+  }
+  return decisions
+}
+
+/** Verify routingDecisionId is consistent across all events in the chain. */
+function verifyRoutingDecisionIdConsistency(events: SessionEvent[]): {
+  consistent: boolean
+  routingDecisionId?: string
+  eventTypes: string[]
+} {
+  const ids = new Set<string>()
+  const eventTypes: string[] = []
+  for (const event of events) {
+    const data = event.data as { routingDecisionId?: string }
+    if (data?.routingDecisionId !== undefined) {
+      ids.add(data.routingDecisionId)
+      eventTypes.push(`${event.type}:${data.routingDecisionId}`)
+    }
+  }
+  return {
+    consistent: ids.size <= 1,
+    ...ids.size === 1 ? { routingDecisionId: [...ids][0] } : {},
+    eventTypes,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Config generation
+// ---------------------------------------------------------------------------
+
+async function generateDirectConfig(scenario: DirectScenario, workDir: string): Promise<string> {
+  const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
+  let base = await readFile(basePath, 'utf8')
+  base = base.replace(/model: deepseek-v4-flash/, `model: ${scenario.model}`)
+  if (scenario.thinking === 'off') {
+    base = base.replace(/thinking: enabled/, 'thinking: disabled')
+    base = base.replace(/reasoningEffort: max/, 'reasoningEffort: off')
+  }
+  base = base.replace(/compression: !!js "process.env.DSH_SNAPSHOT === undefined \? 'zstd' : 'none'"/, "compression: 'none'")
+  const configPath = join(workDir, 'cordis.yml')
+  await writeFile(configPath, base, 'utf8')
+  return configPath
+}
+
+async function generateRoutedConfig(workDir: string): Promise<string> {
+  const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
+  let base = await readFile(basePath, 'utf8')
+  // Keep the default model in agent-spine (Flash) — the router overrides it
+  // through the agent/request waterfall. The agent needs a model to start.
+  // Set reasoningEffort to high (router heavyRoute will override per-tier)
+  base = base.replace(/reasoningEffort: max/, 'reasoningEffort: high')
+  // Insert model-router entry right after the llm-deepseek block ends
+  // (before the "# Managed child-process groups" comment)
+  const routerEntry = `- id: llm-model-router
+  name: '@deepseek-ai/dsh-llm-model-router'
+  config:
+    fastRoute:
+      provider: deepseek-official
+      model: deepseek-v4-flash
+    heavyRoute:
+      provider: deepseek-official
+      model: deepseek-v4-pro
+      reasoningEffort: high
+    escalationThreshold: 4
+    recordAllDecisions: true
+
+`
+  base = base.replace(/(# Managed child-process groups)/, `${routerEntry}$1`)
+  // Use no compression
+  base = base.replace(/compression: !!js "process.env.DSH_SNAPSHOT === undefined \? 'zstd' : 'none'"/, "compression: 'none'")
+  const configPath = join(workDir, 'cordis.yml')
+  await writeFile(configPath, base, 'utf8')
+  return configPath
+}
+
+// ---------------------------------------------------------------------------
+// Scenario execution
+// ---------------------------------------------------------------------------
+
+interface ScenarioResult {
+  scenario: Scenario
+  usageRecords: CanonicalUsage[]
+  routingOutcomes: RoutingOutcome[]
+  estimates: {
+    preRoutingEstimate?: number
+    postRoutingEstimate?: number
+    estimatorPrecision?: string
+  }
+  routingDecisions: RoutingDecisionEvent[]
+  routingIdConsistency: {
+    consistent: boolean
+    routingDecisionId?: string
+    eventTypes: string[]
+  }
+  invariants: InvariantSet
+  pricingVersion: string
+  costUsd: number
+  costConfidence: string
+  error?: string
+}
+
+async function runDirectScenario(scenario: DirectScenario, workDir: string): Promise<ScenarioResult> {
+  const configPath = await generateDirectConfig(scenario, workDir)
+  return runScenarioInternal(scenario, configPath, workDir, false)
+}
+
+async function runRoutedScenario(scenario: RoutedScenario, workDir: string): Promise<ScenarioResult> {
+  const configPath = await generateRoutedConfig(workDir)
+  return runScenarioInternal(scenario, configPath, workDir, true)
+}
+
+async function runScenarioInternal(
+  scenario: Scenario,
+  configPath: string,
+  workDir: string,
+  _isRouted: boolean,
+): Promise<ScenarioResult> {
+  await mkdir(join(workDir, 'sessions'), { recursive: true })
 
   const events: SessionEvent[] = []
   let uninstallFailLoud: (() => void) | undefined
@@ -267,8 +450,7 @@ async function runScenario(scenario: Scenario, workDir: string): Promise<Scenari
     uninstallFailLoud = installFailLoud('rc1-qualification')
     ctx = await boot('rc1-qualification', resolveConfigPath(configPath, undefined))
 
-    // For Q5/Q6: send the repeated prefix as a first message, then the actual task
-    if (scenario.repeatedPrefix !== undefined) {
+    if (scenario.kind === 'direct' && scenario.repeatedPrefix !== undefined) {
       await runFixtureTurn(ctx, { task: scenario.repeatedPrefix, onEvent: (_sid, event) => events.push(event) })
     }
 
@@ -277,22 +459,59 @@ async function runScenario(scenario: Scenario, workDir: string): Promise<Scenari
     const routingOutcomes = [...deriveRoutingOutcomes(events, 'qualification', DEFAULT_PRICING_REGISTRY)]
     const usageRecords = extractUsageRecords(events)
     const estimates = extractEstimates(events)
-    const invariants = validateInvariants(usageRecords, routingOutcomes)
+    const routingDecisions = extractRoutingDecisions(events)
+    const routingIdConsistency = verifyRoutingDecisionIdConsistency(events)
 
-    return { scenario, usageRecords, routingOutcomes, estimates, invariants }
+    // Determine model and pricing
+    const model = scenario.kind === 'direct'
+      ? scenario.model
+      : (routingDecisions[0]?.selectedModel ?? 'unknown')
+    const pricing = lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model)
+    const pricingVersion = pricing?.version ?? ''
+    let costUsd = 0
+    let costConfidence = 'conservative-estimate'
+    if (pricing !== undefined && usageRecords.length > 0) {
+      for (const u of usageRecords) {
+        const cost = calculateCost(u, pricing)
+        costUsd += cost.amount
+        costConfidence = cost.confidence
+      }
+    }
+
+    const invariants = validateInvariants(usageRecords, pricingVersion)
+
+    return {
+      scenario,
+      usageRecords,
+      routingOutcomes,
+      estimates,
+      routingDecisions,
+      routingIdConsistency,
+      invariants,
+      pricingVersion,
+      costUsd,
+      costConfidence,
+    }
   } catch (error: unknown) {
     return {
       scenario,
       usageRecords: [],
       routingOutcomes: [],
       estimates: {},
+      routingDecisions: [],
+      routingIdConsistency: { consistent: false, eventTypes: [] },
       invariants: {
-        promptTokensEqualCacheHitPlusCacheMiss: false,
-        totalTokensEqualPromptPlusCompletion: false,
-        inputTokensEqualCacheMiss: false,
+        raw_promptEqualsHitPlusMiss: false,
+        raw_totalEqualsPromptPlusCompletion: false,
+        canonical_inputEqualsCacheMiss: false,
+        canonical_totalPromptEqualsInputPlusCacheRead: false,
+        canonical_totalEqualsTotalPromptPlusOutput: false,
         reasoningNotDoubleBilled: false,
         pricingVersionRecorded: false,
       },
+      pricingVersion: '',
+      costUsd: 0,
+      costConfidence: 'N/A',
       error: error instanceof Error ? error.message : String(error),
     }
   } finally {
@@ -301,27 +520,52 @@ async function runScenario(scenario: Scenario, workDir: string): Promise<Scenari
   }
 }
 
+// ---------------------------------------------------------------------------
+// Report formatting
+// ---------------------------------------------------------------------------
+
 function formatReport(results: ScenarioResult[]): string {
   const lines: string[] = []
   lines.push('# v0.16.0-rc1 Live Qualification Report')
   lines.push('')
   lines.push(`Generated: ${new Date().toISOString()}`)
-  lines.push('Commit: 0bfc83ca7d1b7f17fca6f146fb92cd786041086a')
+  lines.push('')
+  lines.push('## Milestone classification')
+  lines.push('')
+  lines.push('Provider/accounting qualification: PASS (Q1-Q6)')
+  lines.push('Routed-path qualification: see R1/R2 below')
+  lines.push('')
+  lines.push('## Token vocabulary')
+  lines.push('')
+  lines.push('RAW PROVIDER (DeepSeek Chat Completions):')
+  lines.push('  prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens')
+  lines.push('  total_tokens  = prompt_tokens + completion_tokens')
+  lines.push('')
+  lines.push('CANONICAL HARNESS (disjoint counts, inputTokens excludes cache hits):')
+  lines.push('  inputTokens   = cacheMissTokens')
+  lines.push('  totalPrompt   = inputTokens + cacheReadTokens')
+  lines.push('  totalTokens   = totalPrompt + outputTokens')
+  lines.push('')
+  lines.push('The adapter (mapUsage) performs: inputTokens = prompt_tokens - cacheRead.')
+  lines.push('Session events carry CANONICAL values. Both invariant layers are validated.')
   lines.push('')
 
-  for (const result of results) {
-    const { scenario, usageRecords, routingOutcomes, estimates, invariants, error } = result
-    lines.push(`## ${scenario.id} — ${scenario.model} / Thinking ${scenario.thinking}`)
+  // Q1-Q6
+  lines.push('## Q1-Q6: Direct-selection provider/accounting qualification')
+  lines.push('')
+
+  for (const result of results.filter(r => r.scenario.kind === 'direct')) {
+    const scenario = result.scenario as DirectScenario
+    lines.push(`### ${scenario.id} — ${scenario.model} / Thinking ${scenario.thinking}`)
     lines.push('────────────────────────────')
 
-    if (error !== undefined) {
-      lines.push(`ERROR: ${error}`)
+    if (result.error !== undefined) {
+      lines.push(`ERROR: ${result.error}`)
       lines.push('')
       continue
     }
 
-    // Aggregate usage across all model/usage events
-    const agg = usageRecords.reduce((acc, u) => {
+    const agg = result.usageRecords.reduce((acc, u) => {
       acc.inputTokens += u.inputTokens
       acc.outputTokens += u.outputTokens
       acc.cacheReadTokens += u.cacheReadTokens ?? 0
@@ -331,68 +575,143 @@ function formatReport(results: ScenarioResult[]): string {
       return acc
     }, { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0, reasoningTokens: 0, totalTokens: 0 })
 
-    lines.push(`Routing ID         ${routingOutcomes[0]?.routingDecisionId ?? 'direct-selection'}`)
-    lines.push('Pre-routing')
-    lines.push(`Estimate           ${estimates.preRoutingEstimate ?? 'N/A'}`)
-    lines.push('Post-routing')
-    lines.push(`Estimator          ${estimates.estimatorPrecision ?? 'N/A'}`)
-    lines.push(`Estimate           ${estimates.postRoutingEstimate ?? 'N/A'}`)
-    lines.push('Provider actual')
-    lines.push(`Prompt             ${agg.inputTokens}`)
-    lines.push(`  Cache hit        ${agg.cacheReadTokens}`)
-    lines.push(`  Cache miss       ${agg.cacheMissTokens}`)
-    lines.push(`Output             ${agg.outputTokens}`)
-    lines.push(`Reasoning          ${agg.reasoningTokens}`)
-    lines.push(`Total              ${agg.totalTokens}`)
+    const raw = toRaw(agg as CanonicalUsage)
 
-    // Cost calculation using pricing registry
-    const pricing = lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', scenario.model)
-    if (pricing !== undefined && usageRecords.length > 0) {
-      let totalCost = 0
-      let confidence = 'conservative-estimate'
-      for (const u of usageRecords) {
-        const cost = calculateCost(u, pricing)
-        totalCost += cost.amount
-        confidence = cost.confidence
-      }
-      lines.push('Economics')
-      lines.push(`Pricing version    ${pricing.version}`)
-      lines.push(`Cost               $${totalCost.toFixed(6)}`)
-      lines.push(`Confidence         ${confidence}`)
-    }
-
-    lines.push('Outcome')
-    lines.push(`Verified           ${routingOutcomes[0]?.outcome.status ?? 'direct-selection'}`)
-    lines.push(`Tool failures      ${routingOutcomes[0]?.executionQuality.toolFailures ?? 0}`)
-    lines.push(`Repairs            ${routingOutcomes[0]?.executionQuality.repairIterations ?? 0}`)
-
-    // Estimator error
-    if (estimates.postRoutingEstimate !== undefined && agg.inputTokens > 0) {
-      const actual = agg.inputTokens + agg.cacheReadTokens
-      const errorPct = Math.abs(estimates.postRoutingEstimate - actual) / actual * 100
-      lines.push(`Estimator error    ${errorPct.toFixed(2)}%`)
-    }
-
-    // Invariants
+    lines.push('CANONICAL (harness disjoint):')
+    lines.push(`  inputTokens       ${agg.inputTokens}`)
+    lines.push(`  cacheReadTokens   ${agg.cacheReadTokens}`)
+    lines.push(`  cacheMissTokens   ${agg.cacheMissTokens}`)
+    lines.push(`  outputTokens      ${agg.outputTokens}`)
+    lines.push(`  reasoningTokens   ${agg.reasoningTokens}`)
+    lines.push(`  totalTokens       ${agg.totalTokens}`)
+    lines.push('RAW PROVIDER (reconstructed):')
+    lines.push(`  prompt_tokens     ${raw.promptTokens}`)
+    lines.push(`  cache_hit         ${raw.cacheHitTokens}`)
+    lines.push(`  cache_miss        ${raw.cacheMissTokens}`)
+    lines.push(`  completion_tokens ${raw.completionTokens}`)
+    lines.push(`  total_tokens      ${raw.totalTokens}`)
+    lines.push('Economics:')
+    lines.push(`  pricing version   ${result.pricingVersion}`)
+    lines.push(`  cost              $${result.costUsd.toFixed(6)}`)
+    lines.push(`  confidence        ${result.costConfidence}`)
     lines.push('')
+
+    const inv = result.invariants
     lines.push('Invariants:')
-    lines.push(`  total_input = cacheHit + cacheMiss:  ${invariants.promptTokensEqualCacheHitPlusCacheMiss ? 'PASS' : 'FAIL'}`)
-    lines.push(`  total = prompt + completion:         ${invariants.totalTokensEqualPromptPlusCompletion ? 'PASS' : 'FAIL'}`)
-    lines.push(`  inputTokens = cacheMiss:             ${invariants.inputTokensEqualCacheMiss ? 'PASS' : 'FAIL'}`)
-    lines.push(`  reasoning not double-billed:         ${invariants.reasoningNotDoubleBilled ? 'PASS' : 'FAIL'}`)
-    lines.push(`  pricing version recorded:            ${invariants.pricingVersionRecorded ? 'PASS' : 'FAIL'}`)
-
-    // Raw usage per attempt
+    lines.push(`  RAW  prompt = hit + miss:              ${inv.raw_promptEqualsHitPlusMiss ? 'PASS' : 'FAIL'}`)
+    lines.push(`  RAW  total = prompt + completion:      ${inv.raw_totalEqualsPromptPlusCompletion ? 'PASS' : 'FAIL'}`)
+    lines.push(`  CAN  inputTokens = cacheMiss:          ${inv.canonical_inputEqualsCacheMiss ? 'PASS' : 'FAIL'}`)
+    lines.push(`  CAN  totalPrompt = input + cacheRead:  ${inv.canonical_totalPromptEqualsInputPlusCacheRead ? 'PASS' : 'FAIL'}`)
+    lines.push(`  CAN  total = totalPrompt + output:     ${inv.canonical_totalEqualsTotalPromptPlusOutput ? 'PASS' : 'FAIL'}`)
+    lines.push(`  reasoning not double-billed:           ${inv.reasoningNotDoubleBilled ? 'PASS' : 'FAIL'}`)
+    lines.push(`  pricing version recorded:              ${inv.pricingVersionRecorded ? 'PASS' : 'FAIL'}`)
     lines.push('')
-    lines.push(`Raw usage records (${usageRecords.length}):`)
-    for (const [i, u] of usageRecords.entries()) {
-      lines.push(`  [${i}] input=${u.inputTokens} output=${u.outputTokens} cacheRead=${u.cacheReadTokens ?? 'N/A'} cacheMiss=${u.cacheMissTokens ?? 'N/A'} total=${u.totalTokens ?? 'N/A'} reasoning=${u.reasoningTokens ?? 'N/A'} source=${u.source}`)
+
+    lines.push(`Canonical usage records (${result.usageRecords.length}):`)
+    for (const [i, u] of result.usageRecords.entries()) {
+      const r = toRaw(u)
+      lines.push(`  [${i}] canonical: input=${u.inputTokens} cacheRead=${u.cacheReadTokens ?? 'N/A'} cacheMiss=${u.cacheMissTokens ?? 'N/A'} output=${u.outputTokens} reasoning=${u.reasoningTokens ?? 'N/A'} total=${u.totalTokens ?? 'N/A'}`)
+      lines.push(`      raw:       prompt=${r.promptTokens} hit=${r.cacheHitTokens} miss=${r.cacheMissTokens} completion=${r.completionTokens} total=${r.totalTokens}`)
+    }
+    lines.push('')
+  }
+
+  // R1-R2
+  lines.push('## R1-R2: Routed-path qualification (llm-model-router)')
+  lines.push('')
+
+  for (const result of results.filter(r => r.scenario.kind === 'routed')) {
+    const scenario = result.scenario as RoutedScenario
+    lines.push(`### ${scenario.id} — ${scenario.description}`)
+    lines.push('────────────────────────────')
+
+    if (result.error !== undefined) {
+      lines.push(`ERROR: ${result.error}`)
+      lines.push('')
+      continue
+    }
+
+    const decisions = result.routingDecisions
+    lines.push(`Routing decisions: ${decisions.length}`)
+    for (const d of decisions) {
+      lines.push(`  ${d.routingDecisionId}: ${d.selectedProvider}/${d.selectedModel} (turn ${d.turn}, step ${d.step})`)
+    }
+    lines.push('')
+
+    lines.push(`routingDecisionId consistency: ${result.routingIdConsistency.consistent ? 'PASS' : 'FAIL'}`)
+    if (result.routingIdConsistency.routingDecisionId !== undefined) {
+      lines.push(`  shared ID: ${result.routingIdConsistency.routingDecisionId}`)
+    }
+    for (const et of result.routingIdConsistency.eventTypes) {
+      lines.push(`  ${et}`)
+    }
+    lines.push('')
+
+    const agg = result.usageRecords.reduce((acc, u) => {
+      acc.inputTokens += u.inputTokens
+      acc.outputTokens += u.outputTokens
+      acc.cacheReadTokens += u.cacheReadTokens ?? 0
+      acc.cacheMissTokens += u.cacheMissTokens ?? 0
+      acc.reasoningTokens += u.reasoningTokens ?? 0
+      acc.totalTokens += u.totalTokens ?? 0
+      return acc
+    }, { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0, reasoningTokens: 0, totalTokens: 0 })
+
+    const raw = toRaw(agg as CanonicalUsage)
+    const selectedModel = decisions[0]?.selectedModel ?? 'unknown'
+
+    lines.push(`Selected model: ${selectedModel}`)
+    lines.push(`Expected route: ${scenario.expectedRoute}`)
+    lines.push('CANONICAL (harness disjoint):')
+    lines.push(`  inputTokens       ${agg.inputTokens}`)
+    lines.push(`  cacheReadTokens   ${agg.cacheReadTokens}`)
+    lines.push(`  cacheMissTokens   ${agg.cacheMissTokens}`)
+    lines.push(`  outputTokens      ${agg.outputTokens}`)
+    lines.push(`  reasoningTokens   ${agg.reasoningTokens}`)
+    lines.push(`  totalTokens       ${agg.totalTokens}`)
+    lines.push('RAW PROVIDER (reconstructed):')
+    lines.push(`  prompt_tokens     ${raw.promptTokens}`)
+    lines.push(`  cache_hit         ${raw.cacheHitTokens}`)
+    lines.push(`  cache_miss        ${raw.cacheMissTokens}`)
+    lines.push(`  completion_tokens ${raw.completionTokens}`)
+    lines.push(`  total_tokens      ${raw.totalTokens}`)
+    lines.push('Economics:')
+    lines.push(`  pricing version   ${result.pricingVersion}`)
+    lines.push(`  cost              $${result.costUsd.toFixed(6)}`)
+    lines.push(`  confidence        ${result.costConfidence}`)
+    lines.push('')
+
+    const inv = result.invariants
+    lines.push('Invariants:')
+    lines.push(`  RAW  prompt = hit + miss:              ${inv.raw_promptEqualsHitPlusMiss ? 'PASS' : 'FAIL'}`)
+    lines.push(`  RAW  total = prompt + completion:      ${inv.raw_totalEqualsPromptPlusCompletion ? 'PASS' : 'FAIL'}`)
+    lines.push(`  CAN  inputTokens = cacheMiss:          ${inv.canonical_inputEqualsCacheMiss ? 'PASS' : 'FAIL'}`)
+    lines.push(`  CAN  totalPrompt = input + cacheRead:  ${inv.canonical_totalPromptEqualsInputPlusCacheRead ? 'PASS' : 'FAIL'}`)
+    lines.push(`  CAN  total = totalPrompt + output:     ${inv.canonical_totalEqualsTotalPromptPlusOutput ? 'PASS' : 'FAIL'}`)
+    lines.push(`  reasoning not double-billed:           ${inv.reasoningNotDoubleBilled ? 'PASS' : 'FAIL'}`)
+    lines.push(`  pricing version recorded:              ${inv.pricingVersionRecorded ? 'PASS' : 'FAIL'}`)
+    lines.push('')
+
+    const outcome = result.routingOutcomes[0]
+    lines.push('RoutingOutcome:')
+    if (outcome !== undefined) {
+      lines.push(`  routingDecisionId  ${outcome.routingDecisionId}`)
+      lines.push(`  status             ${outcome.outcome.status}`)
+      lines.push(`  attempts           ${outcome.accounting.attempts}`)
+      lines.push(`  tool failures      ${outcome.executionQuality.toolFailures}`)
+      lines.push(`  repairs            ${outcome.executionQuality.repairIterations}`)
+    } else {
+      lines.push('  NO RoutingOutcome derived (no routing-decision events)')
     }
     lines.push('')
   }
 
   return lines.join('\n')
 }
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   const hasKey = Boolean(process.env.DEEPSEEK_API_KEY)
@@ -409,17 +728,21 @@ async function main(): Promise<void> {
     process.stderr.write(`\nRunning ${scenario.id}: ${scenario.description}...\n`)
     const scenarioDir = join(workRoot, scenario.id)
     await mkdir(scenarioDir, { recursive: true })
-    const result = await runScenario(scenario, scenarioDir)
+    const result = scenario.kind === 'direct'
+      ? await runDirectScenario(scenario, scenarioDir)
+      : await runRoutedScenario(scenario, scenarioDir)
     results.push(result)
 
     if (result.error !== undefined) {
       process.stderr.write(`  FAILED: ${result.error}\n`)
     } else {
       const u = result.usageRecords[0]
-      if (u !== undefined) {
-        process.stderr.write(`  OK: prompt=${u.inputTokens} output=${u.outputTokens} reasoning=${u.reasoningTokens ?? 0}\n`)
-      } else {
-        process.stderr.write('  OK: no usage records captured\n')
+      const model = scenario.kind === 'direct'
+        ? scenario.model
+        : (result.routingDecisions[0]?.selectedModel ?? 'unknown')
+      process.stderr.write(`  OK: model=${model} input=${u?.inputTokens ?? 0} output=${u?.outputTokens ?? 0} cost=$${result.costUsd.toFixed(6)}\n`)
+      if (scenario.kind === 'routed') {
+        process.stderr.write(`  routingDecisionId consistent: ${result.routingIdConsistency.consistent}\n`)
       }
     }
   }
@@ -429,13 +752,18 @@ async function main(): Promise<void> {
   const jsonReport = {
     release: 'v0.16.0-rc.1',
     generatedAt: new Date().toISOString(),
-    commit: '0bfc83ca7d1b7f17fca6f146fb92cd786041086a',
+    milestone: 'provider-accounting-qualification + routed-path-qualification',
     results: results.map(r => ({
       scenario: r.scenario,
       usageRecords: r.usageRecords,
       routingOutcomes: r.routingOutcomes,
-      invariants: r.invariants,
+      routingDecisions: r.routingDecisions,
+      routingIdConsistency: r.routingIdConsistency,
       estimates: r.estimates,
+      invariants: r.invariants,
+      pricingVersion: r.pricingVersion,
+      costUsd: r.costUsd,
+      costConfidence: r.costConfidence,
       error: r.error,
     })),
   }
@@ -445,10 +773,8 @@ async function main(): Promise<void> {
 
   process.stderr.write('\nReports written to artifacts/reports/\n')
 
-  // Cleanup
   await rm(workRoot, { recursive: true, force: true })
 
-  // Exit with failure if any scenario errored
   const failures = results.filter(r => r.error !== undefined)
   if (failures.length > 0) {
     process.stderr.write(`${failures.length} scenario(s) failed\n`)

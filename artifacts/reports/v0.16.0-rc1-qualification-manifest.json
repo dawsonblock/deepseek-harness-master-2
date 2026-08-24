@@ -87,7 +87,7 @@
       "passing": 120,
       "failing": 4,
       "skipped": 4,
-      "baselineDescription": "120/124 executable cases pass consistently; four independently reproduced baseline/environment failures remain. No RC1-specific snapshot regression was identified.",
+      "baselineDescription": "No RC1-attributed snapshot regression; 120/124 executable snapshot cases pass, with four independently reproduced baseline/environment failures.",
       "failures": [
         {
           "name": "advertises and loads the opt-in bundled skill through the shipped app",
@@ -123,7 +123,9 @@
       { "id": "Q3", "model": "deepseek-v4-pro", "thinking": "off", "description": "Pro with thinking disabled" },
       { "id": "Q4", "model": "deepseek-v4-pro", "thinking": "on", "description": "Pro with thinking enabled" },
       { "id": "Q5", "model": "deepseek-v4-flash", "thinking": "on", "description": "Flash with repeated prefix for cache-hit accounting" },
-      { "id": "Q6", "model": "deepseek-v4-pro", "thinking": "on", "description": "Pro with repeated prefix for cache-hit accounting" }
+      { "id": "Q6", "model": "deepseek-v4-pro", "thinking": "on", "description": "Pro with repeated prefix for cache-hit accounting" },
+      { "id": "R1", "model": "router-selected", "thinking": "on", "description": "Routed: simple task selected as Flash by model-router" },
+      { "id": "R2", "model": "router-selected", "thinking": "on", "description": "Routed: reasoning task selected as Pro by model-router" }
     ],
     "captureChain": [
       "pre-routing estimate",
@@ -138,11 +140,14 @@
       "RoutingOutcome"
     ],
     "invariants": [
-      "prompt_tokens = cache_hit_tokens + cache_miss_tokens",
-      "total_tokens = prompt_tokens + completion_tokens",
-      "canonical inputTokens = cacheMissTokens",
+      "RAW: prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens",
+      "RAW: total_tokens = prompt_tokens + completion_tokens",
+      "CANONICAL: inputTokens = cacheMissTokens",
+      "CANONICAL: totalPrompt = inputTokens + cacheReadTokens",
+      "CANONICAL: totalTokens = totalPrompt + outputTokens",
       "reasoning tokens preserved but not billed as second output bucket",
-      "pricing version recorded for every cost calculation"
+      "pricing version recorded for every cost calculation",
+      "routingDecisionId consistent across model/routing-decision, model/request, model/usage, RoutingOutcome"
     ]
   }
 }
