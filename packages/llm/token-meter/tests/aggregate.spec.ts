@@ -39,22 +39,22 @@ function usageEvent(
 
 const events: SessionEvent[] = [
   // Turn 1, step 1, attempt 1: Flash, retry
-  usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+  usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
     { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheMissTokens: 1000, source: 0, reasoningTokens: 200 },
     'R123',
   ),
   // Turn 1, step 1, attempt 2: Pro escalation, success
-  usageEvent(2, 1, 1, 2, 'deepseek', 'deepseek-v4-pro',
+  usageEvent(2, 1, 1, 2, 'deepseek-official', 'deepseek-v4-pro',
     { inputTokens: 2000, outputTokens: 1000, cacheReadTokens: 1500, cacheMissTokens: 2000, source: 0, reasoningTokens: 400 },
     'R123',
   ),
   // Turn 2, step 1, attempt 1: Flash, success
-  usageEvent(3, 2, 1, 1, 'deepseek', 'deepseek-v4-flash',
+  usageEvent(3, 2, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
     { inputTokens: 500, outputTokens: 200, cacheReadTokens: 300, cacheMissTokens: 500, source: 0 },
     'R124',
   ),
   // Turn 3: manual selection, no routing decision
-  usageEvent(4, 3, 1, 1, 'deepseek', 'deepseek-v4-flash',
+  usageEvent(4, 3, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
     { inputTokens: 300, outputTokens: 100 },
   ),
 ]
@@ -117,14 +117,14 @@ describe('usageByModel', () => {
   it('groups by provider/model', () => {
     const byModel = usageByModel(records)
     expect(byModel.size).toBe(2)
-    expect(byModel.get('deepseek/deepseek-v4-flash')!.requests).toBe(3)
-    expect(byModel.get('deepseek/deepseek-v4-pro')!.requests).toBe(1)
+    expect(byModel.get('deepseek-official/deepseek-v4-flash')!.requests).toBe(3)
+    expect(byModel.get('deepseek-official/deepseek-v4-pro')!.requests).toBe(1)
   })
 
   it('separates Flash and Pro token counts', () => {
     const byModel = usageByModel(records)
-    const flash = byModel.get('deepseek/deepseek-v4-flash')!
-    const pro = byModel.get('deepseek/deepseek-v4-pro')!
+    const flash = byModel.get('deepseek-official/deepseek-v4-flash')!
+    const pro = byModel.get('deepseek-official/deepseek-v4-pro')!
     expect(flash.outputTokens).toBe(800)
     expect(pro.outputTokens).toBe(1000)
   })
@@ -146,8 +146,8 @@ describe('routingDecisionAccounting', () => {
     expect(r123.routingDecisionId).toBe('R123')
     expect(r123.attempts).toBe(2)
     // R123 used both Flash (attempt 1) and Pro (attempt 2).
-    expect(r123.models).toContain('deepseek/deepseek-v4-flash')
-    expect(r123.models).toContain('deepseek/deepseek-v4-pro')
+    expect(r123.models).toContain('deepseek-official/deepseek-v4-flash')
+    expect(r123.models).toContain('deepseek-official/deepseek-v4-pro')
     expect(r123.models).toHaveLength(2)
     expect(r123.totals.costUsd).toBeGreaterThan(0)
   })
@@ -156,7 +156,7 @@ describe('routingDecisionAccounting', () => {
     const accounting = routingDecisionAccounting(records, DEFAULT_PRICING_REGISTRY)
     const r124 = accounting.get('R124')!
     expect(r124.attempts).toBe(1)
-    expect(r124.models).toEqual(['deepseek/deepseek-v4-flash'])
+    expect(r124.models).toEqual(['deepseek-official/deepseek-v4-flash'])
   })
 
   it('excludes manual selection (no routing decision id)', () => {

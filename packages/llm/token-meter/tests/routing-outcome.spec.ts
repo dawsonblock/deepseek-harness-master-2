@@ -151,8 +151,8 @@ function turnEndEvent(seq: number, turn: number, reason: string): SessionEvent {
 describe('deriveRoutingOutcomes', () => {
   it('joins routing decision to model/usage and produces cost', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheMissTokens: 1000, source: 0 },
         'R1',
       ),
@@ -181,11 +181,11 @@ describe('deriveRoutingOutcomes', () => {
 
   it('counts retries as multiple attempts under one routing decision', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 100, source: 0 }, 'R1',
       ),
-      usageEvent(2, 1, 1, 2, 'deepseek', 'deepseek-v4-flash',
+      usageEvent(2, 1, 1, 2, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1500, outputTokens: 200, source: 0 }, 'R1',
       ),
       verificationEvent(3, true, [{ passed: true }]),
@@ -200,8 +200,8 @@ describe('deriveRoutingOutcomes', () => {
 
   it('classifies verified-fail when verification fails', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, source: 0 }, 'R1',
       ),
       verificationEvent(2, false, [{ passed: false }]),
@@ -215,8 +215,8 @@ describe('deriveRoutingOutcomes', () => {
 
   it('classifies unverified when turn ends without verification', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, source: 0 }, 'R1',
       ),
       turnEndEvent(2, 1, 'completed'),
@@ -227,8 +227,8 @@ describe('deriveRoutingOutcomes', () => {
 
   it('counts tool failures from tool/result isError', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, source: 0 }, 'R1',
       ),
       toolCallEvent(2, 1, 1, 'c1'),
@@ -245,13 +245,13 @@ describe('deriveRoutingOutcomes', () => {
 
   it('detects inferred repair relationship between routing decisions in the same turn', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 100, source: 0 }, 'R1',
       ),
       verificationEvent(2, false, [{ passed: false }]),
-      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      usageEvent(4, 1, 2, 1, 'deepseek', 'deepseek-v4-pro',
+      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
+      usageEvent(4, 1, 2, 1, 'deepseek-official', 'deepseek-v4-pro',
         { inputTokens: 2000, outputTokens: 500, source: 0 }, 'R2',
       ),
       verificationEvent(5, true, [{ passed: true }]),
@@ -269,22 +269,22 @@ describe('deriveRoutingOutcomes', () => {
 
   it('prefers explicit repairOf metadata over inference', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 100, source: 0 }, 'R1',
       ),
       verificationEvent(2, false, [{ passed: false }]),
       {
-        ...routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
+        ...routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
         data: {
           turn: 1, step: 2, routingDecisionId: 'R2',
-          proposed: { provider: 'deepseek', model: 'deepseek-v4-pro' },
-          selected: { provider: 'deepseek', model: 'deepseek-v4-pro' },
+          proposed: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+          selected: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
           authority: 'router', reason: 'scoring', threshold: 5, policyVersion: 1,
           repairOf: 'R1',
         },
       } as SessionEvent,
-      usageEvent(4, 1, 2, 1, 'deepseek', 'deepseek-v4-pro',
+      usageEvent(4, 1, 2, 1, 'deepseek-official', 'deepseek-v4-pro',
         { inputTokens: 2000, outputTokens: 500, source: 0 }, 'R2',
       ),
       verificationEvent(5, true, [{ passed: true }]),
@@ -296,13 +296,13 @@ describe('deriveRoutingOutcomes', () => {
 
   it('reports none when no failed verification occurs between decisions', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 100, source: 0 }, 'R1',
       ),
       verificationEvent(2, true, [{ passed: true }]),
-      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      usageEvent(4, 1, 2, 1, 'deepseek', 'deepseek-v4-pro',
+      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
+      usageEvent(4, 1, 2, 1, 'deepseek-official', 'deepseek-v4-pro',
         { inputTokens: 2000, outputTokens: 500, source: 0 }, 'R2',
       ),
       verificationEvent(5, true, [{ passed: true }]),
@@ -314,15 +314,15 @@ describe('deriveRoutingOutcomes', () => {
 
   it('reports none when a user/task boundary intervenes between decisions', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 100, source: 0 }, 'R1',
       ),
       verificationEvent(2, false, [{ passed: false }]),
       turnEndEvent(3, 1, 'completed'),
       { type: 'turn/start', seq: 4, time: 0, data: { turn: 2 } } as SessionEvent,
-      routingDecisionEvent(5, 2, 1, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      usageEvent(6, 2, 1, 1, 'deepseek', 'deepseek-v4-pro',
+      routingDecisionEvent(5, 2, 1, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
+      usageEvent(6, 2, 1, 1, 'deepseek-official', 'deepseek-v4-pro',
         { inputTokens: 2000, outputTokens: 500, source: 0 }, 'R2',
       ),
       verificationEvent(7, true, [{ passed: true }]),
@@ -334,8 +334,8 @@ describe('deriveRoutingOutcomes', () => {
 
   it('joins outcome-receipt and carries receiptId', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-pro',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-pro',
         { inputTokens: 2000, outputTokens: 1000, cacheReadTokens: 1500, cacheMissTokens: 2000, source: 0 }, 'R1',
       ),
       outcomeReceiptEvent(2, 'pass', [{ state: 'pass' }, { state: 'pass' }]),
@@ -353,13 +353,13 @@ describe('deriveRoutingOutcomes', () => {
 describe('deriveTaskEconomics', () => {
   it('aggregates flash and pro costs across routing decisions', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, source: 0 }, 'R1',
       ),
       verificationEvent(2, false, [{ passed: false }]),
-      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      usageEvent(4, 1, 2, 1, 'deepseek', 'deepseek-v4-pro',
+      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
+      usageEvent(4, 1, 2, 1, 'deepseek-official', 'deepseek-v4-pro',
         { inputTokens: 2000, outputTokens: 1000, source: 0 }, 'R2',
       ),
       verificationEvent(5, true, [{ passed: true }]),
@@ -377,8 +377,8 @@ describe('deriveTaskEconomics', () => {
 
   it('reports finalVerifiedOutcome false when no routing decision passes', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(1, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, source: 0 }, 'R1',
       ),
       verificationEvent(2, false, [{ passed: false }]),
@@ -398,7 +398,7 @@ describe('deriveWorkloadFeatures', () => {
       toolResultEvent(1, 1, 1, 'c1'),
       { type: 'tool/call', seq: 2, time: 0, data: { turn: 1, step: 1, callId: 'c2', name: 'read', arguments: '{}' } } as SessionEvent,
       toolResultEvent(3, 1, 1, 'c2'),
-      routingDecisionEvent(4, 1, 2, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
+      routingDecisionEvent(4, 1, 2, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
     ]
     const features = deriveWorkloadFeatures(events, { cutoffSeq: 4 })
     expect(features.toolClassesUsed).toBe(2)
@@ -406,7 +406,7 @@ describe('deriveWorkloadFeatures', () => {
 
   it('counts repair iterations from failed verification + goal/edit', () => {
     const events: SessionEvent[] = [
-      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
+      routingDecisionEvent(0, 1, 1, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
       verificationEvent(1, false, [{ passed: false }]),
       {
         type: 'goal/change',
@@ -414,7 +414,7 @@ describe('deriveWorkloadFeatures', () => {
         time: 0,
         data: { kind: 'goal/change', version: 1, operation: 'edit', goal: { id: 'g1', revision: 2, objective: 'test', status: 'active', roundsStarted: 1, roundsCompleted: 0 }, roundsStarted: 1, createdAt: 0, updatedAt: 0 },
       } as SessionEvent,
-      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
+      routingDecisionEvent(3, 1, 2, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
     ]
     const features = deriveWorkloadFeatures(events, { cutoffSeq: 3 })
     expect(features.repairIteration).toBe(1)
@@ -422,10 +422,10 @@ describe('deriveWorkloadFeatures', () => {
 
   it('tracks conversation tokens from model/usage', () => {
     const events: SessionEvent[] = [
-      usageEvent(0, 1, 1, 1, 'deepseek', 'deepseek-v4-flash',
+      usageEvent(0, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, totalTokens: 1500, source: 0 }, 'R1',
       ),
-      routingDecisionEvent(1, 1, 2, 'R2', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
+      routingDecisionEvent(1, 1, 2, 'R2', { provider: 'deepseek-official', model: 'deepseek-v4-pro' }),
     ]
     const features = deriveWorkloadFeatures(events, { cutoffSeq: 1 })
     expect(features.conversationTokens).toBe(1500)
@@ -436,10 +436,10 @@ describe('deriveWorkloadFeatures', () => {
       { type: 'tool/call', seq: 0, time: 0, data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: '{}' } } as SessionEvent,
       toolResultEvent(1, 1, 1, 'c1'),
     ]
-    const routingDecision = routingDecisionEvent(2, 1, 2, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' })
+    const routingDecision = routingDecisionEvent(2, 1, 2, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
     // Post-decision events that must not affect features.
     const postDecision: SessionEvent[] = [
-      usageEvent(3, 1, 2, 1, 'deepseek', 'deepseek-v4-flash',
+      usageEvent(3, 1, 2, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 9999, outputTokens: 9999, totalTokens: 99999, source: 0 }, 'R1',
       ),
       { type: 'tool/call', seq: 4, time: 0, data: { turn: 1, step: 2, callId: 'c2', name: 'read', arguments: '{}' } } as SessionEvent,
@@ -467,8 +467,8 @@ describe('deriveRoutingOutcomesWithFeatures', () => {
     const events: SessionEvent[] = [
       toolCallEvent(0, 1, 1, 'c1'),
       toolResultEvent(1, 1, 1, 'c1'),
-      routingDecisionEvent(2, 1, 2, 'R1', { provider: 'deepseek', model: 'deepseek-v4-flash' }),
-      usageEvent(3, 1, 2, 1, 'deepseek', 'deepseek-v4-flash',
+      routingDecisionEvent(2, 1, 2, 'R1', { provider: 'deepseek-official', model: 'deepseek-v4-flash' }),
+      usageEvent(3, 1, 2, 1, 'deepseek-official', 'deepseek-v4-flash',
         { inputTokens: 1000, outputTokens: 500, source: 0 }, 'R1',
       ),
       verificationEvent(4, true, [{ passed: true }]),

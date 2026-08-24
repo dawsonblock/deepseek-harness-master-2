@@ -66,7 +66,7 @@ export interface CalculatedModelCost {
  */
 export const DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23: readonly ModelPricing[] = Object.freeze([
   {
-    provider: 'deepseek',
+    provider: 'deepseek-official',
     model: 'deepseek-v4-flash',
     currency: 'USD',
     version: 'deepseek-v4-usd-observed-2026-08-23',
@@ -78,7 +78,7 @@ export const DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23: readonly ModelPricing[] = 
     },
   },
   {
-    provider: 'deepseek',
+    provider: 'deepseek-official',
     model: 'deepseek-v4-pro',
     currency: 'USD',
     version: 'deepseek-v4-usd-observed-2026-08-23',

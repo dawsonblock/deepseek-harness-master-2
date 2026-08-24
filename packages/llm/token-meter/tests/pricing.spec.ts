@@ -8,8 +8,8 @@ import {
 } from '../src/pricing.ts'
 import type { ModelPricing } from '../src/pricing.ts'
 
-const flashPricing = lookupPricing(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23, 'deepseek', 'deepseek-v4-flash')!
-const proPricing = lookupPricing(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23, 'deepseek', 'deepseek-v4-pro')!
+const flashPricing = lookupPricing(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23, 'deepseek-official', 'deepseek-v4-flash')!
+const proPricing = lookupPricing(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23, 'deepseek-official', 'deepseek-v4-pro')!
 
 describe('pricing registry', () => {
   it('contains Flash and Pro under the 2026-08-23 observation snapshot', () => {
@@ -38,7 +38,7 @@ describe('pricing registry', () => {
   })
 
   it('lookupPricing returns undefined for unknown models', () => {
-    expect(lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek', 'unknown-model')).toBeUndefined()
+    expect(lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', 'unknown-model')).toBeUndefined()
   })
 })
 
@@ -158,7 +158,7 @@ describe('calculateCost: pricing version reproducibility', () => {
       source: 'provider',
     }
     const futurePricing: ModelPricing = {
-      provider: 'deepseek',
+      provider: 'deepseek-official',
       model: 'deepseek-v4-flash',
       currency: 'USD',
       version: 'deepseek-v4-usd-observed-2027-01-01',
