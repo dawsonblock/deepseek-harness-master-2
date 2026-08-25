@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   extractUsageRecords,
@@ -17,13 +18,14 @@ function usageEvent(
   attempt: number,
   provider: string,
   model: string,
-  usage: Record<string, number>,
+  usage: Partial<TokenUsage>,
   routingDecisionId?: string,
+  time = 0,
 ): SessionEvent {
   return {
     type: 'model/usage',
     seq,
-    time: 0,
+    time,
     data: {
       turn,
       step,
@@ -34,23 +36,23 @@ function usageEvent(
       ...routingDecisionId === undefined ? {} : { routingDecisionId },
     },
     ignorable: true,
-  } as SessionEvent
+  }
 }
 
 const events: SessionEvent[] = [
   // Turn 1, step 1, attempt 1: Flash, retry
   usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
-    { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheMissTokens: 1000, source: 0, reasoningTokens: 200 },
+    { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 800, cacheMissTokens: 1000, source: 'provider', reasoningTokens: 200 },
     'R123',
   ),
   // Turn 1, step 1, attempt 2: Pro escalation, success
   usageEvent(2, 1, 1, 2, 'deepseek-official', 'deepseek-v4-pro',
-    { inputTokens: 2000, outputTokens: 1000, cacheReadTokens: 1500, cacheMissTokens: 2000, source: 0, reasoningTokens: 400 },
+    { inputTokens: 2000, outputTokens: 1000, cacheReadTokens: 1500, cacheMissTokens: 2000, source: 'provider', reasoningTokens: 400 },
     'R123',
   ),
   // Turn 2, step 1, attempt 1: Flash, success
   usageEvent(3, 2, 1, 1, 'deepseek-official', 'deepseek-v4-flash',
-    { inputTokens: 500, outputTokens: 200, cacheReadTokens: 300, cacheMissTokens: 500, source: 0 },
+    { inputTokens: 500, outputTokens: 200, cacheReadTokens: 300, cacheMissTokens: 500, source: 'provider' },
     'R124',
   ),
   // Turn 3: manual selection, no routing decision
@@ -100,6 +102,21 @@ describe('usageBySession', () => {
     const totals = usageBySession(records, DEFAULT_PRICING_REGISTRY)
     expect(totals.costUsd).toBeGreaterThan(0)
     expect(totals.exactCosts + totals.estimatedCosts).toBe(4)
+  })
+
+  it('selects the billing band from each usage event timestamp', () => {
+    const usage = { inputTokens: 1_000, outputTokens: 1_000, cacheMissTokens: 1_000, source: 'provider' }
+    const offPeak = extractUsageRecords([
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash', usage, undefined,
+        Date.parse('2026-08-18T05:00:00Z')),
+    ], 'off-peak')
+    const peak = extractUsageRecords([
+      usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash', usage, undefined,
+        Date.parse('2026-08-18T06:30:00Z')),
+    ], 'peak')
+
+    expect(usageBySession(peak, DEFAULT_PRICING_REGISTRY).costUsd)
+      .toBeCloseTo(usageBySession(offPeak, DEFAULT_PRICING_REGISTRY).costUsd * 2, 10)
   })
 })
 

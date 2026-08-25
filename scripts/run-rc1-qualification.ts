@@ -34,7 +34,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { deriveRoutingOutcomes, DEFAULT_PRICING_REGISTRY, calculateCost, lookupPricing } from '@deepseek-ai/dsh-token-meter'
+import { deriveRoutingOutcomes, DEFAULT_PRICING_REGISTRY, calculateCost, lookupPricingAt } from '@deepseek-ai/dsh-token-meter'
 import type { RoutingOutcome } from '@deepseek-ai/dsh-token-meter'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -116,13 +116,14 @@ const SCENARIOS: readonly Scenario[] = [
 // ---------------------------------------------------------------------------
 
 interface CanonicalUsage {
+  time: number
   inputTokens: number
   outputTokens: number
   cacheReadTokens?: number
   cacheMissTokens?: number
   totalTokens?: number
   reasoningTokens?: number
-  source: string
+  source: 'provider' | 'estimated'
   routingDecisionId?: string
 }
 
@@ -255,13 +256,14 @@ function extractUsageRecords(events: SessionEvent[]): CanonicalUsage[] {
       routingDecisionId?: string
     }
     records.push({
+      time: event.time,
       inputTokens: data.usage.inputTokens,
       outputTokens: data.usage.outputTokens,
       ...data.usage.cacheReadTokens !== undefined ? { cacheReadTokens: data.usage.cacheReadTokens } : {},
       ...data.usage.cacheMissTokens !== undefined ? { cacheMissTokens: data.usage.cacheMissTokens } : {},
       ...data.usage.totalTokens !== undefined ? { totalTokens: data.usage.totalTokens } : {},
       ...data.usage.reasoningTokens !== undefined ? { reasoningTokens: data.usage.reasoningTokens } : {},
-      source: data.usage.source ?? 'unknown',
+      source: data.usage.source === 'provider' ? 'provider' : 'estimated',
       ...data.routingDecisionId !== undefined ? { routingDecisionId: data.routingDecisionId } : {},
     })
   }
@@ -336,7 +338,7 @@ function verifyRoutingDecisionIdConsistency(events: SessionEvent[]): {
   const eventTypes: string[] = []
   for (const event of events) {
     const data = event.data as { routingDecisionId?: string }
-    if (data?.routingDecisionId !== undefined) {
+    if (data.routingDecisionId !== undefined) {
       ids.add(data.routingDecisionId)
       eventTypes.push(`${event.type}:${data.routingDecisionId}`)
     }
@@ -466,16 +468,19 @@ async function runScenarioInternal(
     const model = scenario.kind === 'direct'
       ? scenario.model
       : (routingDecisions[0]?.selectedModel ?? 'unknown')
-    const pricing = lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model)
-    const pricingVersion = pricing?.version ?? ''
+    const firstUsage = usageRecords[0]
+    const firstPricing = firstUsage === undefined
+      ? undefined
+      : lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date(firstUsage.time))
+    const pricingVersion = firstPricing?.version ?? ''
     let costUsd = 0
     let costConfidence = 'conservative-estimate'
-    if (pricing !== undefined && usageRecords.length > 0) {
-      for (const u of usageRecords) {
-        const cost = calculateCost(u, pricing)
-        costUsd += cost.amount
-        costConfidence = cost.confidence
-      }
+    for (const usage of usageRecords) {
+      const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date(usage.time))
+      if (pricing === undefined) continue
+      const cost = calculateCost(usage, pricing)
+      costUsd += cost.amount
+      costConfidence = cost.confidence
     }
 
     const invariants = validateInvariants(usageRecords, pricingVersion)

@@ -173,7 +173,7 @@ describe('deriveRoutingOutcomes', () => {
     expect(o.accounting.cacheMissTokens).toBe(1000)
     expect(o.accounting.outputTokens).toBe(500)
     expect(o.accounting.costUsd).toBeGreaterThan(0)
-    expect(o.accounting.pricingVersion).toBe('deepseek-v4-usd-observed-2026-08-23')
+    expect(o.accounting.pricingVersion).toBe('deepseek-v4-usd-flat-before-2026-08-16')
     expect(o.executionQuality.toolCalls).toBe(1)
     expect(o.executionQuality.toolFailures).toBe(0)
     expect(o.outcome.status).toBe('verified-pass')

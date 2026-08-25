@@ -24,8 +24,14 @@ export interface ModelPricing {
   version: string
   /** ISO-8601 date when this pricing was observed and pinned in the repository. */
   observedAt: string
-  /** ISO-8601 date when the provider says this pricing became effective, when published. */
+  /** ISO-8601 instant when this pricing becomes eligible. */
   effectiveFrom?: string
+  /** ISO-8601 instant when this pricing stops being eligible. */
+  effectiveUntil?: string
+  /** Daily UTC windows in which this entry applies; absent means all day. */
+  utcWindows?: readonly { startMinute: number; endMinute: number }[]
+  /** Provider billing band represented by this entry. */
+  billingBand?: 'flat' | 'peak' | 'off-peak'
   /** Per-million-token rates. */
   perMillion: {
     /** Cache-hit input token rate. */
@@ -58,19 +64,16 @@ export interface CalculatedModelCost {
   confidence: 'exact' | 'conservative-estimate'
 }
 
-/**
- * DeepSeek V4 USD pricing observed and pinned on 2026-08-23. DeepSeek explicitly
- * warns that prices can change and does not publish an official effective-from
- * date; `observedAt` records when this snapshot was taken, and `effectiveFrom`
- * is absent because the provider has not published one.
- */
-export const DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23: readonly ModelPricing[] = Object.freeze([
+/** Historical flat DeepSeek V4 prices retained for replay before the time-banded schedule. */
+export const DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16: readonly ModelPricing[] = Object.freeze([
   {
     provider: 'deepseek-official',
     model: 'deepseek-v4-flash',
     currency: 'USD',
-    version: 'deepseek-v4-usd-observed-2026-08-23',
+    version: 'deepseek-v4-usd-flat-before-2026-08-16',
     observedAt: '2026-08-23',
+    effectiveUntil: '2026-08-16T16:00:00Z',
+    billingBand: 'flat',
     perMillion: {
       cacheHitInput: 0.0028,
       cacheMissInput: 0.14,
@@ -81,8 +84,10 @@ export const DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23: readonly ModelPricing[] = 
     provider: 'deepseek-official',
     model: 'deepseek-v4-pro',
     currency: 'USD',
-    version: 'deepseek-v4-usd-observed-2026-08-23',
+    version: 'deepseek-v4-usd-flat-before-2026-08-16',
     observedAt: '2026-08-23',
+    effectiveUntil: '2026-08-16T16:00:00Z',
+    billingBand: 'flat',
     perMillion: {
       cacheHitInput: 0.003625,
       cacheMissInput: 0.435,
@@ -91,23 +96,120 @@ export const DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23: readonly ModelPricing[] = 
   },
 ])
 
-/** Default pricing registry: DeepSeek V4 Flash and Pro under the 2026-08-23 observation snapshot. */
-export const DEFAULT_PRICING_REGISTRY: readonly ModelPricing[] = DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23
+const PEAK_UTC_WINDOWS = Object.freeze([
+  { startMinute: 60, endMinute: 240 },
+  { startMinute: 360, endMinute: 600 },
+])
+const OFF_PEAK_UTC_WINDOWS = Object.freeze([
+  { startMinute: 0, endMinute: 60 },
+  { startMinute: 240, endMinute: 360 },
+  { startMinute: 600, endMinute: 1_440 },
+])
+
+/** DeepSeek V4 peak/off-peak prices effective at 2026-08-16 16:00 UTC. */
+export const DEEPSEEK_V4_PRICING_EFFECTIVE_2026_08_16: readonly ModelPricing[] = Object.freeze([
+  {
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-flash',
+    currency: 'USD',
+    version: 'deepseek-v4-usd-2026-08-16-peak',
+    observedAt: '2026-08-25',
+    effectiveFrom: '2026-08-16T16:00:00Z',
+    utcWindows: PEAK_UTC_WINDOWS,
+    billingBand: 'peak',
+    perMillion: { cacheHitInput: 0.014, cacheMissInput: 0.44, output: 1.32 },
+  },
+  {
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-flash',
+    currency: 'USD',
+    version: 'deepseek-v4-usd-2026-08-16-off-peak',
+    observedAt: '2026-08-25',
+    effectiveFrom: '2026-08-16T16:00:00Z',
+    utcWindows: OFF_PEAK_UTC_WINDOWS,
+    billingBand: 'off-peak',
+    perMillion: { cacheHitInput: 0.007, cacheMissInput: 0.22, output: 0.66 },
+  },
+  {
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-pro',
+    currency: 'USD',
+    version: 'deepseek-v4-usd-2026-08-16-peak',
+    observedAt: '2026-08-25',
+    effectiveFrom: '2026-08-16T16:00:00Z',
+    utcWindows: PEAK_UTC_WINDOWS,
+    billingBand: 'peak',
+    perMillion: { cacheHitInput: 0.044, cacheMissInput: 1.32, output: 3.96 },
+  },
+  {
+    provider: 'deepseek-official',
+    model: 'deepseek-v4-pro',
+    currency: 'USD',
+    version: 'deepseek-v4-usd-2026-08-16-off-peak',
+    observedAt: '2026-08-25',
+    effectiveFrom: '2026-08-16T16:00:00Z',
+    utcWindows: OFF_PEAK_UTC_WINDOWS,
+    billingBand: 'off-peak',
+    perMillion: { cacheHitInput: 0.022, cacheMissInput: 0.66, output: 1.98 },
+  },
+])
+
+/** Default pricing registry covering historical flat and current time-banded V4 prices. */
+export const DEFAULT_PRICING_REGISTRY: readonly ModelPricing[] = Object.freeze([
+  ...DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16,
+  ...DEEPSEEK_V4_PRICING_EFFECTIVE_2026_08_16,
+])
 
 /**
- * Look up pricing for one provider/model. Returns the first matching entry;
- * callers needing versioned lookups should filter the registry themselves.
- * @param registry - pricing entries to search.
+ * Look up pricing in a registry containing at most one entry per provider/model.
+ * @param registry - static pricing entries to search.
  * @param provider - provider route key.
  * @param model - model id.
- * @returns the matching `ModelPricing`, or `undefined` when no entry exists.
+ * @returns the matching static entry, or `undefined` when none exists.
  */
 export function lookupPricing(
   registry: readonly ModelPricing[],
   provider: string,
   model: string,
 ): ModelPricing | undefined {
-  return registry.find(entry => entry.provider === provider && entry.model === model)
+  const matches = registry.filter(entry => entry.provider === provider && entry.model === model)
+  if (matches.length > 1) {
+    throw new Error(`lookupPricing: ${provider}/${model} has time-dependent entries; use lookupPricingAt`)
+  }
+  return matches[0]
+}
+
+function appliesAt(entry: ModelPricing, at: Date): boolean {
+  const instant = at.getTime()
+  if (entry.effectiveFrom !== undefined && instant < Date.parse(entry.effectiveFrom)) return false
+  if (entry.effectiveUntil !== undefined && instant >= Date.parse(entry.effectiveUntil)) return false
+  if (entry.utcWindows === undefined) return true
+  const minute = at.getUTCHours() * 60 + at.getUTCMinutes()
+  return entry.utcWindows.some(window => minute >= window.startMinute && minute < window.endMinute)
+}
+
+/**
+ * Resolve historical or time-banded pricing at one billing instant.
+ * @param registry - versioned and scheduled pricing entries to search.
+ * @param provider - provider route key.
+ * @param model - model id.
+ * @param at - provider billing instant.
+ * @returns the sole applicable entry, or `undefined` when none exists.
+ */
+export function lookupPricingAt(
+  registry: readonly ModelPricing[],
+  provider: string,
+  model: string,
+  at: Date,
+): ModelPricing | undefined {
+  if (Number.isNaN(at.getTime())) throw new Error('lookupPricingAt: at must be a valid date')
+  const matches = registry.filter(entry =>
+    entry.provider === provider && entry.model === model && appliesAt(entry, at),
+  )
+  if (matches.length > 1) {
+    throw new Error(`lookupPricingAt: ${provider}/${model} has ${matches.length} applicable entries`)
+  }
+  return matches[0]
 }
 
 /**

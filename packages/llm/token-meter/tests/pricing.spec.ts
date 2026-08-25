@@ -2,29 +2,29 @@ import { describe, expect, it } from 'vitest'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import {
   calculateCost,
-  DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23,
+  DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16,
+  DEEPSEEK_V4_PRICING_EFFECTIVE_2026_08_16,
   lookupPricing,
+  lookupPricingAt,
   DEFAULT_PRICING_REGISTRY,
 } from '../src/pricing.ts'
 import type { ModelPricing } from '../src/pricing.ts'
 
-const flashPricing = lookupPricing(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23, 'deepseek-official', 'deepseek-v4-flash')!
-const proPricing = lookupPricing(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23, 'deepseek-official', 'deepseek-v4-pro')!
+const flashPricing = lookupPricing(DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16, 'deepseek-official', 'deepseek-v4-flash')!
+const proPricing = lookupPricing(DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16, 'deepseek-official', 'deepseek-v4-pro')!
 
 describe('pricing registry', () => {
-  it('contains Flash and Pro under the 2026-08-23 observation snapshot', () => {
-    expect(DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23).toHaveLength(2)
-    expect(flashPricing).toBeDefined()
-    expect(proPricing).toBeDefined()
-    expect(flashPricing.version).toBe('deepseek-v4-usd-observed-2026-08-23')
-    expect(proPricing.version).toBe('deepseek-v4-usd-observed-2026-08-23')
+  it('retains the historical flat Flash and Pro schedule', () => {
+    expect(DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16).toHaveLength(2)
+    expect(flashPricing.version).toBe('deepseek-v4-usd-flat-before-2026-08-16')
+    expect(proPricing.version).toBe('deepseek-v4-usd-flat-before-2026-08-16')
+    expect(flashPricing.effectiveUntil).toBe('2026-08-16T16:00:00Z')
+    expect(proPricing.effectiveUntil).toBe('2026-08-16T16:00:00Z')
   })
 
-  it('records observedAt without effectiveFrom (DeepSeek does not publish one)', () => {
-    expect(flashPricing.observedAt).toBe('2026-08-23')
-    expect(flashPricing.effectiveFrom).toBeUndefined()
-    expect(proPricing.observedAt).toBe('2026-08-23')
-    expect(proPricing.effectiveFrom).toBeUndefined()
+  it('contains peak and off-peak entries for both models', () => {
+    expect(DEEPSEEK_V4_PRICING_EFFECTIVE_2026_08_16).toHaveLength(4)
+    expect(DEFAULT_PRICING_REGISTRY).toHaveLength(6)
   })
 
   it('Flash cache-hit rate is cheaper than cache-miss', () => {
@@ -40,6 +40,49 @@ describe('pricing registry', () => {
   it('lookupPricing returns undefined for unknown models', () => {
     expect(lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', 'unknown-model')).toBeUndefined()
   })
+
+  it('requires timestamp-aware lookup for scheduled models', () => {
+    expect(() => lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', 'deepseek-v4-flash'))
+      .toThrow(/lookupPricingAt/)
+  })
+
+  it('resolves the historical flat schedule before the pricing transition', () => {
+    const pricing = lookupPricingAt(
+      DEFAULT_PRICING_REGISTRY,
+      'deepseek-official',
+      'deepseek-v4-flash',
+      new Date('2026-08-16T15:59:59Z'),
+    )
+    expect(pricing?.billingBand).toBe('flat')
+  })
+
+  it('resolves off-peak and peak UTC windows after the transition', () => {
+    const offPeak = lookupPricingAt(
+      DEFAULT_PRICING_REGISTRY,
+      'deepseek-official',
+      'deepseek-v4-flash',
+      new Date('2026-08-18T05:00:00Z'),
+    )
+    const peak = lookupPricingAt(
+      DEFAULT_PRICING_REGISTRY,
+      'deepseek-official',
+      'deepseek-v4-flash',
+      new Date('2026-08-18T06:30:00Z'),
+    )
+    expect(offPeak?.billingBand).toBe('off-peak')
+    expect(offPeak?.perMillion.cacheMissInput).toBe(0.22)
+    expect(peak?.billingBand).toBe('peak')
+    expect(peak?.perMillion.cacheMissInput).toBe(0.44)
+  })
+
+  it('preserves the three-times Pro premium in each current band', () => {
+    for (const at of [new Date('2026-08-18T05:00:00Z'), new Date('2026-08-18T06:30:00Z')]) {
+      const flash = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', 'deepseek-v4-flash', at)
+      const pro = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', 'deepseek-v4-pro', at)
+      expect((pro?.perMillion.cacheMissInput ?? 0) / (flash?.perMillion.cacheMissInput ?? 1)).toBe(3)
+      expect((pro?.perMillion.output ?? 0) / (flash?.perMillion.output ?? 1)).toBe(3)
+    }
+  })
 })
 
 describe('calculateCost: Flash exact pricing', () => {
@@ -54,7 +97,7 @@ describe('calculateCost: Flash exact pricing', () => {
     const cost = calculateCost(usage, flashPricing)
     expect(cost.confidence).toBe('exact')
     expect(cost.currency).toBe('USD')
-    expect(cost.pricingVersion).toBe('deepseek-v4-usd-observed-2026-08-23')
+    expect(cost.pricingVersion).toBe('deepseek-v4-usd-flat-before-2026-08-16')
     // 100K/1M * $0.0028 = $0.00028
     expect(cost.components.cacheHitInput).toBeCloseTo(0.00028, 10)
     // 20K/1M * $0.14 = $0.0028
@@ -171,7 +214,7 @@ describe('calculateCost: pricing version reproducibility', () => {
     }
     const currentCost = calculateCost(usage, flashPricing)
     const futureCost = calculateCost(usage, futurePricing)
-    expect(currentCost.pricingVersion).toBe('deepseek-v4-usd-observed-2026-08-23')
+    expect(currentCost.pricingVersion).toBe('deepseek-v4-usd-flat-before-2026-08-16')
     expect(futureCost.pricingVersion).toBe('deepseek-v4-usd-observed-2027-01-01')
     // Same usage, different prices → different cost.
     expect(currentCost.amount).not.toBe(futureCost.amount)

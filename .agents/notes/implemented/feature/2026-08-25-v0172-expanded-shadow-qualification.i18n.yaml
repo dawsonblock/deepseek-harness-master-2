@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-v0172-expanded-shadow-qualification.md
-2026-08-25-v0172-expanded-shadow-qualification.md: 81d36f0082c44312ec7cb1a825c337048a69691f
-2026-08-25-v0172-expanded-shadow-qualification.zh.md: 5e727dc050d1b521aaa59e5196d0f95febabec90
+2026-08-25-v0172-expanded-shadow-qualification.md: 0b8066dbe89a879f3865be7264469f53917f171a
+2026-08-25-v0172-expanded-shadow-qualification.zh.md: bdc4dfc74bf723195fbff226fd10ab1c7d7c605b

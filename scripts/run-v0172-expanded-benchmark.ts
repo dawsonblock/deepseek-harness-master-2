@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { calculateCost, DEFAULT_PRICING_REGISTRY, lookupPricing } from '@deepseek-ai/dsh-token-meter'
+import { calculateCost, DEFAULT_PRICING_REGISTRY, lookupPricingAt } from '@deepseek-ai/dsh-token-meter'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const REPORT_DIR = join(REPO_ROOT, 'artifacts', 'reports')
@@ -571,7 +571,7 @@ async function runOnce(
     if (extracted.output === '' && extracted.totalTokens === 0) {
       throw new Error('Provider returned no assistant output or usage')
     }
-    const pricing = lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model)
+    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date(started))
     const cost = pricing === undefined
       ? undefined
       : calculateCost({

@@ -16,7 +16,7 @@ v0.16.0-alpha.1 记账核心建立了规范 `TokenUsage` 词汇表（缓存命�
 
 1. **`routingDecisionId` 通过执行上下文以回溯日志扫描方式传播**，而非请求作用域元数据。`agent/request` 瀑布返回 `LlmCallConfig`，不返回元数据，因此步骤循环从会话日志中查找当前 turn/step 的最新 `model/routing-decision` 并将其标记到 `model/request` 和 `assistant/message` 用量上。
 2. **`model/usage` 是规范记账事件流**，每次付费尝试发出一次，无论轮次是否成功。`assistant/message.usage` 保留为向后兼容的转录投影。所有定价、聚合和未来的结果关联都折叠 `model/usage`，绝不折叠 `assistant/message.usage`。
-3. **定价是与令牌用量分离的版本化注册表。** `ModelPricing` 携带 `observedAt`（仓库固定价格的时间）和可选的 `effectiveFrom`（提供商说价格生效的时间）。DeepSeek 不发布生效日期，因此 V4 快照仅使用 `observedAt`。
+3. **定价是与令牌用量分离的版本化、时间解析注册表。** `ModelPricing` 携带观测和有效资格时刻以及可选的每日 UTC 窗口。`ModelUsageRecord.time` 为每次付费尝试选择历史固定、峰值或非峰值条目。
 4. **成本计算使用不相交约定：缓存命中 + 缓存未命中 + 输出。** 绝不从 `totalTokens` 计费（缓存命中和缓存未命中价格不同），也不单独添加 `reasoningTokens`（DeepSeek 将推理作为完成用量的一部分计费）。缺失缓存字段产生 `conservative-estimate` 置信度标签。
 5. **聚合是对不可变记录的纯折叠。** 没有可变会话计数器。`usageBySession`、`usageByTurn`、`usageByModel`、`usageByRoutingDecision` 和 `routingDecisionAccounting` 从 `model/usage` 事件流派生视图。
 
@@ -47,7 +47,7 @@ turn, step, attempt, provider, model, usage: TokenUsage, routingDecisionId?
 
 ### 定价注册表
 
-`ModelPricing` 区分 `observedAt` 和 `effectiveFrom`：
+`ModelPricing` 分离仓库观测、有效资格和每日计费窗口：
 
 ```typescript
 interface ModelPricing {
@@ -57,18 +57,23 @@ interface ModelPricing {
   version: string
   observedAt: string
   effectiveFrom?: string
+  effectiveUntil?: string
+  utcWindows?: readonly { startMinute: number; endMinute: number }[]
+  billingBand?: 'flat' | 'peak' | 'off-peak'
   perMillion: { cacheHitInput, cacheMissInput, output }
 }
 ```
 
-DeepSeek 当前页面列出了价格但未发布官方生效日期。仓库快照 `DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23` 记录 `observedAt: '2026-08-23'`，`effectiveFrom` 缺失。版本字符串 `deepseek-v4-usd-observed-2026-08-23` 编码的是观测日期，不是生效日期。
+默认注册表保留历史固定价格直到 `2026-08-16T16:00:00Z`，之后解析提供商的峰值/非峰值时间表。峰值窗口为 01:00-04:00 和 06:00-10:00 UTC。`lookupPricingAt()` 使用持久事件时间戳；`lookupPricing()` 拒绝计划化的提供商/模型，因为选择第一个匹配条目会静默错误定价。
 
-DeepSeek V4 定价（每百万令牌，美元）：
+当前 DeepSeek V4 定价（每百万令牌，美元）：
 
-| 模型 | 缓存命中输入 | 缓存未命中输入 | 输出 |
-|---|---|---|---|
-| deepseek-v4-flash | $0.0028 | $0.14 | $0.28 |
-| deepseek-v4-pro | $0.003625 | $0.435 | $0.87 |
+| 模型 | 时段 | 缓存命中输入 | 缓存未命中输入 | 输出 |
+|---|---|---:|---:|---:|
+| deepseek-v4-flash | 非峰值 | $0.007 | $0.22 | $0.66 |
+| deepseek-v4-flash | 峰值 | $0.014 | $0.44 | $1.32 |
+| deepseek-v4-pro | 非峰值 | $0.022 | $0.66 | $1.98 |
+| deepseek-v4-pro | 峰值 | $0.044 | $1.32 | $3.96 |
 
 ### 成本计算
 
@@ -109,13 +114,13 @@ C = (H/1M) * P_hit + (M/1M) * P_miss + (O/1M) * P_out
 
 `agent/request` 瀑布契约返回 `LlmCallConfig`。将该契约改为返回 `{ config, executionMetadata }` 将是触及每个瀑布监听器的侵入式重构。在当前不变量（重试复用同一路由决策）下，回溯日志扫描足够。`latestRoutingDecisionId` 上的架构注释记录了限制和需要重构的条件。
 
-### 为什么不使用 `effectiveFrom` 作为定价快照？
+### 为什么不对所有历史记录使用一个当前价格？
 
-DeepSeek 当前页面给出价格但未建立官方生效日期。记录 `effectiveFrom: '2026-08-23'` 会暗示提供商发布了该日期，这是不可辩护的。`observedAt` 记录仓库固定价格的时间；`effectiveFrom` 保留给提供商明确发布的情况。
+峰值/非峰值计费和价格转换使缺少时间的提供商/模型查找产生歧义。应用一个当前条目会重写历史经济数据，并可能选择错误的每日时段。不可变用量事件时间戳解析适用版本，无需修改令牌记录。
 
 ## 后果
 
-路由/成本关联现在可靠。对于每个路由决策，测试框架可以确定运行了什么模型、消耗了什么、花费了多少以及在哪个定价版本下。`confidence` 标签防止历史记录伪装为提供商精确经济数据。
+路由/成本关联现在可靠。对于每个路由决策，测试框架可以确定运行了什么模型、消耗了什么、在付费尝试时间戳下花费了多少以及在哪个定价版本下。`confidence` 标签防止历史记录伪装为提供商精确经济数据。
 
 `model/usage` 事件可忽略，通过 JSONL 和 SQLite 持久化。快照刷新更新了黄金文件以包含 `model/usage` 事件；回放仅存在已知的 `durationMs` 计时方差失败（记录在 v0.15.5 基线报告中）。
 

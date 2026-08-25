@@ -16,7 +16,7 @@ Five decisions, each elaborated below:
 
 1. **`routingDecisionId` propagates through the execution context as a retrospective log scan**, not request-scoped metadata. The `agent/request` waterfall returns `LlmCallConfig`, not metadata, so the step loop finds the latest `model/routing-decision` for the current turn/step from the session log and stamps it onto `model/request` and `assistant/message` usage.
 2. **`model/usage` is the canonical accounting event stream**, emitted once per paid attempt regardless of turn success. `assistant/message.usage` remains as a backward-compatible transcript projection. All pricing, aggregates, and future outcome joins fold `model/usage`, never `assistant/message.usage`.
-3. **Pricing is a versioned registry separate from token usage.** `ModelPricing` carries `observedAt` (when the repository pinned the price) and optional `effectiveFrom` (when the provider says the price took effect). DeepSeek does not publish an effective-from date, so the V4 snapshot uses `observedAt` only.
+3. **Pricing is a versioned, time-resolved registry separate from token usage.** `ModelPricing` carries observation and eligibility instants plus optional daily UTC windows. `ModelUsageRecord.time` selects the historical flat, peak, or off-peak entry for each paid attempt.
 4. **Cost calculation uses the disjoint convention: cache-hit + cache-miss + output.** It never charges from `totalTokens` (cache-hit and cache-miss have different prices) and never adds `reasoningTokens` separately (DeepSeek bills reasoning as part of completion usage). Absent cache fields produce a `conservative-estimate` confidence label.
 5. **Aggregation is a pure fold over immutable records.** No mutable session counters. `usageBySession`, `usageByTurn`, `usageByModel`, `usageByRoutingDecision`, and `routingDecisionAccounting` derive views from the `model/usage` event stream.
 
@@ -47,7 +47,7 @@ It is NOT emitted when the adapter reports no usage (e.g. stream aborted before 
 
 ### Pricing registry
 
-`ModelPricing` distinguishes `observedAt` from `effectiveFrom`:
+`ModelPricing` separates repository observation, effective eligibility, and daily billing windows:
 
 ```typescript
 interface ModelPricing {
@@ -57,18 +57,23 @@ interface ModelPricing {
   version: string
   observedAt: string
   effectiveFrom?: string
+  effectiveUntil?: string
+  utcWindows?: readonly { startMinute: number; endMinute: number }[]
+  billingBand?: 'flat' | 'peak' | 'off-peak'
   perMillion: { cacheHitInput, cacheMissInput, output }
 }
 ```
 
-DeepSeek's current page lists prices but does not publish an official effective-from date. The repository snapshot `DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23` records `observedAt: '2026-08-23'` with `effectiveFrom` absent. The version string `deepseek-v4-usd-observed-2026-08-23` encodes the observation date, not an effective date.
+The default registry retains the historical flat schedule until `2026-08-16T16:00:00Z` and resolves the provider's peak/off-peak schedule afterward. Peak windows are 01:00-04:00 and 06:00-10:00 UTC. `lookupPricingAt()` uses the durable event timestamp; `lookupPricing()` rejects a scheduled provider/model because selecting the first matching entry would silently misprice it.
 
-DeepSeek V4 pricing (per million tokens, USD):
+Current DeepSeek V4 pricing (per million tokens, USD):
 
-| Model | Cache-hit input | Cache-miss input | Output |
-|---|---|---|---|
-| deepseek-v4-flash | $0.0028 | $0.14 | $0.28 |
-| deepseek-v4-pro | $0.003625 | $0.435 | $0.87 |
+| Model | Band | Cache-hit input | Cache-miss input | Output |
+|---|---|---:|---:|---:|
+| deepseek-v4-flash | off-peak | $0.007 | $0.22 | $0.66 |
+| deepseek-v4-flash | peak | $0.014 | $0.44 | $1.32 |
+| deepseek-v4-pro | off-peak | $0.022 | $0.66 | $1.98 |
+| deepseek-v4-pro | peak | $0.044 | $1.32 | $3.96 |
 
 ### Cost calculation
 
@@ -109,13 +114,13 @@ Model capability and price lifecycle are different things. DeepSeek explicitly w
 
 The `agent/request` waterfall contract returns `LlmCallConfig`. Changing that contract to return `{ config, executionMetadata }` would be an invasive refactor touching every waterfall listener. The retrospective log scan is sufficient under the current invariant that retries reuse the same routing decision. The architectural note on `latestRoutingDecisionId` documents the limitation and the condition under which a refactor would be needed.
 
-### Why not use `effectiveFrom` for the pricing snapshot?
+### Why not use one current price for every historical record?
 
-DeepSeek's current page gives prices but does not establish an official effective-from date. Recording `effectiveFrom: '2026-08-23'` would imply the provider published that date, which is not defensible. `observedAt` records when the repository pinned the price; `effectiveFrom` is reserved for when a provider explicitly publishes one.
+Peak/off-peak billing and price transitions make a provider/model lookup ambiguous without time. Applying one current entry would rewrite historical economics and could select the wrong daily band. The immutable usage-event timestamp resolves the applicable version without modifying token records.
 
 ## Consequences
 
-The routing/cost join is now reliable. For every routing decision, the harness can determine what model ran, what it consumed, what it cost, and under which pricing version. The `confidence` label prevents historical records from masquerading as provider-exact economics.
+The routing/cost join is now reliable. For every routing decision, the harness can determine what model ran, what it consumed, what it cost at the paid attempt's timestamp, and under which pricing version. The `confidence` label prevents historical records from masquerading as provider-exact economics.
 
 The `model/usage` event is ignorable and persists through JSONL and SQLite. Snapshot refresh updated golden files to include `model/usage` events; replay passes with only pre-existing `durationMs` timing variance failures (documented in the v0.15.5 baseline report).
 

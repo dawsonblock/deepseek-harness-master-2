@@ -66,6 +66,12 @@ Other policy guarantees, each covered by tests: foreign routes pass through unto
 
 Both tiers must be distinct provider/model pairs and resolve through `ctx.llm` exactly like any other selection: the agent loop validates the returned config with `prepareCall()` before dispatch. The separately published `./invariant` companion is intentionally empty — the router's durable vocabulary is `model/routing-decision`, owned here and recorded by the loop's `request/header` machinery alongside it.
 
+## Offline routing analysis
+
+`analyzeTaskStructure()` produces the separate `workload-v2` schema from prompt text and runtime counts known before routing. It measures constraints, requested output structure, transformation distance, source/output cardinality, task-category one-hot scores, and context facts without invoking a model. `deriveBayesianHistoricalFeatures()` smooths completed earlier outcomes against caller-supplied priors; the current task never enters its own history.
+
+The exported training and prediction helpers remain offline and non-authoritative. They cannot override explicit selection, durable authority, context admission, provider availability, or the fixed heuristic router. No shadow session event exists until a runtime producer owns prediction timing and persistence.
+
 ## Model Experience
 
 ### Model-request routing

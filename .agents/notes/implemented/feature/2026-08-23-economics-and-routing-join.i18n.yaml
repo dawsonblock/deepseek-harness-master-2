@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-economics-and-routing-join.md
-2026-08-23-economics-and-routing-join.md: a55f7f7cb90f8ab95e974c2ba8608c967ecceb31
-2026-08-23-economics-and-routing-join.zh.md: d1b0572cb61ce7e21ad4a16fcf36690430738732
+2026-08-23-economics-and-routing-join.md: ba570b74113ff04c01526366d55d006989353a0a
+2026-08-23-economics-and-routing-join.zh.md: ebdf1f8937fd3ed3e32af1d9f431e393a9400125

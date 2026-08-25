@@ -1,0 +1,806 @@
+{
+  "release": "v0.17.3",
+  "datasetId": "paired-v4-100-v1",
+  "labelAudit": {
+    "rawProNecessary": 6,
+    "genuineProNecessary": 3,
+    "excludedAmbiguousOrArtifact": 3,
+    "auditedTestProNecessary": 0
+  },
+  "richerTargets": [
+    "flash_verified",
+    "pro_verified",
+    "delta_quality",
+    "flash_cost",
+    "pro_cost",
+    "delta_cost",
+    "pro_necessary",
+    "outcome_class"
+  ],
+  "validationComparison": [
+    {
+      "name": "v2-structure",
+      "groups": [
+        "context",
+        "constraints",
+        "transformation",
+        "output"
+      ],
+      "featureCount": 49,
+      "logistic": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.09485899424055193,
+          "logLoss": 0.3744563897974101,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.2554192715905793,
+          "logLoss": 0.9911036910227675,
+          "accuracyAtHalf": 0.7,
+          "recallAtHalf": 0.7777777777777778
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0017275234720701832,
+          "rmse": 0.0019315746679498841
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.005406716060138914,
+          "rmse": 0.006323155472925065
+        }
+      },
+      "boosted": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.10949898900303838,
+          "logLoss": 0.38928607262890136,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.20963299869843427,
+          "logLoss": 0.5957226402122187,
+          "accuracyAtHalf": 0.6,
+          "recallAtHalf": 0.6666666666666666
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0016663912,
+          "rmse": 0.0017210923109201848
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.0050871523999999994,
+          "rmse": 0.005224506449740208
+        },
+        "topFeatures": [
+          {
+            "feature": "constraints.exactTerminalLiteral",
+            "gain": 206.09165138857094
+          },
+          {
+            "feature": "constraints.explicitConstraintCount",
+            "gain": 121.80311053486062
+          },
+          {
+            "feature": "output.length.short",
+            "gain": 83.27076574221819
+          },
+          {
+            "feature": "transformation.type.generation",
+            "gain": 51.8541098657021
+          },
+          {
+            "feature": "constraints.outputFormatConstraintCount",
+            "gain": 49.57486435981182
+          },
+          {
+            "feature": "output.type.prose",
+            "gain": 46.68342509558069
+          },
+          {
+            "feature": "context.estimatedInputTokens",
+            "gain": 11.372308890997953
+          }
+        ]
+      }
+    },
+    {
+      "name": "v2-plus-category",
+      "groups": [
+        "context",
+        "constraints",
+        "transformation",
+        "output",
+        "category"
+      ],
+      "featureCount": 63,
+      "logistic": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.09498991948550962,
+          "logLoss": 0.37822494410367524,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.2547616820227292,
+          "logLoss": 1.047169981730929,
+          "accuracyAtHalf": 0.7,
+          "recallAtHalf": 0.7777777777777778
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0017130138344566832,
+          "rmse": 0.0019547634017492454
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.005409915524213079,
+          "rmse": 0.006299772604721671
+        }
+      },
+      "boosted": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.10949898900303838,
+          "logLoss": 0.38928607262890136,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.20963299869843427,
+          "logLoss": 0.5957226402122187,
+          "accuracyAtHalf": 0.6,
+          "recallAtHalf": 0.6666666666666666
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0016663912,
+          "rmse": 0.0017147962452605371
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.0050871524,
+          "rmse": 0.005227746863808008
+        },
+        "topFeatures": [
+          {
+            "feature": "constraints.exactTerminalLiteral",
+            "gain": 206.09165138857094
+          },
+          {
+            "feature": "constraints.explicitConstraintCount",
+            "gain": 121.80311053486062
+          },
+          {
+            "feature": "output.length.short",
+            "gain": 83.27076574221819
+          },
+          {
+            "feature": "transformation.type.generation",
+            "gain": 51.8541098657021
+          },
+          {
+            "feature": "constraints.outputFormatConstraintCount",
+            "gain": 49.57486435981182
+          },
+          {
+            "feature": "output.type.prose",
+            "gain": 46.68342509558069
+          },
+          {
+            "feature": "context.estimatedInputTokens",
+            "gain": 11.372308890997953
+          }
+        ]
+      }
+    },
+    {
+      "name": "v2-plus-history",
+      "groups": [
+        "context",
+        "constraints",
+        "transformation",
+        "output",
+        "category",
+        "history"
+      ],
+      "featureCount": 69,
+      "logistic": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.08986618430057416,
+          "logLoss": 0.31656818660326974,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.28678012871430747,
+          "logLoss": 1.1641512725574952,
+          "accuracyAtHalf": 0.65,
+          "recallAtHalf": 0.7222222222222222
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.003327148102759364,
+          "rmse": 0.004422989559852127
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.009628632328470114,
+          "rmse": 0.012450086789107308
+        }
+      },
+      "boosted": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.10949898900303838,
+          "logLoss": 0.38928607262890136,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.22283801630990058,
+          "logLoss": 0.6280863869297851,
+          "accuracyAtHalf": 0.55,
+          "recallAtHalf": 0.5555555555555556
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0014490655419200573,
+          "rmse": 0.0018503243512511336
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.00434790310716733,
+          "rmse": 0.00563930613351708
+        },
+        "topFeatures": [
+          {
+            "feature": "constraints.exactTerminalLiteral",
+            "gain": 206.09165138857094
+          },
+          {
+            "feature": "constraints.explicitConstraintCount",
+            "gain": 115.62594317053042
+          },
+          {
+            "feature": "output.length.short",
+            "gain": 74.29459266508012
+          },
+          {
+            "feature": "transformation.type.generation",
+            "gain": 51.791495903748114
+          },
+          {
+            "feature": "constraints.outputFormatConstraintCount",
+            "gain": 51.45864074422016
+          },
+          {
+            "feature": "output.type.prose",
+            "gain": 39.75495142591181
+          },
+          {
+            "feature": "history.proPassRate",
+            "gain": 25.60024797112091
+          },
+          {
+            "feature": "context.estimatedInputTokens",
+            "gain": 11.372308890997953
+          }
+        ]
+      }
+    }
+  ],
+  "testComparison": [
+    {
+      "name": "v2-structure",
+      "groups": [
+        "context",
+        "constraints",
+        "transformation",
+        "output"
+      ],
+      "featureCount": 49,
+      "logistic": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.0779017982682522,
+          "logLoss": 0.29497994130014626,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.24045064296869811,
+          "logLoss": 0.8081091986164559,
+          "accuracyAtHalf": 0.7,
+          "recallAtHalf": 0.7777777777777778
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0015953043709614838,
+          "rmse": 0.001781655379628681
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.005416902188927837,
+          "rmse": 0.006207969297522602
+        }
+      },
+      "boosted": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.10588404495304131,
+          "logLoss": 0.37922319937833804,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.2233077501725674,
+          "logLoss": 0.6429418661483549,
+          "accuracyAtHalf": 0.7,
+          "recallAtHalf": 0.7777777777777778
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0015718252390910525,
+          "rmse": 0.0016868455143415565
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.004703855823382894,
+          "rmse": 0.004856238741750441
+        },
+        "topFeatures": [
+          {
+            "feature": "constraints.exactTerminalLiteral",
+            "gain": 206.09165138857094
+          },
+          {
+            "feature": "constraints.explicitConstraintCount",
+            "gain": 121.80311053486062
+          },
+          {
+            "feature": "output.length.short",
+            "gain": 83.27076574221819
+          },
+          {
+            "feature": "transformation.type.generation",
+            "gain": 51.8541098657021
+          },
+          {
+            "feature": "constraints.outputFormatConstraintCount",
+            "gain": 49.57486435981182
+          },
+          {
+            "feature": "output.type.prose",
+            "gain": 46.68342509558069
+          },
+          {
+            "feature": "context.estimatedInputTokens",
+            "gain": 11.372308890997953
+          }
+        ]
+      }
+    },
+    {
+      "name": "v2-plus-category",
+      "groups": [
+        "context",
+        "constraints",
+        "transformation",
+        "output",
+        "category"
+      ],
+      "featureCount": 63,
+      "logistic": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.09302426499402226,
+          "logLoss": 0.357083235962438,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.1699687875597576,
+          "logLoss": 0.5707308124616863,
+          "accuracyAtHalf": 0.7,
+          "recallAtHalf": 0.7777777777777778
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0016461271297173394,
+          "rmse": 0.0018980041199785356
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.005531495836846182,
+          "rmse": 0.006746399379781715
+        }
+      },
+      "boosted": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.10588404495304131,
+          "logLoss": 0.37922319937833804,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.2233077501725674,
+          "logLoss": 0.6429418661483549,
+          "accuracyAtHalf": 0.7,
+          "recallAtHalf": 0.7777777777777778
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0015840291610609077,
+          "rmse": 0.0016864950702582852
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.004688604800000001,
+          "rmse": 0.00483476150301374
+        },
+        "topFeatures": [
+          {
+            "feature": "constraints.exactTerminalLiteral",
+            "gain": 206.09165138857094
+          },
+          {
+            "feature": "constraints.explicitConstraintCount",
+            "gain": 121.80311053486062
+          },
+          {
+            "feature": "output.length.short",
+            "gain": 83.27076574221819
+          },
+          {
+            "feature": "transformation.type.generation",
+            "gain": 51.8541098657021
+          },
+          {
+            "feature": "constraints.outputFormatConstraintCount",
+            "gain": 49.57486435981182
+          },
+          {
+            "feature": "output.type.prose",
+            "gain": 46.68342509558069
+          },
+          {
+            "feature": "context.estimatedInputTokens",
+            "gain": 11.372308890997953
+          }
+        ]
+      }
+    },
+    {
+      "name": "v2-plus-history",
+      "groups": [
+        "context",
+        "constraints",
+        "transformation",
+        "output",
+        "category",
+        "history"
+      ],
+      "featureCount": 69,
+      "logistic": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.09281734113582754,
+          "logLoss": 0.33841106312708713,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.2501959854121781,
+          "logLoss": 0.9892666710104858,
+          "accuracyAtHalf": 0.65,
+          "recallAtHalf": 0.7222222222222222
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.0034835453158635664,
+          "rmse": 0.004506777905408353
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.011897478565939335,
+          "rmse": 0.014169956126465499
+        }
+      },
+      "boosted": {
+        "flashPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.10588404495304131,
+          "logLoss": 0.37922319937833804,
+          "accuracyAtHalf": 0.9,
+          "recallAtHalf": 1
+        },
+        "proPass": {
+          "examples": 20,
+          "positives": 18,
+          "brier": 0.2354300512769595,
+          "logLoss": 0.690213573483247,
+          "accuracyAtHalf": 0.5,
+          "recallAtHalf": 0.5555555555555556
+        },
+        "flashCost": {
+          "examples": 20,
+          "mae": 0.001649427192112232,
+          "rmse": 0.0021655359005840705
+        },
+        "proCost": {
+          "examples": 20,
+          "mae": 0.004165008356457911,
+          "rmse": 0.005803176840497223
+        },
+        "topFeatures": [
+          {
+            "feature": "constraints.exactTerminalLiteral",
+            "gain": 206.09165138857094
+          },
+          {
+            "feature": "constraints.explicitConstraintCount",
+            "gain": 115.62594317053042
+          },
+          {
+            "feature": "output.length.short",
+            "gain": 74.29459266508012
+          },
+          {
+            "feature": "transformation.type.generation",
+            "gain": 51.791495903748114
+          },
+          {
+            "feature": "constraints.outputFormatConstraintCount",
+            "gain": 51.45864074422016
+          },
+          {
+            "feature": "output.type.prose",
+            "gain": 39.75495142591181
+          },
+          {
+            "feature": "history.proPassRate",
+            "gain": 25.60024797112091
+          },
+          {
+            "feature": "context.estimatedInputTokens",
+            "gain": 11.372308890997953
+          }
+        ]
+      }
+    }
+  ],
+  "directProNecessity": {
+    "trainingExamples": 59,
+    "trainingPositives": 2,
+    "testExamples": 18,
+    "testPositives": 0,
+    "logistic": {
+      "examples": 18,
+      "positives": 0,
+      "brier": 0.0031251278048923937,
+      "logLoss": 0.0427735665135159,
+      "accuracyAtHalf": 1,
+      "recallAtHalf": null
+    },
+    "boosted": {
+      "examples": 18,
+      "positives": 0,
+      "brier": 0.056475425247961536,
+      "logLoss": 0.26617010202716435,
+      "accuracyAtHalf": 1,
+      "recallAtHalf": null
+    }
+  },
+  "uncertainty": {
+    "diagnosticMargin": 0.1,
+    "counts": {
+      "confidentFlash": 10,
+      "uncertain": 8,
+      "confidentPro": 2
+    },
+    "rows": [
+      {
+        "taskId": "code-slugify/1",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.7319755518887506,
+        "delta": -0.020847637429240673,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "code-slugify/2",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.7319755518887506,
+        "delta": -0.020847637429240673,
+        "state": "UNCERTAIN",
+        "outcomeClass": "pro-better"
+      },
+      {
+        "taskId": "constraints-table/1",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.49530572825189095,
+        "delta": -0.25751746106610035,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "pro-necessary"
+      },
+      {
+        "taskId": "constraints-table/2",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.49530572825189095,
+        "delta": -0.25751746106610035,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "date-fact/1",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.8342199271530498,
+        "delta": 0.05680123463406117,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "date-fact/2",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.8342199271530498,
+        "delta": 0.05680123463406117,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "debug-timeout/1",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.34145551094173043,
+        "delta": -0.4359631815772582,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "debug-timeout/2",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.34145551094173043,
+        "delta": -0.4359631815772582,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "long-policy/1",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.8982331591481941,
+        "delta": 0.14540996983020282,
+        "state": "CONFIDENT_PRO",
+        "outcomeClass": "both-fail"
+      },
+      {
+        "taskId": "long-policy/2",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.8982331591481941,
+        "delta": 0.14540996983020282,
+        "state": "CONFIDENT_PRO",
+        "outcomeClass": "flash-better"
+      },
+      {
+        "taskId": "plan-migration/1",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.6366808145079204,
+        "delta": -0.11614237481007095,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "pro-necessary"
+      },
+      {
+        "taskId": "plan-migration/2",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.6366808145079204,
+        "delta": -0.11614237481007095,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "synthesis-tcp-udp/1",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.4959663095079687,
+        "delta": -0.28145238301101994,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "synthesis-tcp-udp/2",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.4959663095079687,
+        "delta": -0.28145238301101994,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "verify-toposort/1",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.4354262152477552,
+        "delta": -0.3173969740702361,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "verify-toposort/2",
+        "pFlash": 0.7528231893179913,
+        "pPro": 0.4354262152477552,
+        "delta": -0.3173969740702361,
+        "state": "CONFIDENT_FLASH",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "yaml-nested-json/1",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.8342199271530498,
+        "delta": 0.05680123463406117,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "yaml-nested-json/2",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.8342199271530498,
+        "delta": 0.05680123463406117,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "yaml-service-json/1",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.8342199271530498,
+        "delta": 0.05680123463406117,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      },
+      {
+        "taskId": "yaml-service-json/2",
+        "pFlash": 0.7774186925189887,
+        "pPro": 0.8342199271530498,
+        "delta": 0.05680123463406117,
+        "state": "UNCERTAIN",
+        "outcomeClass": "both-pass-pro-more-expensive"
+      }
+    ]
+  }
+}

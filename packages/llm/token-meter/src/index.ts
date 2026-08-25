@@ -30,10 +30,12 @@ export type * from './routing-outcome.ts'
 export type * from './context-estimate.ts'
 export type * from './context-estimator.ts'
 export {
-  DEEPSEEK_V4_PRICING_OBSERVED_2026_08_23,
+  DEEPSEEK_V4_FLAT_PRICING_BEFORE_2026_08_16,
+  DEEPSEEK_V4_PRICING_EFFECTIVE_2026_08_16,
   DEFAULT_PRICING_REGISTRY,
   calculateCost,
   lookupPricing,
+  lookupPricingAt,
 } from './pricing.ts'
 export {
   extractUsageRecords,

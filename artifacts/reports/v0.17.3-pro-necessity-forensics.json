@@ -1,0 +1,2040 @@
+{
+  "datasetId": "paired-v4-100-v1",
+  "sourceCommit": "81a200dd2eb2fa46a7c2e59d5a2eae626e310348",
+  "positiveCount": 6,
+  "validityCounts": {
+    "genuine": 3,
+    "ambiguous": 1,
+    "verifierArtifact": 2
+  },
+  "identicalPromptFlashPasses": 5,
+  "controlSelection": "five nearest same-category both-pass examples by standardized v1 non-historical feature distance",
+  "limitations": [
+    "The benchmark stores tool and repair counts, not individual tool-event payloads.",
+    "Provider reasoning text is not retained; reasoning usage is available as token counts."
+  ],
+  "records": [
+    {
+      "taskId": "constraints-email/1",
+      "taskClass": "multi-constraint",
+      "prompt": "Write a professional email of 50 words or fewer declining a meeting. Include the exact phrase \"schedule conflict\", propose Tuesday, and end with \"Best, Sam\".",
+      "originalFeatures": {
+        "featureVersion": 1,
+        "complexity": {
+          "explicitReasoningRequests": 0,
+          "mathMarkers": 0,
+          "architectureMarkers": 0,
+          "codeBlocks": 0,
+          "lengthBands": 0,
+          "complexityScore": 0,
+          "promptLength": 157
+        },
+        "structural": {
+          "estimatedInputTokens": 40,
+          "messageCount": 1,
+          "toolSchemaCount": 0,
+          "attachedFileCount": 0,
+          "codeBlockCount": 0,
+          "structuredDataSize": 3,
+          "requestsStructuredOutput": false,
+          "jsonTransformationIndicator": false,
+          "multiFileIndicator": false,
+          "toolRequirementIndicator": false,
+          "verificationCriterionCount": 4
+        },
+        "categorical": {
+          "taskType": "unknown",
+          "expectsProAdvantage": false
+        },
+        "historical": {
+          "flashSuccessRateByTaskType": 1,
+          "proSuccessRateByTaskType": 1,
+          "flashToProRescueRate": 0,
+          "recentFlashFailureRate": 0,
+          "historicalCostDifference": 0.0011879561999999998,
+          "historicalSampleCount": 2
+        }
+      },
+      "prediction": {
+        "pFlashPass": 0.8089234670040689,
+        "pProPass": 0.9611250889002345,
+        "predictedCostDifference": 0.0019980848639329666,
+        "selectedThreshold": 0.2,
+        "shadowChoice": "Flash"
+      },
+      "flash": {
+        "model": "deepseek-v4-flash",
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 2,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Includes exact phrase",
+              "passed": true
+            },
+            {
+              "description": "Proposes Tuesday",
+              "passed": true
+            },
+            {
+              "description": "Ends correctly",
+              "passed": false
+            },
+            {
+              "description": "At most 50 words",
+              "passed": false
+            }
+          ]
+        },
+        "failedCriteria": [
+          {
+            "description": "Ends correctly",
+            "passed": false
+          },
+          {
+            "description": "At most 50 words",
+            "passed": false
+          }
+        ],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "bullet-list",
+        "usage": {
+          "inputTokens": 7853,
+          "outputTokens": 435,
+          "reasoningTokens": 349,
+          "totalTokens": 12640
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7853,
+          "hitRate": 0.3565751741089717
+        },
+        "latencyMs": 3748,
+        "costUsd": 0.0012334056000000003,
+        "output": "Here's a professional email under 50 words:\n\n---\n\nSubject: Meeting Reschedule\n\nDear Alex,\n\nThank you for the invitation to meet Thursday. Unfortunately, I have a schedule conflict at that time. Could we reschedule for Tuesday instead? Please let me know what works for you.\n\nBest,\nSam\n\n---\n\n(33 words total, includes \"schedule conflict,\" proposes Tuesday, and ends with \"Best, Sam.\")"
+      },
+      "pro": {
+        "model": "deepseek-v4-pro",
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 4,
+          "criteriaTotal": 4,
+          "checks": [
+            {
+              "description": "Includes exact phrase",
+              "passed": true
+            },
+            {
+              "description": "Proposes Tuesday",
+              "passed": true
+            },
+            {
+              "description": "Ends correctly",
+              "passed": true
+            },
+            {
+              "description": "At most 50 words",
+              "passed": true
+            }
+          ]
+        },
+        "failedCriteria": [],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "multi-paragraph-prose",
+        "usage": {
+          "inputTokens": 7852,
+          "outputTokens": 349,
+          "reasoningTokens": 302,
+          "totalTokens": 12553
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7852,
+          "hitRate": 0.3566043920026221
+        },
+        "latencyMs": 5949,
+        "costUsd": 0.003735026,
+        "output": "Subject: Meeting Request\n\nThank you for the invitation. Unfortunately, I have a schedule conflict and won't be able to meet as proposed. Would Tuesday work for you instead? I'd be glad to connect then.\n\nBest, Sam"
+      },
+      "difference": {
+        "labelValidity": "genuine",
+        "failureMechanism": "extraneous-output-and-terminal-format-violation",
+        "whyFlashFailed": "Added an introduction, separators, and a postscript; exceeded the word limit and did not end with the exact signature.",
+        "whatProDidDifferently": "Returned only the email body, stayed below 50 words, and ended with the exact literal signature.",
+        "missingFeature": "Explicit constraint count, maximum length, exact terminal literal, and no-extraneous-output requirement."
+      },
+      "samePromptOtherIterations": [
+        {
+          "taskId": "constraints-email/2",
+          "classification": "both-fail",
+          "flashVerified": false,
+          "proVerified": false
+        }
+      ],
+      "nearestFlashSufficient": [
+        {
+          "taskId": "constraints-release/1",
+          "distance": 2.0145938659649008,
+          "prompt": "Create exactly five numbered release checklist items. Item 1 must mention tests, item 3 must mention rollback, and item 5 must mention monitoring. Use no sub-bullets.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 166
+            },
+            "structural": {
+              "estimatedInputTokens": 42,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.75,
+              "proSuccessRateByTaskType": 0.875,
+              "flashToProRescueRate": 0.125,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.00124699245,
+              "historicalSampleCount": 8
+            }
+          },
+          "flashOutput": "1. Run the full automated test suite and confirm all tests pass on the target release branch.\n2. Verify the build and packaging steps produce artifacts with correct version numbers and checksums.\n3. Confirm the rollback plan is documented, tested, and the previous release artifacts are preserved and restorable.\n4. Validate configuration, database, and feature flags against the production environment before deploying.\n5. Enable monitoring and alerting for the release, and watch key metrics during and after the rollout.",
+          "proOutput": "1. Run the full test suite and confirm all tests pass before tagging the release.\n2. Verify version numbers, changelog, and release notes are up to date.\n3. Prepare and rehearse the rollback plan so the release can be reverted quickly if needed.\n4. Confirm documentation and migration steps are published and reviewed.\n5. Set up monitoring and alerts to detect errors, latency spikes, or traffic anomalies after deployment."
+        },
+        {
+          "taskId": "constraints-release/2",
+          "distance": 2.0145938659649008,
+          "prompt": "Create exactly five numbered release checklist items. Item 1 must mention tests, item 3 must mention rollback, and item 5 must mention monitoring. Use no sub-bullets.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 166
+            },
+            "structural": {
+              "estimatedInputTokens": 42,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.7777777777777778,
+              "proSuccessRateByTaskType": 0.8888888888888888,
+              "flashToProRescueRate": 0.1111111111111111,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.001384928888888889,
+              "historicalSampleCount": 9
+            }
+          },
+          "flashOutput": "1. Run the full test suite, including unit, integration, and end-to-end tests, and confirm all pass against the release candidate build.\n2. Verify the release artifacts build and deploy cleanly in a staging environment that mirrors production.\n3. Confirm the rollback plan is documented and tested so the previous version can be restored quickly if the release causes issues.\n4. Validate that all configuration changes and database migrations are backward compatible with the previous release.\n5. Set up monitoring alerts and dashboards before going live, and watch key metrics during and after the rollout.",
+          "proOutput": "1. Run the full test suite, including unit, integration, and end-to-end tests, and confirm all tests pass on the release candidate.\n2. Verify that all version numbers, changelog entries, and release notes are updated and consistent across the repository.\n3. Confirm a tested rollback plan is in place, including database migration reversions and artifact redeployment steps, before proceeding with the release.\n4. Obtain final sign-off from product, engineering, and QA stakeholders on the release candidate.\n5. Set up monitoring and alerting dashboards for the new release, and verify alerts fire correctly during the post-release validation window."
+        },
+        {
+          "taskId": "constraints-order/1",
+          "distance": 2.1038112514973504,
+          "prompt": "Give exactly four steps for rotating an API key. Step 1 must say create, step 2 deploy, step 3 verify, and step 4 revoke. Each step must be one line.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 149
+            },
+            "structural": {
+              "estimatedInputTokens": 38,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.6666666666666666,
+              "proSuccessRateByTaskType": 0.8333333333333334,
+              "flashToProRescueRate": 0.16666666666666666,
+              "recentFlashFailureRate": 0.1111111111111111,
+              "historicalCostDifference": 0.0012456312,
+              "historicalSampleCount": 6
+            }
+          },
+          "flashOutput": "1. Create a new API key alongside the existing one.\n2. Deploy the new key to all services and configurations that use the old key.\n3. Verify the new key works across all services.\n4. Revoke the old API key.",
+          "proOutput": "1. Create a new API key in the provider's console.\n2. Deploy the new key to all services and configuration.\n3. Verify the new key works across all services.\n4. Revoke the old API key once the new one is confirmed."
+        },
+        {
+          "taskId": "constraints-order/2",
+          "distance": 2.1038112514973504,
+          "prompt": "Give exactly four steps for rotating an API key. Step 1 must say create, step 2 deploy, step 3 verify, and step 4 revoke. Each step must be one line.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 149
+            },
+            "structural": {
+              "estimatedInputTokens": 38,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.7142857142857143,
+              "proSuccessRateByTaskType": 0.8571428571428571,
+              "flashToProRescueRate": 0.14285714285714285,
+              "recentFlashFailureRate": 0.10526315789473684,
+              "historicalCostDifference": 0.0014114232285714287,
+              "historicalSampleCount": 7
+            }
+          },
+          "flashOutput": "1. Create a new API key and store it securely in your secrets manager.\n2. Deploy the new key to all services and environments that use it.\n3. Verify the new key works across all production paths and monitoring shows no errors.\n4. Revoke the old key after confirming the new one is fully operational.",
+          "proOutput": "1. **Create** a new API key in your provider's console or secret store.\n2. **Deploy** the new key to all services and configuration so old and new keys work in parallel.\n3. **Verify** that every service authenticates successfully with the new key.\n4. **Revoke** the old API key once the new key is confirmed working everywhere."
+        },
+        {
+          "taskId": "constraints-table/2",
+          "distance": 2.184626669911109,
+          "prompt": "Create a Markdown table with exactly three data rows and columns Name, Priority, Owner. Use priorities High, Medium, Low exactly once each. Owners must be Ada, Lin, and Jo exactly once each.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 190
+            },
+            "structural": {
+              "estimatedInputTokens": 48,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 6,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 3
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.8260869565217391,
+              "proSuccessRateByTaskType": 0.9565217391304348,
+              "flashToProRescueRate": 0.13043478260869565,
+              "recentFlashFailureRate": 0.15,
+              "historicalCostDifference": 0.001355928991304348,
+              "historicalSampleCount": 23
+            }
+          },
+          "flashOutput": "| Name | Priority | Owner |\n|------|----------|-------|\n| Task A | High | Ada |\n| Task B | Medium | Lin |\n| Task C | Low | Jo |",
+          "proOutput": "| Name | Priority | Owner |\n| --- | --- | --- |\n| Task A | High | Ada |\n| Task B | Medium | Lin |\n| Task C | Low | Jo |"
+        }
+      ]
+    },
+    {
+      "taskId": "json-filter/1",
+      "taskClass": "structured-transform",
+      "prompt": "From this JSON array, return only active users as a JSON array with name fields only. Reply with only JSON.\n[{\"name\":\"A\",\"active\":true},{\"name\":\"B\",\"active\":false},{\"name\":\"C\",\"active\":true}]",
+      "originalFeatures": {
+        "featureVersion": 1,
+        "complexity": {
+          "explicitReasoningRequests": 0,
+          "mathMarkers": 0,
+          "architectureMarkers": 0,
+          "codeBlocks": 0,
+          "lengthBands": 0,
+          "complexityScore": 0,
+          "promptLength": 191
+        },
+        "structural": {
+          "estimatedInputTokens": 48,
+          "messageCount": 1,
+          "toolSchemaCount": 0,
+          "attachedFileCount": 0,
+          "codeBlockCount": 0,
+          "structuredDataSize": 26,
+          "requestsStructuredOutput": true,
+          "jsonTransformationIndicator": true,
+          "multiFileIndicator": false,
+          "toolRequirementIndicator": false,
+          "verificationCriterionCount": 1
+        },
+        "categorical": {
+          "taskType": "unknown",
+          "expectsProAdvantage": false
+        },
+        "historical": {
+          "flashSuccessRateByTaskType": 0.8,
+          "proSuccessRateByTaskType": 0.9,
+          "flashToProRescueRate": 0.1,
+          "recentFlashFailureRate": 0.1,
+          "historicalCostDifference": 0.0012599462000000001,
+          "historicalSampleCount": 10
+        }
+      },
+      "prediction": {
+        "pFlashPass": 0.7497446454489117,
+        "pProPass": 0.9964597961813808,
+        "predictedCostDifference": 0.0011825016431595648,
+        "selectedThreshold": 0.2,
+        "shadowChoice": "Pro"
+      },
+      "flash": {
+        "model": "deepseek-v4-flash",
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 0,
+          "criteriaTotal": 1,
+          "checks": [
+            {
+              "description": "Array contains only A and C names",
+              "passed": false
+            }
+          ]
+        },
+        "failedCriteria": [
+          {
+            "description": "Array contains only A and C names",
+            "passed": false
+          }
+        ],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "fenced-block",
+        "usage": {
+          "inputTokens": 7869,
+          "outputTokens": 70,
+          "reasoningTokens": 60,
+          "totalTokens": 12291
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7869,
+          "hitRate": 0.3561083381065379
+        },
+        "latencyMs": 1500,
+        "costUsd": 0.0011334456,
+        "output": "```json\n[\"A\",\"C\"]\n```"
+      },
+      "pro": {
+        "model": "deepseek-v4-pro",
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 1,
+          "criteriaTotal": 1,
+          "checks": [
+            {
+              "description": "Array contains only A and C names",
+              "passed": true
+            }
+          ]
+        },
+        "failedCriteria": [],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "json-array",
+        "usage": {
+          "inputTokens": 7868,
+          "outputTokens": 68,
+          "reasoningTokens": 55,
+          "totalTokens": 12288
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7868,
+          "hitRate": 0.35613747954173486
+        },
+        "latencyMs": 3031,
+        "costUsd": 0.003497516,
+        "output": "[{\"name\":\"A\"},{\"name\":\"C\"}]"
+      },
+      "difference": {
+        "labelValidity": "genuine",
+        "failureMechanism": "projection-schema-and-exact-format-error",
+        "whyFlashFailed": "Returned an array of strings inside a code fence instead of objects containing only the name field.",
+        "whatProDidDifferently": "Applied filtering and object projection while preserving the requested JSON object schema without a fence.",
+        "missingFeature": "Transformation operation count, output object cardinality, output field count, and strict unfenced JSON."
+      },
+      "samePromptOtherIterations": [
+        {
+          "taskId": "json-filter/2",
+          "classification": "both-pass-pro-more-expensive",
+          "flashVerified": true,
+          "proVerified": true
+        }
+      ],
+      "nearestFlashSufficient": [
+        {
+          "taskId": "json-filter/2",
+          "distance": 0,
+          "prompt": "From this JSON array, return only active users as a JSON array with name fields only. Reply with only JSON.\n[{\"name\":\"A\",\"active\":true},{\"name\":\"B\",\"active\":false},{\"name\":\"C\",\"active\":true}]",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 191
+            },
+            "structural": {
+              "estimatedInputTokens": 48,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 26,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": true,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 1
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.7272727272727273,
+              "proSuccessRateByTaskType": 0.9090909090909091,
+              "flashToProRescueRate": 0.18181818181818182,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.0013603211272727274,
+              "historicalSampleCount": 11
+            }
+          },
+          "flashOutput": "```json\n[{\"name\":\"A\"},{\"name\":\"C\"}]\n```",
+          "proOutput": "[{\"name\":\"A\"},{\"name\":\"C\"}]"
+        },
+        {
+          "taskId": "yaml-service-json/1",
+          "distance": 2.602998176042281,
+          "prompt": "Convert this YAML to JSON. Reply with only JSON.\nservice: api\nport: 8080\nenabled: true",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 86
+            },
+            "structural": {
+              "estimatedInputTokens": 22,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 33,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": true,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 1
+            },
+            "categorical": {
+              "taskType": "structured-transform",
+              "expectsProAdvantage": true
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 1,
+              "proSuccessRateByTaskType": 1,
+              "flashToProRescueRate": 0,
+              "recentFlashFailureRate": 0.15,
+              "historicalCostDifference": 0.0012242154857142855,
+              "historicalSampleCount": 14
+            }
+          },
+          "flashOutput": "```json\n{\"service\": \"api\", \"port\": 8080, \"enabled\": true}\n```",
+          "proOutput": "```json\n{\n  \"service\": \"api\",\n  \"port\": 8080,\n  \"enabled\": true\n}\n```"
+        },
+        {
+          "taskId": "yaml-service-json/2",
+          "distance": 2.602998176042281,
+          "prompt": "Convert this YAML to JSON. Reply with only JSON.\nservice: api\nport: 8080\nenabled: true",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 86
+            },
+            "structural": {
+              "estimatedInputTokens": 22,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 33,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": true,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 1
+            },
+            "categorical": {
+              "taskType": "structured-transform",
+              "expectsProAdvantage": true
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 1,
+              "proSuccessRateByTaskType": 1,
+              "flashToProRescueRate": 0,
+              "recentFlashFailureRate": 0.15,
+              "historicalCostDifference": 0.0012980168133333331,
+              "historicalSampleCount": 15
+            }
+          },
+          "flashOutput": "{\"service\":\"api\",\"port\":8080,\"enabled\":true}",
+          "proOutput": "```json\n{\n  \"service\": \"api\",\n  \"port\": 8080,\n  \"enabled\": true\n}\n```"
+        },
+        {
+          "taskId": "json-group/1",
+          "distance": 2.619361376426745,
+          "prompt": "Group these items by category into a JSON object whose values are arrays of names. Reply with only JSON.\n[{\"name\":\"apple\",\"category\":\"fruit\"},{\"name\":\"carrot\",\"category\":\"veg\"},{\"name\":\"pear\",\"category\":\"fruit\"}]",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 212
+            },
+            "structural": {
+              "estimatedInputTokens": 53,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 21,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 1
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.75,
+              "proSuccessRateByTaskType": 0.9166666666666666,
+              "flashToProRescueRate": 0.16666666666666666,
+              "recentFlashFailureRate": 0.05,
+              "historicalCostDifference": 0.0012520245333333335,
+              "historicalSampleCount": 12
+            }
+          },
+          "flashOutput": "{\"fruit\":[\"apple\",\"pear\"],\"veg\":[\"carrot\"]}",
+          "proOutput": "{\"fruit\":[\"apple\",\"pear\"],\"veg\":[\"carrot\"]}"
+        },
+        {
+          "taskId": "json-group/2",
+          "distance": 2.619361376426745,
+          "prompt": "Group these items by category into a JSON object whose values are arrays of names. Reply with only JSON.\n[{\"name\":\"apple\",\"category\":\"fruit\"},{\"name\":\"carrot\",\"category\":\"veg\"},{\"name\":\"pear\",\"category\":\"fruit\"}]",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 212
+            },
+            "structural": {
+              "estimatedInputTokens": 53,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 21,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 1
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.7692307692307693,
+              "proSuccessRateByTaskType": 0.9230769230769231,
+              "flashToProRescueRate": 0.15384615384615385,
+              "recentFlashFailureRate": 0.05,
+              "historicalCostDifference": 0.0013383596000000003,
+              "historicalSampleCount": 13
+            }
+          },
+          "flashOutput": "{\"fruit\":[\"apple\",\"pear\"],\"veg\":[\"carrot\"]}",
+          "proOutput": "{\"fruit\":[\"apple\",\"pear\"],\"veg\":[\"carrot\"]}"
+        }
+      ]
+    },
+    {
+      "taskId": "plan-api/1",
+      "taskClass": "planning",
+      "prompt": "Plan a backward-compatible migration from API v1 to v2 in exactly five numbered steps. Include observability, dual support, client migration, and retirement criteria.",
+      "originalFeatures": {
+        "featureVersion": 1,
+        "complexity": {
+          "explicitReasoningRequests": 0,
+          "mathMarkers": 0,
+          "architectureMarkers": 2,
+          "codeBlocks": 0,
+          "lengthBands": 0,
+          "complexityScore": 2,
+          "promptLength": 166
+        },
+        "structural": {
+          "estimatedInputTokens": 42,
+          "messageCount": 1,
+          "toolSchemaCount": 0,
+          "attachedFileCount": 0,
+          "codeBlockCount": 0,
+          "structuredDataSize": 3,
+          "requestsStructuredOutput": true,
+          "jsonTransformationIndicator": false,
+          "multiFileIndicator": false,
+          "toolRequirementIndicator": false,
+          "verificationCriterionCount": 5
+        },
+        "categorical": {
+          "taskType": "planning",
+          "expectsProAdvantage": false
+        },
+        "historical": {
+          "flashSuccessRateByTaskType": 1,
+          "proSuccessRateByTaskType": 1,
+          "flashToProRescueRate": 0,
+          "recentFlashFailureRate": 0.05,
+          "historicalCostDifference": 0.0015840311999999995,
+          "historicalSampleCount": 2
+        }
+      },
+      "prediction": {
+        "pFlashPass": 0.5652863194859509,
+        "pProPass": 0.9963256054241209,
+        "predictedCostDifference": 0.001843244121525447,
+        "selectedThreshold": 0.2,
+        "shadowChoice": "Pro"
+      },
+      "flash": {
+        "model": "deepseek-v4-flash",
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 4,
+          "criteriaTotal": 5,
+          "checks": [
+            {
+              "description": "Observability",
+              "passed": true
+            },
+            {
+              "description": "Dual support",
+              "passed": true
+            },
+            {
+              "description": "Client migration",
+              "passed": true
+            },
+            {
+              "description": "Retirement criteria",
+              "passed": true
+            },
+            {
+              "description": "Five numbered steps",
+              "passed": false
+            }
+          ]
+        },
+        "failedCriteria": [
+          {
+            "description": "Five numbered steps",
+            "passed": false
+          }
+        ],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "bullet-list",
+        "usage": {
+          "inputTokens": 7852,
+          "outputTokens": 986,
+          "reasoningTokens": 442,
+          "totalTokens": 13190
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7852,
+          "hitRate": 0.3566043920026221
+        },
+        "latencyMs": 10577,
+        "costUsd": 0.0013875456,
+        "output": "# API v1 → v2 Backward-Compatible Migration Plan\n\n**1. Introduce versioned routing with a v2 adapter layer.** Keep `/v1/*` routes byte-for-byte unchanged. Add `/v2/*` routes alongside, with a shared internal service layer both versions call. The v2 entry point is the only place new behavior lives; v1 continues mapping to legacy internals. Ship both versions behind a version-aware gateway so no v1 client ever sees v2 payload changes.\n\n**2. Instrument per-version observability.** Log, trace, and metric every request with a `version` tag (v1/v2) plus client SDK version. Track: request rate, error rate, p95/p99 latency, payload-size distribution, and top error codes per version. Build a migration dashboard comparing v1 vs v2 traffic share and error deltas; alert on any v2 regression against v1 baselines before expanding client migration.\n\n**3. Migrate clients under feature flags.** Publish the v2-capable SDK with dual-version support (explicit opt-in per client, e.g. `apiVersion: 2`), plus a migration guide mapping every v1 endpoint, field, and error to its v2 equivalent. Clients migrate in waves (internal → external), each wave validated against the dashboard from step 2. Keep v1 fully supported during this phase; no v1 client is forced or broken.\n\n**4. Run dual support with a migration gate.** Serve v1 and v2 simultaneously for the declared dual-support window (e.g. 6 months). Track per-client migration status; block only *new* v1 onboarding. Freeze v1 feature changes to bug fixes and security patches. Confirm parity automatically: run a differential test suite replaying recorded v1 traffic against v2 and asserting equivalent outcomes.\n\n**5. Retire v1 only on explicit criteria.** Retire when all of the following hold for 4+ consecutive weeks: v1 traffic below 1% of total, zero unmigrated active clients, no v1-specific errors, and v2 error rates at or below v1 baselines. Then: final deprecation notice, 30-day v1 freeze, serve v1 with a `410 Gone` + `Link: v2` response, and remove v1 code after verifying zero traffic. Keep the v1→v2 mapping doc archived for reference.\n\n**Rollback rule throughout:** any step reverts to the prior state (gateway re-points to v1) as long as v1 code remains deployed — removed only in step 5, after the retirement criteria are met."
+      },
+      "pro": {
+        "model": "deepseek-v4-pro",
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 5,
+          "criteriaTotal": 5,
+          "checks": [
+            {
+              "description": "Observability",
+              "passed": true
+            },
+            {
+              "description": "Dual support",
+              "passed": true
+            },
+            {
+              "description": "Client migration",
+              "passed": true
+            },
+            {
+              "description": "Retirement criteria",
+              "passed": true
+            },
+            {
+              "description": "Five numbered steps",
+              "passed": true
+            }
+          ]
+        },
+        "failedCriteria": [],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "numbered-list",
+        "usage": {
+          "inputTokens": 7851,
+          "outputTokens": 700,
+          "reasoningTokens": 321,
+          "totalTokens": 12903
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7851,
+          "hitRate": 0.35663361468491356
+        },
+        "latencyMs": 18742,
+        "costUsd": 0.004039961,
+        "output": "1. **Instrument both versions before any change.** Tag all API traffic with version identifiers and emit metrics (request volume, latency, error rate per version per client) plus structured logs and traces. Establish baselines and SLOs for v1 so parity and regression detection have a reference point.\n\n2. **Launch v2 in parallel behind the same gateway (dual support).** Introduce version negotiation (URL prefix or header) that defaults existing clients to v1. Run v2 as a canary, expand gradually, and dual-write any data whose representation changed so both versions read consistent state. This is the \"overlapping window\" phase; nothing is removed.\n\n3. **Validate parity and migrate clients incrementally.** Use contract tests and differential testing (same request to v1 and v2, compare outcomes) to prove behavioral equivalence. Publish SDK/client updates, deprecation notices with explicit dates, and migrate internal consumers first, then external ones — tracking per-client adoption as a metric.\n\n4. **Apply a formal deprecation policy to v1.** Emit deprecation headers and warnings, add v1-specific error budget monitors, and set a communicated sunset date. Ramp brownout tests (brief scheduled v1 outages) to surface latent dependencies, and track a dashboard of remaining v1 traffic by client against the migration deadline.\n\n5. **Retire v1 only when retirement criteria are met.** Gates: v1 traffic below an agreed threshold (e.g., <1% of total for 2+ consecutive weeks), zero critical clients on v1, v1 error rates within SLO during brownouts, and rollback/incident runbooks validated. After the sunset date, disable v1 in a staged rollback-ready toggle, hold the removal through one full release cycle, then delete the v1 code path and publish a post-mortem."
+      },
+      "difference": {
+        "labelValidity": "verifier-artifact",
+        "failureMechanism": "numbered-step-verifier-markup-sensitivity",
+        "whyFlashFailed": "The verifier ignored five semantically numbered steps because each number was wrapped in Markdown bold syntax.",
+        "whatProDidDifferently": "Used plain line-leading numbers that matched the verifier regular expression.",
+        "missingFeature": "None; the verifier must recognize equivalent Markdown numbering."
+      },
+      "samePromptOtherIterations": [
+        {
+          "taskId": "plan-api/2",
+          "classification": "both-pass-pro-more-expensive",
+          "flashVerified": true,
+          "proVerified": true
+        }
+      ],
+      "nearestFlashSufficient": [
+        {
+          "taskId": "plan-api/2",
+          "distance": 0,
+          "prompt": "Plan a backward-compatible migration from API v1 to v2 in exactly five numbered steps. Include observability, dual support, client migration, and retirement criteria.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 2,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 2,
+              "promptLength": 166
+            },
+            "structural": {
+              "estimatedInputTokens": 42,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "planning",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.6666666666666666,
+              "proSuccessRateByTaskType": 1,
+              "flashToProRescueRate": 0.3333333333333333,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.0019401592666666665,
+              "historicalSampleCount": 3
+            }
+          },
+          "flashOutput": "# API v1 → v2 Migration Plan\n\nContext: the gateway serves Remote methods as `POST /api/<namespace>/<method>` via the Connection RPC carrier, with generated Host/Client contracts. This plan assumes v2 introduces breaking changes to payloads, descriptors, or error semantics. (Note: this repo is pre-release with no external consumers — `AGENTS.md` prefers breaking freely; apply this plan only if you actually have v1 consumers to protect.)\n\n1. **Baseline v1 and instrument version routing.** Add a `v1`/`v2` route discriminator (`/api/v2/<namespace>/<method>`; keep `/api/<namespace>/<method>` as v1). Emit per-version metrics at the gateway (requests, latency, error rate by namespace/method, 4xx vs 5xx), log a `api_version` field on every request, and alert on v1 error-rate or latency regressions before any v2 traffic exists. Record the v1 contract in a snapshot test suite (request/response pairs) so parity is machine-checkable.\n\n2. **Ship v2 alongside v1 (dual support) with a compatibility adapter.** Deploy both versions behind the same Connection, sharing auth, cancellation, and envelopes. Where v2 changed wire semantics, implement a v2→v1 adapter on the server side for the transition window so both versions call the same backend logic. Gate: both versions pass the v1 snapshot suite plus new v2 snapshots; v1 behavior is byte-identical to pre-migration.\n\n3. **Migrate clients gradually, driving traffic by explicit opt-in.** Publish the v2 TypeScript client (`dsh-client-connection` carrier unchanged; only Remote descriptors change). Roll out in waves (per-client or percentage via a config flag, not implicit sniffing): each client moves only when its v2 test suite and canaries pass, with a documented fallback to v1. Add a dashboard comparing v1 vs v2 latency/error rate per method; a v2 error-rate or p99 regression above v1's baseline for 7 days pauses the wave.\n\n4. **Freeze v1: deprecation window with hard gates.** Announce v1 deprecation; v1 accepts traffic but receives no new features or bugfixes beyond security. Track remaining v1 callers per client identity in the metrics added in step 1. Enforce a cutoff date plus a traffic threshold — e.g., v1 under 1% of requests for 30 consecutive days — before any removal is scheduled.\n\n5. **Retire v1.** Remove the v1 route and adapter once retirement criteria are met: (a) zero v1 traffic for 30 consecutive days, (b) all known clients confirmed on v2, (c) all alerting/dashboards re-pointed at v2-only metrics, (d) the v1 snapshot suite removed or frozen in git history. Delete the v1 route mapping so unversioned `/api/...` calls fail loudly (`404` with a `version-removed` error), never silently default to v2.\n\n**Retirement criteria summary:** v1 traffic < 1% for 30 days → zero v1 traffic for 30 days, all clients migrated, observability re-based, then hard removal.",
+          "proOutput": "1. **Instrument both versions before changing anything.** Tag every request with its API version in metrics, traces, and logs (e.g., `api_version` label on traffic volume, error rate, and p99 latency per endpoint). Add alerts on v1/v2 traffic share and on any v2 error rate exceeding v1's baseline. This gives you the observability needed to drive — and justify — every later step.\n\n2. **Ship v2 beside a frozen v1 (dual support).** Freeze v1 as a stable, contract-tested surface (`/v1` path, version header, or content negotiation) and serve both from one backend through a compatibility adapter that translates between the two contracts. Add CI contract tests that pin v1 response fields and fail on any drift, so v1 keeps working untouched while v2 evolves.\n\n3. **Migrate clients in cohorts, not all at once.** Publish the v2 spec, SDK, and a migration guide; let clients opt in via header or config flag. Move internal clients first as canaries, then partners, tracking per-client version and error rate. Roll a client back to v1 immediately if its v2 error rate diverges from the v1 baseline.\n\n4. **Signal the sunset and verify parity.** Announce a v1 deprecation date with `Deprecation`/`Sunset` response headers and changelog entries. Offer shadow traffic or dual-read mode so clients can validate v2 responses against v1 before cutover, and watch v1 traffic decline against a forecast — the trend, not the calendar, gates the next step.\n\n5. **Retire v1 only against pre-agreed, measured criteria.** Retire when all are met for a defined window (e.g., 30 days): v1 traffic below a threshold (say 5%), zero remaining critical clients on v1, v2 error rate ≤ v1's for the same endpoints, and any break-glass exceptions documented. Then run a deprecation sequence — warning period, then 410 Gone — and keep the per-version telemetry live afterward to catch stragglers before fully deleting the v1 code path."
+        },
+        {
+          "taskId": "plan-migration/2",
+          "distance": 3.8475326433213315,
+          "prompt": "Create a six-step plan to migrate a 2 TB PostgreSQL database with less than five minutes of write downtime. Include replication, validation, cutover, and rollback.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 1,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 1,
+              "promptLength": 163
+            },
+            "structural": {
+              "estimatedInputTokens": 41,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": false,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "planning",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.6666666666666666,
+              "proSuccessRateByTaskType": 0.7777777777777778,
+              "flashToProRescueRate": 0.2222222222222222,
+              "recentFlashFailureRate": 0.2,
+              "historicalCostDifference": 0.0017841355111111105,
+              "historicalSampleCount": 9
+            }
+          },
+          "flashOutput": "# Six-Step Migration Plan: 2 TB PostgreSQL, <5 min Write Downtime\n\nAssumes physical replication is possible (same/adjacent major versions, same architecture). If target is a different major version or engine, replace steps 1–2 with logical replication (`pglogical`/built-in publication+subscription); the cutover mechanics stay the same.\n\n## Step 1 — Baseline, Inventory, and Capacity\n\n- Map all databases, table sizes, largest tables, indexes, sequences, extensions, roles, and connection sources (`pg_stat_activity` over a week).\n- Fix pre-existing drift first: orphaned sequences, bloat, FK/index inconsistencies — a 2 TB copy with broken data fails validation late.\n- Provision target with matched storage/IOPS and set `max_wal_senders`, `max_replication_slots`, `wal_keep_size`/`archive_mode`, and `max_logical_replication_workers` (logical path) before starting.\n- Rehearse the full cutover in staging once before the real window. This is the step that makes the <5-minute target credible.\n\n## Step 2 — Seed Replication (Initial Snapshot + Continuous Stream)\n\n- Take a consistent base via `pg_basebackup` (physical) — `-P -c fast -R --checkpoint=fast`, stream to target with `--write-recovery-conf`. For logical, snapshot with `pg_dump --format=custom --jobs=N` or a fresh publication/subscription, which snapshots internally.\n- Expect several hours for 2 TB; parallelize the copy (`pg_basebackup -j`), and keep the source WAL backlog sized for the copy duration (`wal_keep_size` or an archive).\n- Once caught up, the replica/subscription applies changes continuously, so target lags by seconds and the source keeps serving writes normally.\n\n## Step 3 — Continuous Validation (while replicating)\n\n- **Structural parity:** compare schema (`pg_dump --schema-only` diff), roles, extensions, and grants.\n- **Data parity on the base:** row counts and per-table checksums, or `pg_checksums` on the physical copy; for logical, add a sampled column-level comparison (`hashtextextended` over PKs).\n- **Stream health:** monitor `pg_stat_replication` — `sent_lsn` vs `flush_lsn` vs `replay_lsn`, replay lag in bytes/time, and slot `restart_lsn` not advancing past `confirmed_flush_lsn`.\n- **Application validation:** point read-only traffic and smoke tests at the target continuously during the soak period (days to weeks), which is the real guarantee that cutover succeeds.\n\n## Step 4 — Cutover (the <5-minute write window)\n\n1. **Pre-freeze:** disable cron/ETL/backup jobs on source; drain long-lived transactions.\n2. **T+0 — freeze writes:** `ALTER SYSTEM SET default_transaction_read_only = on; SELECT pg_reload_conf();` (or stop the app write tier). Optionally `SET default_transaction_read_only = on` on connections via a connection pooler.\n3. **T+1 — catch up:** wait for replay lag to reach 0 and `replay_lsn` to equal the source's current LSN (physical) or for the subscription's `confirmed_flush_lsn` to pass the source's last commit (logical).\n4. **T+2 — promote/switch:** physical: `pg_ctl promote` / `pg_promote()`; logical: `ALTER SUBSCRIPTION ... DISABLE` on source and `ENABLE` on target (or repoint the application's publication writer). Sync sequences: `SELECT setval(...)` from source, or `pg_dump --data-only --table='*_seq'`; on PG 10+ use `ALTER SEQUENCE ... RESTART WITH`.\n5. **T+3 — repoint traffic:** flip the connection string/DNS/load balancer to target. Keep the pooler warm with both endpoints and a health-check gate so the flip is atomic from the app's perspective.\n6. **T+4 — verify writes:** confirm new commits land on target (`pg_current_wal_lsn()` advances; app health checks pass). Total: ~2–5 minutes. No long migration tasks remain in the window — everything heavy already happened in steps 2–3.\n\n## Step 5 — Rollback Plan (armed and rehearsed)\n\n- **Source stays up and read-only** through cutover, with its WAL and replication slot preserved — it is the rollback point.\n- **Pre-rehearsed rollback triggers** (practiced in staging in step 1):\n  - Validation failure or app errors after cutover → flip traffic back to source, re-enable writes, and stop the replica — seconds, no data loss.\n  - Data-divergence detected in step 3 → abort before cutover; the window never opens.\n- If rollback happens, resume replication in the reverse direction later (or re-seed) after the cause is fixed — never silently continue on a divergent target.\n- Soak period: keep the old source and a reverse replication path for 2–4 weeks before declaring migration complete.\n\n## Step 6 — Post-Migration Stabilization and Decommission\n\n- Run the step-3 validation suite against the live target again, then full `pg_checksums`/row-count parity on the settled copy; keep monitoring replay lag until the reverse slot is dropped.\n- Watch for performance drift: vacuum/analyze the target (`VACUUM (ANALYZE)` on large tables), rebuild or drop redundant indexes, re-check planner stats since they were copied cold.\n- Update runbooks, monitoring dashboards, and backup configuration (pgBackRest/WAL archiving now point at the target).\n- Decommission the source only after the soak window: revoke access, disable replication slots, take a final backup, then delete.\n\n**Why this hits <5 minutes:** steps 1–3 move all 2 TB of data, validation, and rehearsals out of the downtime window; the window itself only contains freeze, lag-zero wait, promote/switch, DNS flip, and write verification — all seconds-level operations.",
+          "proOutput": "## Six-Step Migration Plan: 2 TB PostgreSQL, <5 Min Write Downtime\n\n**Approach:** Logical replication keeps the target continuously in sync while the source serves traffic. Writes pause only for the final catch-up and switchover — everything else (the 2 TB copy, validation, rehearsal) happens with the source fully online.\n\n---\n\n### 1. Prepare target and seed the full copy\n- Provision the new server (same or newer major version), sized for 2 TB with matching `shared_buffers`, `work_mem`, and `max_wal_size` settings.\n- Seed the target without stopping the source:\n  - Create a replication slot on the source: `SELECT * FROM pg_create_logical_replication_slot('mig_slot', 'pgoutput');`\n  - Restore a physical base backup (`pg_basebackup -X stream`) **or** copy schema + data via `pg_dump --schema-only` plus parallel `COPY`/`pg_dump -Fd -j8` — the initial 2 TB sync is the longest step but requires zero downtime.\n- Pre-create indexes, constraints, and extensions on the target for faster load.\n\n### 2. Start continuous replication\n- Source: `CREATE PUBLICATION mig_pub FOR ALL TABLES;`\n- Target: `CREATE SUBSCRIPTION mig_sub CONNECTION '...' PUBLICATION mig_pub WITH (copy_data = false, create_slot = false, slot_name = 'mig_slot');`\n- Ensure the slot exists **before** the base backup so no WAL is missed.\n- Replicate sequences at cutover time (logical replication doesn't sync sequences automatically).\n\n### 3. Validate the target\n- Compare per-table row counts, and run checksum/aggregate comparisons (e.g., `md5` over column concatenations) between source and target.\n- Verify constraints: `pg_amcheck` or `REINDEX ... VERIFY`-style checks; confirm FK, unique, and check constraints are valid.\n- Run the application test suite and read-only replica queries against the target; check query plans and index usage.\n- Monitor lag to near zero: `SELECT * FROM pg_stat_subscription;` and LSN distance from the slot.\n\n### 4. Monitor lag and rehearse cutover\n- Keep the subscription caught up (seconds of lag) during business hours; add `synchronous_commit = remote_apply` only if you need zero-loss cutover, otherwise use async with a recorded final LSN.\n- Do a full dry run in staging: run the cutover runbook end-to-end, time it, and confirm it fits in the 5-minute window.\n- Prepare runbook artifacts: connection-string changes, DNS/load-balancer switch, pgbouncer pause commands, and rollback scripts.\n\n### 5. Cutover (the only downtime — seconds to ~2 minutes)\n1. Pause writes: `pgbouncer PAUSE` or app maintenance mode (reads can continue).\n2. Wait for lag to hit zero; record the final LSN (`pg_current_wal_lsn()` vs. replayed LSN).\n3. Sync sequences: `SELECT setval(...)` from source values.\n4. `ALTER SUBSCRIPTION mig_sub DISABLE;` then drop the subscription, or promote if using physical streaming.\n5. Repoint applications/DNS/load balancer to the new primary; `pgbouncer RESUME`.\n6. Confirm new writes land on the target.\n\n### 6. Validate in production, then roll back or decommission\n- **Validate:** Smoke tests, key business transactions, replication-independent health checks on the new primary; monitor error rates and latency for a soak window.\n- **Rollback path (ready before cutover):** keep the old server intact and paused, or better, run the old primary as a standby replicating *back* from the new primary. If problems appear within the rollback window, fail back — apps point at the old server and it has every transaction from the interim.\n- After the agreed soak period (e.g., 24–48 hours) with clean telemetry, freeze the rollback path and decommission the old server; drop the replication slot.\n\n---\n\n**Why this meets <5 minutes:** the 2 TB copy, ongoing sync, and all validation happen while the source serves writes. Downtime equals only the final catch-up wait plus the switch — typically under a minute, comfortably inside the 5-minute budget. The two biggest risks to guard against are sequence misalignment (sync explicitly) and forgetting to drop the slot (WAL buildup on the source)."
+        }
+      ]
+    },
+    {
+      "taskId": "synthesis-oauth/1",
+      "taskClass": "factual-synthesis",
+      "prompt": "Explain the roles of resource owner, client, authorization server, and resource server in OAuth 2.0. Use one sentence per role.",
+      "originalFeatures": {
+        "featureVersion": 1,
+        "complexity": {
+          "explicitReasoningRequests": 0,
+          "mathMarkers": 0,
+          "architectureMarkers": 0,
+          "codeBlocks": 0,
+          "lengthBands": 0,
+          "complexityScore": 0,
+          "promptLength": 127
+        },
+        "structural": {
+          "estimatedInputTokens": 32,
+          "messageCount": 1,
+          "toolSchemaCount": 0,
+          "attachedFileCount": 0,
+          "codeBlockCount": 0,
+          "structuredDataSize": 3,
+          "requestsStructuredOutput": false,
+          "jsonTransformationIndicator": false,
+          "multiFileIndicator": false,
+          "toolRequirementIndicator": false,
+          "verificationCriterionCount": 5
+        },
+        "categorical": {
+          "taskType": "factual-explain",
+          "expectsProAdvantage": true
+        },
+        "historical": {
+          "flashSuccessRateByTaskType": 1,
+          "proSuccessRateByTaskType": 0.9090909090909091,
+          "flashToProRescueRate": 0,
+          "recentFlashFailureRate": 0.05,
+          "historicalCostDifference": 0.0016874317545454542,
+          "historicalSampleCount": 22
+        }
+      },
+      "prediction": {
+        "pFlashPass": 0.9923974426374462,
+        "pProPass": 0.8267856321758833,
+        "predictedCostDifference": 0.0005190256560583694,
+        "selectedThreshold": 0.2,
+        "shadowChoice": "Flash"
+      },
+      "flash": {
+        "model": "deepseek-v4-flash",
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 4,
+          "criteriaTotal": 5,
+          "checks": [
+            {
+              "description": "Resource owner",
+              "passed": true
+            },
+            {
+              "description": "Client",
+              "passed": true
+            },
+            {
+              "description": "Authorization server",
+              "passed": true
+            },
+            {
+              "description": "Resource server",
+              "passed": true
+            },
+            {
+              "description": "Contains 4-5 sentences",
+              "passed": false
+            }
+          ]
+        },
+        "failedCriteria": [
+          {
+            "description": "Contains 4-5 sentences",
+            "passed": false
+          }
+        ],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "prose",
+        "usage": {
+          "inputTokens": 7848,
+          "outputTokens": 131,
+          "reasoningTokens": 27,
+          "totalTokens": 12331
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7848,
+          "hitRate": 0.35672131147540986
+        },
+        "latencyMs": 2285,
+        "costUsd": 0.0011475856000000004,
+        "output": "In OAuth 2.0, the **resource owner** is the user or entity that owns the protected data and grants the client permission to access it; the **client** is the application that requests access to the resource owner's data on their behalf (or on its own behalf); the **authorization server** authenticates the resource owner and issues access tokens to the client after authorization is granted; and the **resource server** hosts the protected resources and validates incoming access tokens before serving the client's requests."
+      },
+      "pro": {
+        "model": "deepseek-v4-pro",
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 5,
+          "criteriaTotal": 5,
+          "checks": [
+            {
+              "description": "Resource owner",
+              "passed": true
+            },
+            {
+              "description": "Client",
+              "passed": true
+            },
+            {
+              "description": "Authorization server",
+              "passed": true
+            },
+            {
+              "description": "Resource server",
+              "passed": true
+            },
+            {
+              "description": "Contains 4-5 sentences",
+              "passed": true
+            }
+          ]
+        },
+        "failedCriteria": [],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "bullet-list",
+        "usage": {
+          "inputTokens": 7847,
+          "outputTokens": 139,
+          "reasoningTokens": 31,
+          "totalTokens": 12338
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7847,
+          "hitRate": 0.35675055332404293
+        },
+        "latencyMs": 4012,
+        "costUsd": 0.0035501509999999997,
+        "output": "- **Resource owner:** The entity (usually a person) that owns the protected data and can authorize the client to access it on their behalf.\n- **Client:** The application requesting access to the resource owner's protected data, such as a web or mobile app.\n- **Authorization server:** The server that authenticates the resource owner and issues access tokens to the client after authorization is granted.\n- **Resource server:** The server that hosts the protected data and accepts access tokens, serving the requested resources only when a valid token is presented."
+      },
+      "difference": {
+        "labelValidity": "genuine",
+        "failureMechanism": "required-cardinality-collapse",
+        "whyFlashFailed": "Collapsed four requested role sentences into one compound semicolon-delimited sentence.",
+        "whatProDidDifferently": "Produced one independent sentence for each of the four roles.",
+        "missingFeature": "Source entity count, one-output-unit-per-entity constraint, and expected output cardinality."
+      },
+      "samePromptOtherIterations": [
+        {
+          "taskId": "synthesis-oauth/2",
+          "classification": "both-pass-pro-more-expensive",
+          "flashVerified": true,
+          "proVerified": true
+        }
+      ],
+      "nearestFlashSufficient": [
+        {
+          "taskId": "synthesis-oauth/2",
+          "distance": 0,
+          "prompt": "Explain the roles of resource owner, client, authorization server, and resource server in OAuth 2.0. Use one sentence per role.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 127
+            },
+            "structural": {
+              "estimatedInputTokens": 32,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": false,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "factual-explain",
+              "expectsProAdvantage": true
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.9565217391304348,
+              "proSuccessRateByTaskType": 0.9130434782608695,
+              "flashToProRescueRate": 0.043478260869565216,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.0017185245217391301,
+              "historicalSampleCount": 23
+            }
+          },
+          "flashOutput": "In OAuth 2.0:\n\n- **Resource owner**: the user or entity that owns the protected data and grants the client permission to access it (typically by approving an authorization request).\n- **Client**: the application that requests access to the resource owner's data on their behalf and uses the resulting access token to call the resource server.\n- **Authorization server**: the trusted server that authenticates the resource owner, issues access tokens (and refresh tokens) to the client after authorization is granted.\n- **Resource server**: the server that hosts the protected resources and validates access tokens before serving requests from the client.",
+          "proOutput": "- **Resource owner:** the entity (usually the end user) that owns the protected data and can authorize access to it.\n- **Client:** the application requesting access to the protected resources on the resource owner's behalf.\n- **Authorization server:** the server that authenticates the resource owner and issues access tokens to the client after authorization is granted.\n- **Resource server:** the server hosting the protected resources that accepts and validates access tokens before serving the data."
+        },
+        {
+          "taskId": "synthesis-cache/1",
+          "distance": 2.106745323104582,
+          "prompt": "In exactly three sentences, explain the difference between write-through and write-back caching, including one tradeoff of each.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 128
+            },
+            "structural": {
+              "estimatedInputTokens": 32,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "factual-explain",
+              "expectsProAdvantage": true
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 1,
+              "proSuccessRateByTaskType": 1,
+              "flashToProRescueRate": 0,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.002235750625,
+              "historicalSampleCount": 8
+            }
+          },
+          "flashOutput": "Write-through caching writes every update to both the cache and the backing store before the write is acknowledged, ensuring the cache never holds stale data but trading off higher write latency on every write. Write-back caching acknowledges writes after updating only the cache, deferring the backing-store write until the line is evicted, which gives faster writes but risks data loss if the system fails before the dirty line is flushed. The key tradeoff is that write-through trades performance for consistency, while write-back trades durability for performance.",
+          "proOutput": "Write-through caching writes every update to the cache and the backing store simultaneously before considering the write complete, while write-back caching writes only to the cache and defers the store update until the line is evicted. Write-through's tradeoff is that it adds latency and traffic on every write since the slow store is always hit, though data is never lost from a crashed cache. Write-back's tradeoff is that it is faster under repeated writes to the same line, but a cache failure before eviction can lose the only copies of recent updates."
+        },
+        {
+          "taskId": "synthesis-index/1",
+          "distance": 2.1076564233566475,
+          "prompt": "Explain when a database index helps and when it hurts. Use exactly two paragraphs and mention reads, writes, and storage.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 121
+            },
+            "structural": {
+              "estimatedInputTokens": 31,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "factual-explain",
+              "expectsProAdvantage": true
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 1,
+              "proSuccessRateByTaskType": 0.9,
+              "flashToProRescueRate": 0,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.00204135874,
+              "historicalSampleCount": 10
+            }
+          },
+          "flashOutput": "A database index helps when reads dominate the workload: it lets the engine locate matching rows in logarithmic time instead of scanning every row, which pays off for point lookups, range queries, joins, and ORDER BY or GROUP BY on indexed columns. It is most valuable on large tables queried frequently, on selective columns (where few rows match a given value), and for enforcing uniqueness or primary-key constraints, where the index is effectively mandatory.\n\nAn index hurts when writes dominate, because every INSERT, UPDATE, or DELETE must also maintain each index on the affected columns, adding work per statement and risking index fragmentation and lock contention on hot tables. It also costs storage, since each index is a separate structure that duplicates the indexed column values (and often includes extra payload), so small tables, low-selectivity columns, and rarely-used indexes can cost more in write overhead and disk space than they save in read time — which is why unused indexes should be dropped.",
+          "proOutput": "A database index helps when a table is read much more than it is written and queries filter, sort, or join on specific columns: the index lets the database locate matching rows in logarithmic time instead of scanning the whole table, so lookups, range scans, and ORDER BY operations on the indexed columns become dramatically faster. This payoff grows with table size and with selectivity — when the query touches a small fraction of rows — and it is especially valuable on foreign-key columns and on the columns in a WHERE clause of frequent queries.\n\nAn index hurts when writes dominate, because every INSERT, UPDATE, or DELETE that changes an indexed column must also update each index, turning a single-row write into multiple internal writes; on heavily indexed tables this write amplification measurably slows ingestion. Indexes also consume extra storage — each one is a separate sorted data structure that can rival or exceed the table's own size, especially with wide composite indexes — and they add cost when they are barely used, when the optimizer still chooses a full scan because the query is not selective, or when too many overlapping indexes force the database to maintain structures that no query actually benefits from."
+        },
+        {
+          "taskId": "synthesis-index/2",
+          "distance": 2.1076564233566475,
+          "prompt": "Explain when a database index helps and when it hurts. Use exactly two paragraphs and mention reads, writes, and storage.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 121
+            },
+            "structural": {
+              "estimatedInputTokens": 31,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "factual-explain",
+              "expectsProAdvantage": true
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 1,
+              "proSuccessRateByTaskType": 0.9090909090909091,
+              "flashToProRescueRate": 0,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.0020833370727272728,
+              "historicalSampleCount": 11
+            }
+          },
+          "flashOutput": "A database index helps when reads dominate the workload and queries filter, sort, or join on columns that don't have a natural order in the table. Instead of scanning every row to find matches, the database can use the index's sorted structure to jump straight to the relevant entries, turning a full-table scan into a narrow, logarithmic lookup — dramatically faster point lookups, range queries, and joins. Indexes also help enforce uniqueness constraints and can serve as covering indexes that let a query read only the index pages, avoiding table access entirely.\n\nAn index hurts when the cost of maintaining it outweighs its read benefit. Every insert, update, or delete must keep the index in sync, so writes get slower and each write touches more pages; a table with many indexes can make write-heavy workloads (logging, event ingestion, append-only feeds) noticeably slower. Indexes also consume storage — each one is a separate structure that can grow comparable to or larger than the table itself — and they consume memory and cache space, so poorly chosen or redundant indexes waste resources while barely helping reads. The rule of thumb: index selective, frequently queried columns on read-heavy tables, and skip indexes on write-heavy or tiny tables where a scan is already cheap.",
+          "proOutput": "A database index helps when reads dominate: it lets the engine find rows by a keyed column or range in logarithmic time instead of scanning every row, which dramatically speeds up lookups, joins, sorts, and filtered queries. This pays off on large tables where queries are selective (returning few rows) and the indexed columns are frequently used in `WHERE`, `ORDER BY`, or join conditions. The cost is paid on the other side of the trade: every `INSERT`, `UPDATE`, and `DELETE` that changes an indexed column must also update the index, so writes become slower and, on write-heavy workloads, contend on the same index pages. Indexes also consume storage — each one stores a sorted copy of the keyed columns (plus row pointers), and wide, multi-column, or unnecessary indexes multiply both disk usage and the memory needed for cache.\n\nAn index hurts when the workload is write-heavy or the queries are not selective: the extra write overhead and storage may buy nothing if the optimizer still chooses a full scan because the predicate matches most rows, or if the index is never used by any query. It also hurts with frequent updates to the indexed column itself, since every modification reorders the index structure, and with small tables where a full scan is already cheap. The practical rule is to add indexes for read-heavy, selective query patterns you can measure, and to drop or avoid them when writes dominate, the columns are low-cardinality or rarely queried, or the storage and maintenance cost exceeds the query speedup."
+        },
+        {
+          "taskId": "synthesis-gc/1",
+          "distance": 2.114913151952543,
+          "prompt": "Compare tracing garbage collection with reference counting. Include cycles, pause behavior, and one implementation tradeoff.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 124
+            },
+            "structural": {
+              "estimatedInputTokens": 31,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": false,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.8125,
+              "proSuccessRateByTaskType": 0.9375,
+              "flashToProRescueRate": 0.125,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.0012466743250000004,
+              "historicalSampleCount": 16
+            }
+          },
+          "flashOutput": "**Tracing GC** (e.g., Java, Go, V8): periodically finds all objects reachable from roots (globals, stacks, registers) and reclaims everything else.\n\n**Reference counting** (e.g., CPython, Swift, Cocoa): each object carries a counter incremented on new references and decremented when references die; at zero, the object is freed immediately.\n\n**Cycles**\n- Tracing: a cycle with no external references is unreachable from roots, so it's collected automatically. No special handling.\n- Refcounting: every object in a cycle keeps its neighbors' counters at ≥1 forever, so cycles leak. Requires a separate cycle detector (Python's `gc` module, weak references) or leaks.\n\n**Pause behavior**\n- Tracing: classic stop-the-world collectors pause all threads for a pause roughly proportional to live heap size. Modern collectors (incremental, concurrent, parallel, generational) amortize this, but pauses are still a global, tunable property (GC pause tuning).\n- Refcounting: reclamation is incremental and interleaved with normal execution — a freed object is freed the instant its last reference drops. Per-free overhead is small, but it's not pause-free: freeing a large structure recursively cascades through all descendants at an arbitrary program point (CPython's \"trashcan\" mitigates this), and threaded refcounting needs atomic increments, which are slow on contention.\n\n**One implementation tradeoff — deterministic finalization vs. deferred cleanup.** Refcounting frees resources (file handles, locks, sockets) deterministically at the exact moment the last reference dies, so explicit `close()`/`dispose()` discipline is often unnecessary. Tracing cannot know *when* an object dies, so finalizers run at an unspecified later collection, in unspecified order, and may never run before process exit — finalization must be treated as a fallback, not a contract (hence Java's `Cleaner`/`try-with-resources` patterns). That deterministic release is a genuine advantage of refcounting, but it's also a constraint: destructor code runs at unpredictable, user-controlled points (during arbitrary assignments), so it must never run arbitrary code that could observe partially-torn state or re-enter the runtime unsafely.",
+          "proOutput": "## Tracing GC vs. Reference Counting\n\n**Mechanism**\n\n- **Tracing GC** (mark-sweep/compact, copying): Starting from roots (globals, stack, registers), it follows pointers and marks every reachable object, then reclaims everything unmarked. Liveness is defined by *reachability*.\n- **Reference counting**: Each object stores a count of incoming pointers, incremented/decremented on every pointer assignment; the object is freed the moment its count hits zero. Liveness is defined by *count*.\n\n**Cycles**\n\n- Tracing handles cycles for free: a cycle unreachable from roots simply never gets marked, so it is collected.\n- Reference counting fails on cycles: objects in a cycle keep counts ≥ 1 forever and leak. Production systems (Python, Swift, PHP) add a separate cycle collector (e.g., trial deletion, weak references) to compensate.\n\n**Pause behavior**\n\n- Tracing is amortized but bursty: collection typically requires stop-the-world pauses proportional to the live set, though incremental, concurrent, and generational collectors shrink or hide them.\n- Reference counting has no global pause: cost is spread evenly across every pointer write, giving smooth, deterministic behavior at the price of constant per-assignment overhead (plus cache-unfriendly counter updates, and atomics if the heap is shared across threads).\n\n**One implementation tradeoff**\n\nTracing buys cheap pointer writes — assignment is just a store, no bookkeeping — but pays with extra memory and scheduling complexity: copying collectors need headroom (a semispace wastes half the heap), and incremental/concurrent collectors need read/write barriers plus thread coordination. Reference counting inverts this: no extra space or barriers, immediate reclamation (good for deterministic finalization and bounded memory), but every pointer update pays an increment/decrement.\n\n**Summary**: tracing = cheap mutation, expensive periodic collection, cycles free; reference counting = expensive mutation, free immediate collection, cycles leak unless augmented."
+        }
+      ]
+    },
+    {
+      "taskId": "constraints-table/1",
+      "taskClass": "multi-constraint",
+      "prompt": "Create a Markdown table with exactly three data rows and columns Name, Priority, Owner. Use priorities High, Medium, Low exactly once each. Owners must be Ada, Lin, and Jo exactly once each.",
+      "originalFeatures": {
+        "featureVersion": 1,
+        "complexity": {
+          "explicitReasoningRequests": 0,
+          "mathMarkers": 0,
+          "architectureMarkers": 0,
+          "codeBlocks": 0,
+          "lengthBands": 0,
+          "complexityScore": 0,
+          "promptLength": 190
+        },
+        "structural": {
+          "estimatedInputTokens": 48,
+          "messageCount": 1,
+          "toolSchemaCount": 0,
+          "attachedFileCount": 0,
+          "codeBlockCount": 0,
+          "structuredDataSize": 6,
+          "requestsStructuredOutput": true,
+          "jsonTransformationIndicator": false,
+          "multiFileIndicator": false,
+          "toolRequirementIndicator": false,
+          "verificationCriterionCount": 3
+        },
+        "categorical": {
+          "taskType": "unknown",
+          "expectsProAdvantage": false
+        },
+        "historical": {
+          "flashSuccessRateByTaskType": 0.8636363636363636,
+          "proSuccessRateByTaskType": 0.9545454545454546,
+          "flashToProRescueRate": 0.09090909090909091,
+          "recentFlashFailureRate": 0.1,
+          "historicalCostDifference": 0.0013079166545454548,
+          "historicalSampleCount": 22
+        }
+      },
+      "prediction": {
+        "pFlashPass": 0.9861484227255978,
+        "pProPass": 0.9488383027211098,
+        "predictedCostDifference": 0.0011546846089510352,
+        "selectedThreshold": 0.2,
+        "shadowChoice": "Flash"
+      },
+      "flash": {
+        "model": "deepseek-v4-flash",
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 1,
+          "criteriaTotal": 3,
+          "checks": [
+            {
+              "description": "Has required header",
+              "passed": true
+            },
+            {
+              "description": "Each priority occurs once",
+              "passed": false
+            },
+            {
+              "description": "Each owner occurs once",
+              "passed": false
+            }
+          ]
+        },
+        "failedCriteria": [
+          {
+            "description": "Each priority occurs once",
+            "passed": false
+          },
+          {
+            "description": "Each owner occurs once",
+            "passed": false
+          }
+        ],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "markdown-table",
+        "usage": {
+          "inputTokens": 7861,
+          "outputTokens": 160,
+          "reasoningTokens": 98,
+          "totalTokens": 12373
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7861,
+          "hitRate": 0.3563416032096946
+        },
+        "latencyMs": 2133,
+        "costUsd": 0.0011575256000000002,
+        "output": "| Name | Priority | Owner |\n|------|----------|-------|\n| Task A | High | Ada |\n| Task B | Medium | Lin |\n| Task C | Low | Jo |\n\nExactly three data rows; High/Medium/Low each used once; Ada, Lin, Jo each used once."
+      },
+      "pro": {
+        "model": "deepseek-v4-pro",
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 3,
+          "criteriaTotal": 3,
+          "checks": [
+            {
+              "description": "Has required header",
+              "passed": true
+            },
+            {
+              "description": "Each priority occurs once",
+              "passed": true
+            },
+            {
+              "description": "Each owner occurs once",
+              "passed": true
+            }
+          ]
+        },
+        "failedCriteria": [],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "fenced-block",
+        "usage": {
+          "inputTokens": 7860,
+          "outputTokens": 155,
+          "reasoningTokens": 104,
+          "totalTokens": 12367
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7860,
+          "hitRate": 0.3563707828365542
+        },
+        "latencyMs": 4012,
+        "costUsd": 0.0035697260000000005,
+        "output": "```markdown\n| Name   | Priority | Owner |\n|--------|----------|-------|\n| Alpha  | High     | Ada   |\n| Beta   | Medium   | Lin   |\n| Gamma  | Low      | Jo    |\n```"
+      },
+      "difference": {
+        "labelValidity": "ambiguous",
+        "failureMechanism": "extraneous-restatement-breaks-exact-multiplicity",
+        "whyFlashFailed": "The table was correct, but a trailing explanation repeated every owner and priority, breaking exact-once checks.",
+        "whatProDidDifferently": "Returned the table without a trailing restatement.",
+        "missingFeature": "Exact multiplicity constraints, output-only requirement, and extraneous-text prohibition."
+      },
+      "samePromptOtherIterations": [
+        {
+          "taskId": "constraints-table/2",
+          "classification": "both-pass-pro-more-expensive",
+          "flashVerified": true,
+          "proVerified": true
+        }
+      ],
+      "nearestFlashSufficient": [
+        {
+          "taskId": "constraints-table/2",
+          "distance": 0,
+          "prompt": "Create a Markdown table with exactly three data rows and columns Name, Priority, Owner. Use priorities High, Medium, Low exactly once each. Owners must be Ada, Lin, and Jo exactly once each.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 190
+            },
+            "structural": {
+              "estimatedInputTokens": 48,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 6,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 3
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.8260869565217391,
+              "proSuccessRateByTaskType": 0.9565217391304348,
+              "flashToProRescueRate": 0.13043478260869565,
+              "recentFlashFailureRate": 0.15,
+              "historicalCostDifference": 0.001355928991304348,
+              "historicalSampleCount": 23
+            }
+          },
+          "flashOutput": "| Name | Priority | Owner |\n|------|----------|-------|\n| Task A | High | Ada |\n| Task B | Medium | Lin |\n| Task C | Low | Jo |",
+          "proOutput": "| Name | Priority | Owner |\n| --- | --- | --- |\n| Task A | High | Ada |\n| Task B | Medium | Lin |\n| Task C | Low | Jo |"
+        },
+        {
+          "taskId": "constraints-release/1",
+          "distance": 0.9098800223621133,
+          "prompt": "Create exactly five numbered release checklist items. Item 1 must mention tests, item 3 must mention rollback, and item 5 must mention monitoring. Use no sub-bullets.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 166
+            },
+            "structural": {
+              "estimatedInputTokens": 42,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.75,
+              "proSuccessRateByTaskType": 0.875,
+              "flashToProRescueRate": 0.125,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.00124699245,
+              "historicalSampleCount": 8
+            }
+          },
+          "flashOutput": "1. Run the full automated test suite and confirm all tests pass on the target release branch.\n2. Verify the build and packaging steps produce artifacts with correct version numbers and checksums.\n3. Confirm the rollback plan is documented, tested, and the previous release artifacts are preserved and restorable.\n4. Validate configuration, database, and feature flags against the production environment before deploying.\n5. Enable monitoring and alerting for the release, and watch key metrics during and after the rollout.",
+          "proOutput": "1. Run the full test suite and confirm all tests pass before tagging the release.\n2. Verify version numbers, changelog, and release notes are up to date.\n3. Prepare and rehearse the rollback plan so the release can be reverted quickly if needed.\n4. Confirm documentation and migration steps are published and reviewed.\n5. Set up monitoring and alerts to detect errors, latency spikes, or traffic anomalies after deployment."
+        },
+        {
+          "taskId": "constraints-release/2",
+          "distance": 0.9098800223621133,
+          "prompt": "Create exactly five numbered release checklist items. Item 1 must mention tests, item 3 must mention rollback, and item 5 must mention monitoring. Use no sub-bullets.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 166
+            },
+            "structural": {
+              "estimatedInputTokens": 42,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 2,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 4
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.7777777777777778,
+              "proSuccessRateByTaskType": 0.8888888888888888,
+              "flashToProRescueRate": 0.1111111111111111,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.001384928888888889,
+              "historicalSampleCount": 9
+            }
+          },
+          "flashOutput": "1. Run the full test suite, including unit, integration, and end-to-end tests, and confirm all pass against the release candidate build.\n2. Verify the release artifacts build and deploy cleanly in a staging environment that mirrors production.\n3. Confirm the rollback plan is documented and tested so the previous version can be restored quickly if the release causes issues.\n4. Validate that all configuration changes and database migrations are backward compatible with the previous release.\n5. Set up monitoring alerts and dashboards before going live, and watch key metrics during and after the rollout.",
+          "proOutput": "1. Run the full test suite, including unit, integration, and end-to-end tests, and confirm all tests pass on the release candidate.\n2. Verify that all version numbers, changelog entries, and release notes are updated and consistent across the repository.\n3. Confirm a tested rollback plan is in place, including database migration reversions and artifact redeployment steps, before proceeding with the release.\n4. Obtain final sign-off from product, engineering, and QA stakeholders on the release candidate.\n5. Set up monitoring and alerting dashboards for the new release, and verify alerts fire correctly during the post-release validation window."
+        },
+        {
+          "taskId": "constraints-order/1",
+          "distance": 1.4165438477827152,
+          "prompt": "Give exactly four steps for rotating an API key. Step 1 must say create, step 2 deploy, step 3 verify, and step 4 revoke. Each step must be one line.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 149
+            },
+            "structural": {
+              "estimatedInputTokens": 38,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.6666666666666666,
+              "proSuccessRateByTaskType": 0.8333333333333334,
+              "flashToProRescueRate": 0.16666666666666666,
+              "recentFlashFailureRate": 0.1111111111111111,
+              "historicalCostDifference": 0.0012456312,
+              "historicalSampleCount": 6
+            }
+          },
+          "flashOutput": "1. Create a new API key alongside the existing one.\n2. Deploy the new key to all services and configurations that use the old key.\n3. Verify the new key works across all services.\n4. Revoke the old API key.",
+          "proOutput": "1. Create a new API key in the provider's console.\n2. Deploy the new key to all services and configuration.\n3. Verify the new key works across all services.\n4. Revoke the old API key once the new one is confirmed."
+        },
+        {
+          "taskId": "constraints-order/2",
+          "distance": 1.4165438477827152,
+          "prompt": "Give exactly four steps for rotating an API key. Step 1 must say create, step 2 deploy, step 3 verify, and step 4 revoke. Each step must be one line.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 0,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 0,
+              "promptLength": 149
+            },
+            "structural": {
+              "estimatedInputTokens": 38,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "unknown",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.7142857142857143,
+              "proSuccessRateByTaskType": 0.8571428571428571,
+              "flashToProRescueRate": 0.14285714285714285,
+              "recentFlashFailureRate": 0.10526315789473684,
+              "historicalCostDifference": 0.0014114232285714287,
+              "historicalSampleCount": 7
+            }
+          },
+          "flashOutput": "1. Create a new API key and store it securely in your secrets manager.\n2. Deploy the new key to all services and environments that use it.\n3. Verify the new key works across all production paths and monitoring shows no errors.\n4. Revoke the old key after confirming the new one is fully operational.",
+          "proOutput": "1. **Create** a new API key in your provider's console or secret store.\n2. **Deploy** the new key to all services and configuration so old and new keys work in parallel.\n3. **Verify** that every service authenticates successfully with the new key.\n4. **Revoke** the old API key once the new key is confirmed working everywhere."
+        }
+      ]
+    },
+    {
+      "taskId": "plan-migration/1",
+      "taskClass": "planning",
+      "prompt": "Create a six-step plan to migrate a 2 TB PostgreSQL database with less than five minutes of write downtime. Include replication, validation, cutover, and rollback.",
+      "originalFeatures": {
+        "featureVersion": 1,
+        "complexity": {
+          "explicitReasoningRequests": 0,
+          "mathMarkers": 0,
+          "architectureMarkers": 1,
+          "codeBlocks": 0,
+          "lengthBands": 0,
+          "complexityScore": 1,
+          "promptLength": 163
+        },
+        "structural": {
+          "estimatedInputTokens": 41,
+          "messageCount": 1,
+          "toolSchemaCount": 0,
+          "attachedFileCount": 0,
+          "codeBlockCount": 0,
+          "structuredDataSize": 3,
+          "requestsStructuredOutput": false,
+          "jsonTransformationIndicator": false,
+          "multiFileIndicator": false,
+          "toolRequirementIndicator": false,
+          "verificationCriterionCount": 5
+        },
+        "categorical": {
+          "taskType": "planning",
+          "expectsProAdvantage": false
+        },
+        "historical": {
+          "flashSuccessRateByTaskType": 0.75,
+          "proSuccessRateByTaskType": 0.75,
+          "flashToProRescueRate": 0.125,
+          "recentFlashFailureRate": 0.2,
+          "historicalCostDifference": 0.0016575836499999996,
+          "historicalSampleCount": 8
+        }
+      },
+      "prediction": {
+        "pFlashPass": 0.8860841006445209,
+        "pProPass": 0.9889316527516538,
+        "predictedCostDifference": 0.003235098113914886,
+        "selectedThreshold": 0.2,
+        "shadowChoice": "Flash"
+      },
+      "flash": {
+        "model": "deepseek-v4-flash",
+        "verification": {
+          "status": "verified-fail",
+          "criteriaPassed": 4,
+          "criteriaTotal": 5,
+          "checks": [
+            {
+              "description": "Replication",
+              "passed": true
+            },
+            {
+              "description": "Validation",
+              "passed": true
+            },
+            {
+              "description": "Cutover",
+              "passed": true
+            },
+            {
+              "description": "Rollback",
+              "passed": true
+            },
+            {
+              "description": "Six numbered steps",
+              "passed": false
+            }
+          ]
+        },
+        "failedCriteria": [
+          {
+            "description": "Six numbered steps",
+            "passed": false
+          }
+        ],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "numbered-list",
+        "usage": {
+          "inputTokens": 7853,
+          "outputTokens": 1914,
+          "reasoningTokens": 777,
+          "totalTokens": 14119
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7853,
+          "hitRate": 0.3565751741089717
+        },
+        "latencyMs": 19732,
+        "costUsd": 0.0016475256000000004,
+        "output": "# PostgreSQL 2 TB Migration Plan — <5 min write downtime\n\n**Assumption:** same major version, same or newer hardware → use **physical streaming replication** (fastest for 2 TB). For cross-major-version or cross-platform moves, substitute logical replication (pglogical/built-in decoding) in step 2; the cutover and rollback logic stays identical.\n\n## Step 1 — Baseline and preparation (days before)\n- Profile the source: `SELECT pg_size_pretty(pg_database_size(...))`, WAL generation rate (pg_stat_wal / `pg_waldump`), peak write throughput, table bloat.\n- Provision target: matching PG version + minor, tuned `shared_buffers`/`work_mem`, same extensions (`CREATE EXTENSION` beforehand — extensions are not replicated by `pg_basebackup`), same roles/users, same `postgresql.conf` knobs, matching collation/locale.\n- Validate network throughput source→target (e.g., `pgbench` or `iperf3`); 2 TB at ~10 Gbps ≈ 30–60 min of streaming.\n- Drop DNS TTL on the app connection record to ≤60 s so cutover takes effect fast.\n\n## Step 2 — Initial copy + continuous replication (T-1 day)\n- Take a consistent base with `pg_basebackup -h <source> -D <target_data_dir> -X stream -R -S <slot>` — **create a physical replication slot first** (`pg_create_physical_replication_slot`) so WAL is never discarded before the target consumes it.\n- Start the target as a hot standby; streaming replication now continuously applies WAL.\n- Baseline timing: 2 TB initial sync + replication catch-up happens fully before cutover day — the clock does not tick during this step.\n\n## Step 3 — Validation while source stays live (hours before)\n- **Lag check:** `pg_stat_replication` → `write_lag`/`flush_lag` should be seconds, sustained, not growing.\n- **Data equality:** compare row counts per table (`pg_class.reltuples` is approximate — use `COUNT(*)` on a sample or full scan for critical tables), plus block-level checksum verification via `pg_checksums`/`pg_verify_checksums` on the target (requires stop; do this in a maintenance window) or `pg_rewind`-style hash comparison of sampled ranges.\n- **Logical smoke test:** run read-only queries and the app's health checks against the target standby; verify indexes, extensions, and functions behave identically.\n\n## Step 4 — Cutover (the <5-minute window)\n1. **Stop writes on source:** `ALTER SYSTEM SET default_transaction_read_only = on; SELECT pg_reload_conf();` (or revoke INSERT/UPDATE/DELETE from app roles). Quiesce batch jobs/cron first.\n2. **Drain the lag:** wait until `pg_stat_replication` shows `replay_lsn == flushed_lsn == sent_lsn` and `pg_is_in_recovery()` is still true on target. At 2 TB with seconds of lag, this drains in well under a minute.\n3. **Promote target:** `pg_ctl promote` (or `SELECT pg_promote()`). This is sub-second; the target becomes the new primary.\n4. **Flip the app:** point the DNS record / connection pooler (PgBouncer) at the new primary. Total: stop writes (~1 min) + drain (~1 min) + promote + DNS propagation (pre-lowered TTL) ≈ **3–5 minutes of write downtime**.\n5. **Re-enable writes** on the new primary only after the app confirms connectivity.\n\n## Step 5 — Rollback path (armed before cutover, valid for a soak period)\n- **Do not destroy or re-write the source.** After cutover the source is read-only and holds every committed transaction — it *is* the rollback target.\n- **Rollback trigger:** any validation failure (data divergence, app errors, perf regression) within the soak window.\n- **Rollback action:** flip DNS/pooler back to the source and re-enable writes. Data loss is bounded to writes made on the new primary during the window — accept this, or set up reverse (logical) replication from new→old before cutover to carry those writes back.\n- Keep the old cluster's WAL archived (and any slot) until you formally decommission, so you can recover to any point in time.\n\n## Step 6 — Post-cutover verification and cleanup\n- Verify data integrity on the new primary (repeat step 3 checks), confirm replication stopped cleanly, drop the now-unused replication slot.\n- Monitor for 7–14 days (error rate, latency, vacuum/autovacuum behavior on the now-writable target).\n- **Decommission source only after the soak period** and sign-off: `pg_ctl stop`, retain an encrypted backup/archived WAL per retention policy, remove old DNS/pooler entries.\n\n**Key risks to pre-test:** replication slot exhaustion under a long outage (monitor `pg_replication_slots`), extension/role drift, and any app code that writes before cutover completes — the 5-minute budget collapses if the app keeps writing to the source after step 4 begins."
+      },
+      "pro": {
+        "model": "deepseek-v4-pro",
+        "verification": {
+          "status": "verified-pass",
+          "criteriaPassed": 5,
+          "criteriaTotal": 5,
+          "checks": [
+            {
+              "description": "Replication",
+              "passed": true
+            },
+            {
+              "description": "Validation",
+              "passed": true
+            },
+            {
+              "description": "Cutover",
+              "passed": true
+            },
+            {
+              "description": "Rollback",
+              "passed": true
+            },
+            {
+              "description": "Six numbered steps",
+              "passed": true
+            }
+          ]
+        },
+        "failedCriteria": [],
+        "toolCalls": 0,
+        "toolFailures": 0,
+        "repairs": 0,
+        "answerShape": "numbered-list",
+        "usage": {
+          "inputTokens": 7852,
+          "outputTokens": 1164,
+          "reasoningTokens": 486,
+          "totalTokens": 13368
+        },
+        "cache": {
+          "hitTokens": 4352,
+          "missTokens": 7852,
+          "hitRate": 0.3566043920026221
+        },
+        "latencyMs": 26110,
+        "costUsd": 0.004444076,
+        "output": "## Six-Step Plan: 2 TB PostgreSQL Migration with <5 Min Write Downtime\n\nThe key insight: do ~all the heavy lifting **before** the cutover window. At cutover, you only drain the last seconds of WAL instead of copying 2 TB.\n\n**Step 1 — Provision and pre-load (no downtime)**\nBuild the new cluster (ideally same major version; if upgrading, use logical replication since it's version-independent). Dump schema (`pg_dump --schema-only`) and apply it. Take a physical snapshot with `pg_basebackup` (or a storage-level snapshot) and restore it on the target. Configure `wal_level = logical`, `max_replication_slots`, and `max_wal_senders` on the source.\n\n**Step 2 — Start logical replication (no downtime)**\nCreate a publication on the source (`CREATE PUBLICATION ... FOR ALL TABLES`) and a subscription on the target with `copy_data = false` (data already seeded via base backup). Alternatively use **pglogical** for older versions or partial-table replication. Replication runs continuously while the source serves writes.\n\n**Step 3 — Validation (no downtime)**\nLet replication catch up, then verify:\n- Row counts per table on source vs. target\n- Checksum comparison (e.g., `md5(concat_ws(...))` over representative tables or full-table hash for critical data)\n- Constraint integrity: FK, indexes, sequences (`setval` to source values)\n- App-level smoke tests against the target in read-only mode\n\n**Step 4 — Rehearse the cutover (optional, no downtime)**\nDry-run the cutover script (freeze, drain, LSN compare) against a scratch environment. Time each step — the real freeze should measure in seconds to ~1–2 minutes.\n\n**Step 5 — Cutover (<5 min write downtime)**\n1. Stop/point writes away: pause app connections or set `default_transaction_read_only = on`.\n2. Drain final WAL: wait until replication lag ≈ 0 and LSNs match (`pg_current_wal_lsn()` vs. `pg_last_wal_replay_lsn()` / subscription status).\n3. Stop the subscription cleanly; promote the target to primary.\n4. Fix sequences (`setval` from source's final values).\n5. Repoint apps/connection strings (DNS flip or connection pool switch) and re-enable writes.\n6. Verify writes land on the new primary.\n\n**Step 6 — Post-cutover monitoring and rollback**\n- Run smoke tests, watch errors/latency, check WAL archiving.\n- **Rollback path:** keep the old primary running in read-only standby mode with a *reverse* replication slot so it can be re-synced. If issues arise within the agreed rollback window (e.g., 24–48 h), fail back: re-enable reverse replication, drain, flip the connection string back. Delete the old cluster only after the window closes.\n\n**Downtime math:** with lag near zero at cutover, the freeze only needs to cover the last few MB of WAL drain plus the app repoint — well under 5 minutes regardless of the 2 TB size."
+      },
+      "difference": {
+        "labelValidity": "verifier-artifact",
+        "failureMechanism": "top-level-step-verifier-counting-error",
+        "whyFlashFailed": "The answer contained six Step headings, but the verifier counted only line-leading digit-dot syntax.",
+        "whatProDidDifferently": "Also used Step headings; nested numbered cutover actions accidentally made the regex count equal six.",
+        "missingFeature": "None; the verifier must count top-level plan steps instead of unrelated nested numbers."
+      },
+      "samePromptOtherIterations": [
+        {
+          "taskId": "plan-migration/2",
+          "classification": "both-pass-pro-more-expensive",
+          "flashVerified": true,
+          "proVerified": true
+        }
+      ],
+      "nearestFlashSufficient": [
+        {
+          "taskId": "plan-migration/2",
+          "distance": 0,
+          "prompt": "Create a six-step plan to migrate a 2 TB PostgreSQL database with less than five minutes of write downtime. Include replication, validation, cutover, and rollback.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 1,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 1,
+              "promptLength": 163
+            },
+            "structural": {
+              "estimatedInputTokens": 41,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": false,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "planning",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.6666666666666666,
+              "proSuccessRateByTaskType": 0.7777777777777778,
+              "flashToProRescueRate": 0.2222222222222222,
+              "recentFlashFailureRate": 0.2,
+              "historicalCostDifference": 0.0017841355111111105,
+              "historicalSampleCount": 9
+            }
+          },
+          "flashOutput": "# Six-Step Migration Plan: 2 TB PostgreSQL, <5 min Write Downtime\n\nAssumes physical replication is possible (same/adjacent major versions, same architecture). If target is a different major version or engine, replace steps 1–2 with logical replication (`pglogical`/built-in publication+subscription); the cutover mechanics stay the same.\n\n## Step 1 — Baseline, Inventory, and Capacity\n\n- Map all databases, table sizes, largest tables, indexes, sequences, extensions, roles, and connection sources (`pg_stat_activity` over a week).\n- Fix pre-existing drift first: orphaned sequences, bloat, FK/index inconsistencies — a 2 TB copy with broken data fails validation late.\n- Provision target with matched storage/IOPS and set `max_wal_senders`, `max_replication_slots`, `wal_keep_size`/`archive_mode`, and `max_logical_replication_workers` (logical path) before starting.\n- Rehearse the full cutover in staging once before the real window. This is the step that makes the <5-minute target credible.\n\n## Step 2 — Seed Replication (Initial Snapshot + Continuous Stream)\n\n- Take a consistent base via `pg_basebackup` (physical) — `-P -c fast -R --checkpoint=fast`, stream to target with `--write-recovery-conf`. For logical, snapshot with `pg_dump --format=custom --jobs=N` or a fresh publication/subscription, which snapshots internally.\n- Expect several hours for 2 TB; parallelize the copy (`pg_basebackup -j`), and keep the source WAL backlog sized for the copy duration (`wal_keep_size` or an archive).\n- Once caught up, the replica/subscription applies changes continuously, so target lags by seconds and the source keeps serving writes normally.\n\n## Step 3 — Continuous Validation (while replicating)\n\n- **Structural parity:** compare schema (`pg_dump --schema-only` diff), roles, extensions, and grants.\n- **Data parity on the base:** row counts and per-table checksums, or `pg_checksums` on the physical copy; for logical, add a sampled column-level comparison (`hashtextextended` over PKs).\n- **Stream health:** monitor `pg_stat_replication` — `sent_lsn` vs `flush_lsn` vs `replay_lsn`, replay lag in bytes/time, and slot `restart_lsn` not advancing past `confirmed_flush_lsn`.\n- **Application validation:** point read-only traffic and smoke tests at the target continuously during the soak period (days to weeks), which is the real guarantee that cutover succeeds.\n\n## Step 4 — Cutover (the <5-minute write window)\n\n1. **Pre-freeze:** disable cron/ETL/backup jobs on source; drain long-lived transactions.\n2. **T+0 — freeze writes:** `ALTER SYSTEM SET default_transaction_read_only = on; SELECT pg_reload_conf();` (or stop the app write tier). Optionally `SET default_transaction_read_only = on` on connections via a connection pooler.\n3. **T+1 — catch up:** wait for replay lag to reach 0 and `replay_lsn` to equal the source's current LSN (physical) or for the subscription's `confirmed_flush_lsn` to pass the source's last commit (logical).\n4. **T+2 — promote/switch:** physical: `pg_ctl promote` / `pg_promote()`; logical: `ALTER SUBSCRIPTION ... DISABLE` on source and `ENABLE` on target (or repoint the application's publication writer). Sync sequences: `SELECT setval(...)` from source, or `pg_dump --data-only --table='*_seq'`; on PG 10+ use `ALTER SEQUENCE ... RESTART WITH`.\n5. **T+3 — repoint traffic:** flip the connection string/DNS/load balancer to target. Keep the pooler warm with both endpoints and a health-check gate so the flip is atomic from the app's perspective.\n6. **T+4 — verify writes:** confirm new commits land on target (`pg_current_wal_lsn()` advances; app health checks pass). Total: ~2–5 minutes. No long migration tasks remain in the window — everything heavy already happened in steps 2–3.\n\n## Step 5 — Rollback Plan (armed and rehearsed)\n\n- **Source stays up and read-only** through cutover, with its WAL and replication slot preserved — it is the rollback point.\n- **Pre-rehearsed rollback triggers** (practiced in staging in step 1):\n  - Validation failure or app errors after cutover → flip traffic back to source, re-enable writes, and stop the replica — seconds, no data loss.\n  - Data-divergence detected in step 3 → abort before cutover; the window never opens.\n- If rollback happens, resume replication in the reverse direction later (or re-seed) after the cause is fixed — never silently continue on a divergent target.\n- Soak period: keep the old source and a reverse replication path for 2–4 weeks before declaring migration complete.\n\n## Step 6 — Post-Migration Stabilization and Decommission\n\n- Run the step-3 validation suite against the live target again, then full `pg_checksums`/row-count parity on the settled copy; keep monitoring replay lag until the reverse slot is dropped.\n- Watch for performance drift: vacuum/analyze the target (`VACUUM (ANALYZE)` on large tables), rebuild or drop redundant indexes, re-check planner stats since they were copied cold.\n- Update runbooks, monitoring dashboards, and backup configuration (pgBackRest/WAL archiving now point at the target).\n- Decommission the source only after the soak window: revoke access, disable replication slots, take a final backup, then delete.\n\n**Why this hits <5 minutes:** steps 1–3 move all 2 TB of data, validation, and rehearsals out of the downtime window; the window itself only contains freeze, lag-zero wait, promote/switch, DNS flip, and write verification — all seconds-level operations.",
+          "proOutput": "## Six-Step Migration Plan: 2 TB PostgreSQL, <5 Min Write Downtime\n\n**Approach:** Logical replication keeps the target continuously in sync while the source serves traffic. Writes pause only for the final catch-up and switchover — everything else (the 2 TB copy, validation, rehearsal) happens with the source fully online.\n\n---\n\n### 1. Prepare target and seed the full copy\n- Provision the new server (same or newer major version), sized for 2 TB with matching `shared_buffers`, `work_mem`, and `max_wal_size` settings.\n- Seed the target without stopping the source:\n  - Create a replication slot on the source: `SELECT * FROM pg_create_logical_replication_slot('mig_slot', 'pgoutput');`\n  - Restore a physical base backup (`pg_basebackup -X stream`) **or** copy schema + data via `pg_dump --schema-only` plus parallel `COPY`/`pg_dump -Fd -j8` — the initial 2 TB sync is the longest step but requires zero downtime.\n- Pre-create indexes, constraints, and extensions on the target for faster load.\n\n### 2. Start continuous replication\n- Source: `CREATE PUBLICATION mig_pub FOR ALL TABLES;`\n- Target: `CREATE SUBSCRIPTION mig_sub CONNECTION '...' PUBLICATION mig_pub WITH (copy_data = false, create_slot = false, slot_name = 'mig_slot');`\n- Ensure the slot exists **before** the base backup so no WAL is missed.\n- Replicate sequences at cutover time (logical replication doesn't sync sequences automatically).\n\n### 3. Validate the target\n- Compare per-table row counts, and run checksum/aggregate comparisons (e.g., `md5` over column concatenations) between source and target.\n- Verify constraints: `pg_amcheck` or `REINDEX ... VERIFY`-style checks; confirm FK, unique, and check constraints are valid.\n- Run the application test suite and read-only replica queries against the target; check query plans and index usage.\n- Monitor lag to near zero: `SELECT * FROM pg_stat_subscription;` and LSN distance from the slot.\n\n### 4. Monitor lag and rehearse cutover\n- Keep the subscription caught up (seconds of lag) during business hours; add `synchronous_commit = remote_apply` only if you need zero-loss cutover, otherwise use async with a recorded final LSN.\n- Do a full dry run in staging: run the cutover runbook end-to-end, time it, and confirm it fits in the 5-minute window.\n- Prepare runbook artifacts: connection-string changes, DNS/load-balancer switch, pgbouncer pause commands, and rollback scripts.\n\n### 5. Cutover (the only downtime — seconds to ~2 minutes)\n1. Pause writes: `pgbouncer PAUSE` or app maintenance mode (reads can continue).\n2. Wait for lag to hit zero; record the final LSN (`pg_current_wal_lsn()` vs. replayed LSN).\n3. Sync sequences: `SELECT setval(...)` from source values.\n4. `ALTER SUBSCRIPTION mig_sub DISABLE;` then drop the subscription, or promote if using physical streaming.\n5. Repoint applications/DNS/load balancer to the new primary; `pgbouncer RESUME`.\n6. Confirm new writes land on the target.\n\n### 6. Validate in production, then roll back or decommission\n- **Validate:** Smoke tests, key business transactions, replication-independent health checks on the new primary; monitor error rates and latency for a soak window.\n- **Rollback path (ready before cutover):** keep the old server intact and paused, or better, run the old primary as a standby replicating *back* from the new primary. If problems appear within the rollback window, fail back — apps point at the old server and it has every transaction from the interim.\n- After the agreed soak period (e.g., 24–48 hours) with clean telemetry, freeze the rollback path and decommission the old server; drop the replication slot.\n\n---\n\n**Why this meets <5 minutes:** the 2 TB copy, ongoing sync, and all validation happen while the source serves writes. Downtime equals only the final catch-up wait plus the switch — typically under a minute, comfortably inside the 5-minute budget. The two biggest risks to guard against are sequence misalignment (sync explicitly) and forgetting to drop the slot (WAL buildup on the source)."
+        },
+        {
+          "taskId": "plan-api/2",
+          "distance": 3.8475326433213315,
+          "prompt": "Plan a backward-compatible migration from API v1 to v2 in exactly five numbered steps. Include observability, dual support, client migration, and retirement criteria.",
+          "features": {
+            "featureVersion": 1,
+            "complexity": {
+              "explicitReasoningRequests": 0,
+              "mathMarkers": 0,
+              "architectureMarkers": 2,
+              "codeBlocks": 0,
+              "lengthBands": 0,
+              "complexityScore": 2,
+              "promptLength": 166
+            },
+            "structural": {
+              "estimatedInputTokens": 42,
+              "messageCount": 1,
+              "toolSchemaCount": 0,
+              "attachedFileCount": 0,
+              "codeBlockCount": 0,
+              "structuredDataSize": 3,
+              "requestsStructuredOutput": true,
+              "jsonTransformationIndicator": false,
+              "multiFileIndicator": false,
+              "toolRequirementIndicator": false,
+              "verificationCriterionCount": 5
+            },
+            "categorical": {
+              "taskType": "planning",
+              "expectsProAdvantage": false
+            },
+            "historical": {
+              "flashSuccessRateByTaskType": 0.6666666666666666,
+              "proSuccessRateByTaskType": 1,
+              "flashToProRescueRate": 0.3333333333333333,
+              "recentFlashFailureRate": 0.1,
+              "historicalCostDifference": 0.0019401592666666665,
+              "historicalSampleCount": 3
+            }
+          },
+          "flashOutput": "# API v1 → v2 Migration Plan\n\nContext: the gateway serves Remote methods as `POST /api/<namespace>/<method>` via the Connection RPC carrier, with generated Host/Client contracts. This plan assumes v2 introduces breaking changes to payloads, descriptors, or error semantics. (Note: this repo is pre-release with no external consumers — `AGENTS.md` prefers breaking freely; apply this plan only if you actually have v1 consumers to protect.)\n\n1. **Baseline v1 and instrument version routing.** Add a `v1`/`v2` route discriminator (`/api/v2/<namespace>/<method>`; keep `/api/<namespace>/<method>` as v1). Emit per-version metrics at the gateway (requests, latency, error rate by namespace/method, 4xx vs 5xx), log a `api_version` field on every request, and alert on v1 error-rate or latency regressions before any v2 traffic exists. Record the v1 contract in a snapshot test suite (request/response pairs) so parity is machine-checkable.\n\n2. **Ship v2 alongside v1 (dual support) with a compatibility adapter.** Deploy both versions behind the same Connection, sharing auth, cancellation, and envelopes. Where v2 changed wire semantics, implement a v2→v1 adapter on the server side for the transition window so both versions call the same backend logic. Gate: both versions pass the v1 snapshot suite plus new v2 snapshots; v1 behavior is byte-identical to pre-migration.\n\n3. **Migrate clients gradually, driving traffic by explicit opt-in.** Publish the v2 TypeScript client (`dsh-client-connection` carrier unchanged; only Remote descriptors change). Roll out in waves (per-client or percentage via a config flag, not implicit sniffing): each client moves only when its v2 test suite and canaries pass, with a documented fallback to v1. Add a dashboard comparing v1 vs v2 latency/error rate per method; a v2 error-rate or p99 regression above v1's baseline for 7 days pauses the wave.\n\n4. **Freeze v1: deprecation window with hard gates.** Announce v1 deprecation; v1 accepts traffic but receives no new features or bugfixes beyond security. Track remaining v1 callers per client identity in the metrics added in step 1. Enforce a cutoff date plus a traffic threshold — e.g., v1 under 1% of requests for 30 consecutive days — before any removal is scheduled.\n\n5. **Retire v1.** Remove the v1 route and adapter once retirement criteria are met: (a) zero v1 traffic for 30 consecutive days, (b) all known clients confirmed on v2, (c) all alerting/dashboards re-pointed at v2-only metrics, (d) the v1 snapshot suite removed or frozen in git history. Delete the v1 route mapping so unversioned `/api/...` calls fail loudly (`404` with a `version-removed` error), never silently default to v2.\n\n**Retirement criteria summary:** v1 traffic < 1% for 30 days → zero v1 traffic for 30 days, all clients migrated, observability re-based, then hard removal.",
+          "proOutput": "1. **Instrument both versions before changing anything.** Tag every request with its API version in metrics, traces, and logs (e.g., `api_version` label on traffic volume, error rate, and p99 latency per endpoint). Add alerts on v1/v2 traffic share and on any v2 error rate exceeding v1's baseline. This gives you the observability needed to drive — and justify — every later step.\n\n2. **Ship v2 beside a frozen v1 (dual support).** Freeze v1 as a stable, contract-tested surface (`/v1` path, version header, or content negotiation) and serve both from one backend through a compatibility adapter that translates between the two contracts. Add CI contract tests that pin v1 response fields and fail on any drift, so v1 keeps working untouched while v2 evolves.\n\n3. **Migrate clients in cohorts, not all at once.** Publish the v2 spec, SDK, and a migration guide; let clients opt in via header or config flag. Move internal clients first as canaries, then partners, tracking per-client version and error rate. Roll a client back to v1 immediately if its v2 error rate diverges from the v1 baseline.\n\n4. **Signal the sunset and verify parity.** Announce a v1 deprecation date with `Deprecation`/`Sunset` response headers and changelog entries. Offer shadow traffic or dual-read mode so clients can validate v2 responses against v1 before cutover, and watch v1 traffic decline against a forecast — the trend, not the calendar, gates the next step.\n\n5. **Retire v1 only against pre-agreed, measured criteria.** Retire when all are met for a defined window (e.g., 30 days): v1 traffic below a threshold (say 5%), zero remaining critical clients on v1, v2 error rate ≤ v1's for the same endpoints, and any break-glass exceptions documented. Then run a deprecation sequence — warning period, then 410 Gone — and keep the per-version telemetry live afterward to catch stragglers before fully deleting the v1 code path."
+        }
+      ]
+    }
+  ]
+}

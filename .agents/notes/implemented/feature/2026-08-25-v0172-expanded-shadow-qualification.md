@@ -37,6 +37,8 @@ The complete dataset contains six Pro-necessary examples, four Flash-better exam
 | Heuristic router | 85.0% | $0.000895 | 0% | 0% | 0% |
 | Learned router | 85.0% | $0.000895 | 0% | 0% | 0% |
 
+The dollar values in this frozen record use the historical flat pricing snapshot. The [v0.17.3 forensic and reactive study](2026-08-25-v0173-forensic-features-and-reactive-escalation.md) preserves these artifacts and reprices their token buckets under the effective peak/off-peak schedule.
+
 The validation sweep contains no nonnegative threshold that preserves heuristic verified success and reaches 90% ProNecessity recall. The fallback threshold is `0.2`, which minimizes cost among equally successful validation policies but selects no Pro examples. On held-out test data it reproduces Flash-only behavior and misses both Pro-necessary examples.
 
 The held-out verified-success intervals remain wide: Flash/heuristic/learned 95% Wilson interval is 64.0-94.8%, while Pro-only is 69.9-97.2%. ProNecessity recall has only two held-out positives; even perfect recall would have a 34.2-100.0% interval. Point estimates cannot satisfy the promotion requirement.

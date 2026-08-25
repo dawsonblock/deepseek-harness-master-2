@@ -35,7 +35,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { calculateCost, lookupPricing, DEFAULT_PRICING_REGISTRY } from '@deepseek-ai/dsh-token-meter'
+import { calculateCost, lookupPricingAt, DEFAULT_PRICING_REGISTRY } from '@deepseek-ai/dsh-token-meter'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
@@ -486,7 +486,7 @@ async function runBenchmarkIteration(
       ? (extracted.selectedModel === 'deepseek-v4-pro' ? 'deepseek-v4-pro' : 'deepseek-v4-flash')
       : model
 
-    const pricing = lookupPricing(DEFAULT_PRICING_REGISTRY, 'deepseek-official', actualModel)
+    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', actualModel, new Date(start))
     let costUsd = 0
     let pricingVersion = 'N/A'
     if (pricing !== undefined) {

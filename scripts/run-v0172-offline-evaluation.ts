@@ -32,6 +32,7 @@ const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const DATA_PATH = join(REPO_ROOT, 'artifacts', 'reports', 'v0.17.2-expanded-benchmark.json')
 const JSON_PATH = join(REPO_ROOT, 'artifacts', 'reports', 'v0.17.2-offline-evaluation.json')
 const MARKDOWN_PATH = join(REPO_ROOT, 'artifacts', 'reports', 'v0.17.2-offline-evaluation.md')
+const DATASET_ID = 'paired-v4-100-v1'
 
 interface BenchmarkRun {
   taskId: string
@@ -485,6 +486,7 @@ async function main(): Promise<void> {
     generatedAt: new Date().toISOString(),
     source: 'v0.17.2-expanded-benchmark.json',
     dataset: {
+      id: DATASET_ID,
       examples: base.length,
       taskClasses: designs.size,
       proNecessary: base.filter(example => !example.flashPassed && example.proPassed).length,
@@ -503,6 +505,12 @@ async function main(): Promise<void> {
       trainingExamples: model.trainingSize,
       selectedThreshold: selection.threshold,
       validationConstraintsMet: selection.constraintsMet,
+      standardization: { means: model.means, stds: model.stds },
+      coefficients: {
+        flashPass: model.flashModel,
+        proPass: model.proModel,
+        costDelta: model.costDeltaModel,
+      },
     },
     validation: { baseline: selection.baseline, sweep: selection.sweep },
     testResults,

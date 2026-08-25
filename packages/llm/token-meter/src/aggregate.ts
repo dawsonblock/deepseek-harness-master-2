@@ -11,11 +11,13 @@
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ModelPricing } from './pricing.ts'
-import { calculateCost, lookupPricing } from './pricing.ts'
+import { calculateCost, lookupPricingAt } from './pricing.ts'
 
 /** One `model/usage` event projected to its accounting-relevant fields. */
 export interface ModelUsageRecord {
   sessionId: string
+  /** Provider billing instant from the durable event envelope. */
+  time: number
   turn: number
   step: number
   attempt: number
@@ -74,6 +76,7 @@ export function extractUsageRecords(events: readonly SessionEvent[], sessionId: 
       const data = event.data
       records.push({
         sessionId,
+        time: event.time,
         turn: data.turn,
         step: data.step,
         attempt: data.attempt,
@@ -99,7 +102,7 @@ function accumulate(totals: UsageTotals, record: ModelUsageRecord, pricingRegist
   totals.reasoningTokens += usage.reasoningTokens ?? 0
   totals.totalTokens += usage.totalTokens ?? 0
   if (pricingRegistry !== undefined) {
-    const pricing = lookupPricing(pricingRegistry, record.provider, record.model)
+    const pricing = lookupPricingAt(pricingRegistry, record.provider, record.model, new Date(record.time))
     if (pricing !== undefined) {
       const cost = calculateCost(usage, pricing)
       totals.costUsd += cost.amount
@@ -155,7 +158,10 @@ export function usageByModel(records: readonly ModelUsageRecord[], pricingRegist
 }
 
 /** Aggregate usage records by routing decision id. */
-export function usageByRoutingDecision(records: readonly ModelUsageRecord[], pricingRegistry?: readonly ModelPricing[]): Map<string, UsageTotals> {
+export function usageByRoutingDecision(
+  records: readonly ModelUsageRecord[],
+  pricingRegistry?: readonly ModelPricing[],
+): Map<string, UsageTotals> {
   const byDecision = new Map<string, UsageTotals>()
   for (const record of records) {
     if (record.routingDecisionId === undefined) continue
@@ -182,7 +188,10 @@ export interface RoutingDecisionAccounting {
 }
 
 /** Aggregate usage records by routing decision with model list. */
-export function routingDecisionAccounting(records: readonly ModelUsageRecord[], pricingRegistry?: readonly ModelPricing[]): Map<string, RoutingDecisionAccounting> {
+export function routingDecisionAccounting(
+  records: readonly ModelUsageRecord[],
+  pricingRegistry?: readonly ModelPricing[],
+): Map<string, RoutingDecisionAccounting> {
   const byDecision = new Map<string, { models: Set<string>; totals: UsageTotals }>()
   for (const record of records) {
     if (record.routingDecisionId === undefined) continue

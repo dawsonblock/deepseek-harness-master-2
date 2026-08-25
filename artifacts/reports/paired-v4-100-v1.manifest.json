@@ -1,0 +1,123 @@
+{
+  "datasetId": "paired-v4-100-v1",
+  "status": "frozen-negative-baseline",
+  "baselineSourceCommit": "81a200dd2eb2fa46a7c2e59d5a2eae626e310348",
+  "artifacts": {
+    "pairedData": {
+      "path": "artifacts/reports/v0.17.2-expanded-benchmark.json",
+      "sha256": "bf63290b4b9a41a1921c14b29ff3f36759852e3aa955c4697701938ccc9c23b8"
+    },
+    "evaluation": {
+      "path": "artifacts/reports/v0.17.2-offline-evaluation.json",
+      "sha256": "f97f635bebad2a95288d1adc03a899c6a250a8bfada09ccedc38453629b0f0a2"
+    },
+    "report": {
+      "path": "artifacts/reports/v0.17.2-offline-evaluation.md",
+      "sha256": "de3508f87849a50b9a5ed37113f16b492c9e1ec78871013410556f03251053d3"
+    }
+  },
+  "counts": {
+    "taskClasses": 50,
+    "pairedExamples": 100,
+    "providerCalls": 200,
+    "providerErrors": 0,
+    "proNecessary": 6,
+    "bothPassProMoreExpensive": 86,
+    "flashBetter": 4,
+    "bothFail": 3,
+    "proBetter": 1
+  },
+  "partitions": {
+    "train": [
+      "arithmetic-percent",
+      "binary-conversion",
+      "capital-canada",
+      "code-chunk",
+      "code-dedupe",
+      "code-flatten",
+      "code-group",
+      "constraints-email",
+      "constraints-json",
+      "constraints-order",
+      "constraints-release",
+      "csv-people-json",
+      "csv-products-json",
+      "debug-async-map",
+      "debug-binary-search",
+      "debug-race",
+      "debug-reduce",
+      "json-filter",
+      "json-group",
+      "kv-json",
+      "log-json",
+      "long-design",
+      "plan-api",
+      "synthesis-cache",
+      "synthesis-consistency",
+      "synthesis-gc",
+      "synthesis-index",
+      "verify-auth",
+      "verify-cache-key",
+      "verify-pagination"
+    ],
+    "validation": [
+      "chemical-symbol",
+      "code-retry",
+      "constraints-summary",
+      "debug-sort",
+      "long-incident",
+      "plan-incident",
+      "synthesis-oauth",
+      "table-json",
+      "verify-rate-limit",
+      "xml-json"
+    ],
+    "test": [
+      "code-slugify",
+      "constraints-table",
+      "date-fact",
+      "debug-timeout",
+      "long-policy",
+      "plan-migration",
+      "synthesis-tcp-udp",
+      "verify-toposort",
+      "yaml-nested-json",
+      "yaml-service-json"
+    ]
+  },
+  "model": {
+    "featureVersion": 1,
+    "modelVersion": 2,
+    "type": "two-logistic-one-linear",
+    "selectedThreshold": 0.2,
+    "validationConstraintsMet": false,
+    "coefficientsAndStandardization": "artifacts/reports/v0.17.2-offline-evaluation.json#/model"
+  },
+  "heldOutMetrics": {
+    "flashOnly": {
+      "verifiedRate": 0.85,
+      "costPerVerifiedTask": 0.000895,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0
+    },
+    "proOnly": {
+      "verifiedRate": 0.9,
+      "costPerVerifiedTask": 0.002329,
+      "proNecessityRecall": 1,
+      "proWasteRate": 0.8
+    },
+    "heuristicRouter": {
+      "verifiedRate": 0.85,
+      "costPerVerifiedTask": 0.000895,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0
+    },
+    "learnedRouter": {
+      "verifiedRate": 0.85,
+      "costPerVerifiedTask": 0.000895,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0
+    }
+  },
+  "promotionDecision": "No learned routing policy qualified for production authority. Learned routing remains shadow-only."
+}

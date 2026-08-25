@@ -17,7 +17,7 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ModelPricing } from './pricing.ts'
 import type { ContextWorkloadFeatures } from './context-estimate.ts'
-import { calculateCost, lookupPricing } from './pricing.ts'
+import { calculateCost, lookupPricingAt } from './pricing.ts'
 import { extractUsageRecords } from './aggregate.ts'
 
 /** Structural event shape: token-meter does not depend on dsh-goal or
@@ -405,7 +405,7 @@ export function deriveRoutingOutcomes(
       outputTokens += record.usage.outputTokens
       reasoningTokens += record.usage.reasoningTokens ?? 0
       if (pricingRegistry !== undefined) {
-        const pricing = lookupPricing(pricingRegistry, record.provider, record.model)
+        const pricing = lookupPricingAt(pricingRegistry, record.provider, record.model, new Date(record.time))
         if (pricing !== undefined) {
           const cost = calculateCost(record.usage, pricing)
           costUsd += cost.amount
@@ -559,7 +559,7 @@ export function deriveWorkloadFeatures(
       const data = se.data as { usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number } }
       if (data.usage?.totalTokens !== undefined) {
         conversationTokens = data.usage.totalTokens
-      } else if (data.usage?.inputTokens !== undefined && data.usage?.outputTokens !== undefined) {
+      } else if (data.usage?.inputTokens !== undefined && data.usage.outputTokens !== undefined) {
         conversationTokens += data.usage.inputTokens + data.usage.outputTokens
       }
     } else if (se.type === 'model/usage') {

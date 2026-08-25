@@ -43,6 +43,12 @@ This is deliberate. An occupancy percentage is a user-facing reference figure, n
 
 The [Agent Note](../../../.agents/notes/implemented/architecture/2026-07-29-projected-token-usage-and-request-context.md) records the rejected atomic-pair comparison. Consumers that need an exact same-boundary figure should call `measure()` at their own request boundary rather than read this projection.
 
+## Cost accounting
+
+`lookupPricingAt()` resolves each durable `model/usage` event from its envelope timestamp. The default registry retains the historical flat V4 schedule before 2026-08-16 16:00 UTC and applies the current peak/off-peak schedule afterward. Peak windows are 01:00-04:00 and 06:00-10:00 UTC; all other minutes are off-peak. `lookupPricing()` accepts only static registries and rejects a provider/model with multiple scheduled entries.
+
+Current V4 Flash rates per million cache-hit input, cache-miss input, and output tokens are `$0.014/$0.44/$1.32` peak and `$0.007/$0.22/$0.66` off-peak. V4 Pro rates are `$0.044/$1.32/$3.96` peak and `$0.022/$0.66/$1.98` off-peak. The pricing version recorded with each derived cost identifies the selected band.
+
 ## Composition
 
 ```yaml
