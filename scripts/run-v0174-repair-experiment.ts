@@ -35,10 +35,14 @@ import {
   type TaskTrajectory,
   type VerificationEvidence,
   type WorkspaceVerificationResult,
+  ALL_POLICIES,
   computeFailureFingerprint,
   computePolicyMetrics,
+  computeRepairAdvantage,
+  constructEvidenceOnlyPrompt,
   constructFailurePackage,
   constructProRepairPrompt,
+  constructWorkspaceOnlyPrompt,
   parseTakeoverDecision,
 } from './v0174-repair-core.ts'
 
@@ -785,6 +789,7 @@ async function executePolicy(
       verified: verification.passed,
       costUsd: result.costUsd,
       latencyMs: result.latencyMs,
+      changedFiles,
       usage: {
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
@@ -824,16 +829,24 @@ async function executePolicy(
     const stage = await runStage('pro', fixture.task, workspace, initialFiles)
     stages.push(stage)
   } else if (policy === 'flash-fail-pro-fresh') {
+    // Policy C: Flash fail → rollback to task-start → Pro fresh start (no evidence)
+    // Pro gets the same original task, same model, same settings — only difference
+    // from Policy D is: clean workspace and no FailurePackage.
     const { workspace: flashWs, initialFiles: flashInitial } = await createWorkspace('flash')
     const flashStage = await runStage('flash', fixture.task, flashWs, flashInitial)
     stages.push(flashStage)
     if (!flashStage.verified) {
       escalated = true
+      // Fresh workspace: rollback to task-start state
       const { workspace: proWs, initialFiles: proInitial } = await createWorkspace('pro-fresh')
+      // Pro gets only the original task — no failure evidence
       const proStage = await runStage('pro', fixture.task, proWs, proInitial)
       stages.push(proStage)
     }
   } else if (policy === 'flash-fail-pro-repair') {
+    // Policy D: Flash fail → preserve Flash workspace → Pro repair with FailurePackage
+    // Pro gets the same original task, same model, same settings — only difference
+    // from Policy C is: Flash's changed workspace state and the FailurePackage.
     const { workspace: flashWs, initialFiles: flashInitial } = await createWorkspace('flash')
     const flashStage = await runStage('flash', fixture.task, flashWs, flashInitial)
     stages.push(flashStage)
@@ -842,14 +855,17 @@ async function executePolicy(
       if (failurePackage === undefined) throw new Error(`Missing failure package for ${taskId}`)
       // Pro receives the FailurePackage and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO
       const repairPrompt = constructProRepairPrompt(failurePackage)
-      // For REPAIR_EXISTING: use the same workspace; for ROLLBACK_AND_REDO: fresh workspace
-      // Pro makes the choice, but we need to set up the workspace based on the choice.
-      // Strategy: run Pro in the Flash workspace (it can choose to wipe files if it decides ROLLBACK)
+      // Pro runs in the Flash workspace (it can choose to wipe files if it decides ROLLBACK)
       const proStage = await runStage('pro', repairPrompt, flashWs, flashInitial, flashStage.verificationEvidence)
       const decision = parseTakeoverDecision(proStage.output)
-      stages.push({ ...proStage, takeoverDecision: decision })
+      // Detect whether Pro actually rolled back: compare files after Pro to initial state
+      const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
+      const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
+        || (proChangedFiles.length > 0 && proChangedFiles.every(file => flashStage.changedFiles?.includes(file) === false))
+      stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred, changedFiles: proChangedFiles })
     }
   } else if (policy === 'flash-repair-then-pro') {
+    // Policy E: Flash fail → one evidence-conditioned Flash repair → Pro takeover if still failing
     const { workspace: flashWs, initialFiles: flashInitial } = await createWorkspace('flash')
     const flashStage = await runStage('flash', fixture.task, flashWs, flashInitial)
     stages.push(flashStage)
@@ -869,8 +885,42 @@ async function executePolicy(
         const proPrompt = constructProRepairPrompt(failurePackage)
         const proStage = await runStage('pro', proPrompt, flashWs, flashInitial, flashRepairStage.verificationEvidence)
         const decision = parseTakeoverDecision(proStage.output)
-        stages.push({ ...proStage, takeoverDecision: decision })
+        const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
+        const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
+        stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred, changedFiles: proChangedFiles })
       }
+    }
+  } else if (policy === 'flash-fail-pro-workspace-only') {
+    // Ablation D1: Pro gets Flash's failed workspace but no structured FailurePackage.
+    // Isolates the workspace benefit (partial implementation) from evidence benefit.
+    const { workspace: flashWs, initialFiles: flashInitial } = await createWorkspace('flash')
+    const flashStage = await runStage('flash', fixture.task, flashWs, flashInitial)
+    stages.push(flashStage)
+    if (!flashStage.verified) {
+      escalated = true
+      // Pro gets the workspace but no failure evidence — must inspect and verify itself
+      const workspacePrompt = constructWorkspaceOnlyPrompt(fixture.task)
+      const proStage = await runStage('pro', workspacePrompt, flashWs, flashInitial, flashStage.verificationEvidence)
+      const decision = parseTakeoverDecision(proStage.output)
+      const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
+      const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
+      stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred, changedFiles: proChangedFiles })
+    }
+  } else if (policy === 'flash-fail-pro-evidence-only') {
+    // Ablation D2: Pro gets a clean workspace (no Flash code) but receives the
+    // full FailurePackage as text. Isolates the evidence benefit from workspace benefit.
+    const { workspace: flashWs, initialFiles: flashInitial } = await createWorkspace('flash')
+    const flashStage = await runStage('flash', fixture.task, flashWs, flashInitial)
+    stages.push(flashStage)
+    if (!flashStage.verified) {
+      escalated = true
+      if (failurePackage === undefined) throw new Error(`Missing failure package for ${taskId}`)
+      // Clean workspace: Flash's code is gone, but Pro gets the failure evidence
+      const { workspace: proWs, initialFiles: proInitial } = await createWorkspace('pro-evidence-only')
+      const evidencePrompt = constructEvidenceOnlyPrompt(failurePackage)
+      const proStage = await runStage('pro', evidencePrompt, proWs, proInitial, flashStage.verificationEvidence)
+      const decision = parseTakeoverDecision(proStage.output)
+      stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred: false })
     }
   }
 
@@ -922,13 +972,19 @@ async function saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function metricsRow(metrics: PolicyMetrics): string {
-  return `| ${metrics.policy} | ${(metrics.verifiedRate * 100).toFixed(1)}% | $${metrics.costPerVerifiedTask.toFixed(6)} | $${metrics.totalCost.toFixed(6)} | ${(metrics.escalationRate * 100).toFixed(1)}% | ${(metrics.proUtilization * 100).toFixed(1)}% | ${(metrics.proRescueRate * 100).toFixed(1)}% | $${metrics.escalationCostEfficiency.toFixed(6)} | ${metrics.auditableEscalations}/${metrics.escalations} | ${metrics.sameFailureDetections} | ${metrics.loopViolations} | ${metrics.repairExistingChoices} | ${metrics.rollbackRedoChoices} | ${metrics.medianLatencyMs.toFixed(0)}ms | ${metrics.p90LatencyMs.toFixed(0)}ms |`
+  return `| ${metrics.policy} | ${(metrics.verifiedRate * 100).toFixed(1)}% | $${metrics.costPerVerifiedTask.toFixed(6)} | $${metrics.totalCost.toFixed(6)} | ${(metrics.escalationRate * 100).toFixed(1)}% | ${(metrics.proUtilization * 100).toFixed(1)}% | ${(metrics.proRescueRate * 100).toFixed(1)}% | $${metrics.escalationCostEfficiency.toFixed(6)} | ${metrics.auditableEscalations}/${metrics.escalations} | ${metrics.sameFailureDetections} | ${metrics.loopViolations} | ${metrics.repairExistingChoices} | ${metrics.rollbackRedoChoices} | ${(metrics.rollbackRate * 100).toFixed(1)}% | ${metrics.medianLatencyMs.toFixed(0)}ms | ${metrics.p90LatencyMs.toFixed(0)}ms |`
 }
 
 async function generateReport(
   allMetrics: Record<PolicyName, PolicyMetrics>,
   _trajectories: Record<PolicyName, TaskTrajectory[]>,
 ): Promise<void> {
+  const repairMetrics = allMetrics['flash-fail-pro-repair']
+  const freshMetrics = allMetrics['flash-fail-pro-fresh']
+  const repairAdvantage = computeRepairAdvantage(repairMetrics, freshMetrics)
+  const workspaceOnlyMetrics = allMetrics['flash-fail-pro-workspace-only']
+  const evidenceOnlyMetrics = allMetrics['flash-fail-pro-evidence-only']
+
   const output = {
     release: 'v0.17.4',
     experimentType: 'real-flash-failure-pro-repair-trajectory',
@@ -942,11 +998,19 @@ async function generateReport(
     policies: {
       'flash-only': 'Flash only; verify; done',
       'pro-only': 'Pro only; verify; done',
-      'flash-fail-pro-fresh': 'Flash; if fail, Pro from scratch without failure evidence',
-      'flash-fail-pro-repair': 'Flash; if fail, construct FailurePackage; Pro receives evidence and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO',
+      'flash-fail-pro-fresh': 'Flash; if fail, rollback to task-start; Pro fresh start (no evidence)',
+      'flash-fail-pro-repair': 'Flash; if fail, preserve workspace; Pro receives FailurePackage and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO',
       'flash-repair-then-pro': 'Flash; if fail, one evidence-conditioned Flash repair; if still fail, Pro takeover with evidence',
+      'flash-fail-pro-workspace-only': 'Ablation D1: Flash; if fail, Pro gets workspace but no structured evidence',
+      'flash-fail-pro-evidence-only': 'Ablation D2: Flash; if fail, Pro gets clean workspace + FailurePackage',
     },
     metrics: allMetrics,
+    repairAdvantage,
+    ablationComparison: {
+      workspaceOnly: workspaceOnlyMetrics,
+      evidenceOnly: evidenceOnlyMetrics,
+      workspacePlusEvidence: repairMetrics,
+    },
     nonAuthoritative: true,
     promotionGate: {
       verifiedSuccessWithinRange: 'Flash→Pro repair within ~1-2 percentage points of Pro-only, or better',
@@ -957,6 +1021,8 @@ async function generateReport(
       noInfiniteLoops: 'No task can loop indefinitely',
       auditableEvidence: 'Every escalation has auditable failure evidence',
       independentVerification: 'Every final result receives independent verification',
+      repairVsFreshNonInferior: 'Policy D verified success non-inferior to Policy C',
+      repairVsFreshCheaper: 'Policy D cost per verified task lower than Policy C',
     },
   }
   await writeFile(JSON_PATH, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
@@ -972,14 +1038,16 @@ async function generateReport(
     '|---|---|',
     '| flash-only | Flash only; verify; done |',
     '| pro-only | Pro only; verify; done |',
-    '| flash-fail-pro-fresh | Flash; if fail, Pro from scratch without failure evidence |',
-    '| flash-fail-pro-repair | Flash; if fail, construct FailurePackage; Pro receives evidence and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO |',
+    '| flash-fail-pro-fresh | Flash; if fail, rollback to task-start; Pro fresh start (no evidence) |',
+    '| flash-fail-pro-repair | Flash; if fail, preserve workspace; Pro receives FailurePackage and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO |',
     '| flash-repair-then-pro | Flash; if fail, one evidence-conditioned Flash repair; if still fail, Pro takeover with evidence |',
+    '| flash-fail-pro-workspace-only | Ablation D1: Pro gets workspace but no structured evidence |',
+    '| flash-fail-pro-evidence-only | Ablation D2: Pro gets clean workspace + FailurePackage |',
     '',
     '## Results',
     '',
-    '| Policy | Verified | Cost/verified | Total cost | Escalation | Pro util | Pro rescue rate | Escalation cost/rescue | Auditable | Same-fail detect | Loop violations | REPAIR choices | ROLLBACK choices | Median latency | p90 latency |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    '| Policy | Verified | Cost/verified | Total cost | Escalation | Pro util | Pro rescue rate | Escalation cost/rescue | Auditable | Same-fail detect | Loop violations | REPAIR choices | ROLLBACK choices | Rollback rate | Median latency | p90 latency |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
     ...(Object.values(allMetrics).map(metricsRow)),
     '',
     '## Key metrics',
@@ -987,18 +1055,36 @@ async function generateReport(
     '- **Pro Rescue Rate** = failed Flash tasks subsequently verified by Pro / tasks escalated to Pro',
     '- **Escalation Cost Efficiency** = total escalation cost / successful Pro rescues',
     '- **Auditable** = escalations with a constructed FailurePackage / total escalations',
-    '- **Same-failure detection** = tasks where repeated Flash failures shared the same fingerprint',
+    '- **Same-failure detection** = tasks where repeated Flash failures shared the same fingerprint or high semantic overlap',
     '- **Loop violations** = tasks exceeding bounded stage limits (must be 0)',
+    '- **Rollback rate** = Pro stages where Pro actually rolled back Flash\'s files / escalations',
+    '',
+    '## Repair Advantage: Policy D vs Policy C',
+    '',
+    '| Metric | Value |',
+    '|---|---:|',
+    `| Verified success advantage | ${(repairAdvantage.verifiedSuccessAdvantage * 100).toFixed(1)}% |`,
+    `| Economic advantage (CPT fresh - CPT repair) | $${repairAdvantage.economicAdvantage.toFixed(6)} |`,
+    `| Rescue rate advantage | ${(repairAdvantage.rescueRateAdvantage * 100).toFixed(1)}% |`,
+    `| Comparable tasks (escalated under both) | ${repairAdvantage.comparableTasks} |`,
+    '',
+    'Positive values mean Policy D (Pro repair with evidence) outperforms Policy C (Pro fresh start).',
+    '',
+    '## Ablation: workspace benefit vs evidence benefit',
+    '',
+    '| Ablation | Workspace | Evidence | Verified | Cost/verified | Pro rescue rate |',
+    '|---|---|---|---:|---:|---:|',
+    `| D1: workspace only | yes | no | ${(workspaceOnlyMetrics.verifiedRate * 100).toFixed(1)}% | $${workspaceOnlyMetrics.costPerVerifiedTask.toFixed(6)} | ${(workspaceOnlyMetrics.proRescueRate * 100).toFixed(1)}% |`,
+    `| D2: evidence only | no | yes | ${(evidenceOnlyMetrics.verifiedRate * 100).toFixed(1)}% | $${evidenceOnlyMetrics.costPerVerifiedTask.toFixed(6)} | ${(evidenceOnlyMetrics.proRescueRate * 100).toFixed(1)}% |`,
+    `| D3: workspace + evidence | yes | yes | ${(repairMetrics.verifiedRate * 100).toFixed(1)}% | $${repairMetrics.costPerVerifiedTask.toFixed(6)} | ${(repairMetrics.proRescueRate * 100).toFixed(1)}% |`,
+    '',
+    'D1 isolates the workspace benefit (partial implementation). D2 isolates the evidence benefit (diagnostic information). D3 combines both. If D3 > D1 and D3 > D2, both benefits contribute.',
     '',
     '## Non-authoritative status',
     '',
     'v0.17.4 is a research experiment. It does not change runtime routing authority. The deterministic ordering remains: manual selection → durable authority → hard policy constraints → context/provider availability → authoritative heuristic router.',
     '',
-    'Promotion to v0.18 requires: Flash→Pro repair within ~1-2 percentage points of Pro-only verified success or better, at least ~40% lower cost per verified task, Pro utilization below ~20-25%, high rescue efficiency, same-failure detection preventing useless retries, no infinite loops, every escalation having auditable failure evidence, and every final result receiving independent verification.',
-    '',
-    '## Key comparison: Policy D vs Policy C',
-    '',
-    'Policy D (Pro repair with failure evidence) is the primary result. If D outperforms C (Pro fresh start without evidence), failure evidence helps Pro take over failed Flash tasks. The difference isolates the value of the FailurePackage.',
+    'Promotion to v0.18 requires: Flash→Pro repair within ~1-2 percentage points of Pro-only verified success or better, at least ~40% lower cost per verified task, Pro utilization below ~20-25%, high rescue efficiency, same-failure detection preventing useless retries, no infinite loops, every escalation having auditable failure evidence, every final result receiving independent verification, Policy D verified success non-inferior to Policy C, and Policy D cost per verified task lower than Policy C.',
   ]
   await writeFile(REPORT_PATH, `${lines.join('\n')}\n`, 'utf8')
   process.stdout.write(`Wrote ${JSON_PATH} and ${REPORT_PATH}\n`)
@@ -1017,15 +1103,12 @@ async function main(): Promise<void> {
   }
 
   const workRoot = await mkdtemp(join(tmpdir(), 'v0174-repair-'))
-  const policies: PolicyName[] = ['flash-only', 'pro-only', 'flash-fail-pro-fresh', 'flash-fail-pro-repair', 'flash-repair-then-pro']
+  const policies = ALL_POLICIES
   const checkpoint = await loadCheckpoint()
   const completedTasks = new Set(checkpoint?.trajectories.map(entry => `${entry.policy}/${entry.taskId}`) ?? [])
-  const allTrajectories: Record<PolicyName, TaskTrajectory[]> = {
-    'flash-only': [],
-    'pro-only': [],
-    'flash-fail-pro-fresh': [],
-    'flash-fail-pro-repair': [],
-    'flash-repair-then-pro': [],
+  const allTrajectories = {} as Record<PolicyName, TaskTrajectory[]>
+  for (const policy of policies) {
+    allTrajectories[policy] = []
   }
 
   // Restore checkpoint

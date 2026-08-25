@@ -62,6 +62,10 @@ export interface StageAttempt {
   readonly failureFingerprint?: string
   readonly verificationEvidence?: VerificationEvidence
   readonly takeoverDecision?: TakeoverDecision
+  /** Whether Pro actually rolled back Flash's files (deleted/overwrote them). */
+  readonly rollbackOccurred?: boolean
+  /** Files changed by this stage's agent. */
+  readonly changedFiles?: readonly string[]
   readonly costUsd: number
   readonly latencyMs: number
   readonly usage: {
@@ -82,13 +86,33 @@ export interface TaskTrajectory {
   readonly failurePackage?: FailurePackage
 }
 
-/** The five policies evaluated in v0.17.4. */
+/** The policies evaluated in v0.17.4: five primary plus three ablation. */
 export type PolicyName =
   | 'flash-only'
   | 'pro-only'
   | 'flash-fail-pro-fresh'
   | 'flash-fail-pro-repair'
   | 'flash-repair-then-pro'
+  | 'flash-fail-pro-workspace-only'
+  | 'flash-fail-pro-evidence-only'
+
+/** The primary five policies (excluding ablation). */
+export const PRIMARY_POLICIES: readonly PolicyName[] = [
+  'flash-only',
+  'pro-only',
+  'flash-fail-pro-fresh',
+  'flash-fail-pro-repair',
+  'flash-repair-then-pro',
+]
+
+/** Ablation policies that isolate workspace benefit from evidence benefit. */
+export const ABLATION_POLICIES: readonly PolicyName[] = [
+  'flash-fail-pro-workspace-only',
+  'flash-fail-pro-evidence-only',
+]
+
+/** All policies evaluated in v0.17.4. */
+export const ALL_POLICIES: readonly PolicyName[] = [...PRIMARY_POLICIES, ...ABLATION_POLICIES]
 
 /** Result of objective verification on a workspace. */
 export interface WorkspaceVerificationResult {
@@ -185,6 +209,59 @@ export function isSameFailure(priorFingerprint: string, currentFingerprint: stri
   return priorFingerprint === currentFingerprint
 }
 
+/**
+ * Compute deterministic set overlap between two evidence objects. Returns
+ * the fraction of the current evidence's normalized failure items that also
+ * appear in the prior evidence. Two failures can be substantively identical
+ * while differing enough textually to produce different fingerprints; set
+ * overlap catches that case.
+ *
+ * @param priorEvidence - verification evidence from the previous failed attempt.
+ * @param currentEvidence - verification evidence from the current failed attempt.
+ * @returns overlap fraction in [0, 1]; 1 means all current failures are prior failures.
+ */
+export function semanticFailureOverlap(
+  priorEvidence: VerificationEvidence,
+  currentEvidence: VerificationEvidence,
+): number {
+  const priorSet = new Set([
+    ...priorEvidence.failedCriteria.map(normalizeFailureText),
+    ...priorEvidence.failingTests.map(normalizeFailureText),
+    ...priorEvidence.typeErrors.map(normalizeFailureText),
+    ...priorEvidence.buildErrors.map(normalizeFailureText),
+  ])
+  const currentItems = [
+    ...currentEvidence.failedCriteria.map(normalizeFailureText),
+    ...currentEvidence.failingTests.map(normalizeFailureText),
+    ...currentEvidence.typeErrors.map(normalizeFailureText),
+    ...currentEvidence.buildErrors.map(normalizeFailureText),
+  ]
+  if (currentItems.length === 0) return 0
+  const overlap = currentItems.filter(item => priorSet.has(item)).length
+  return overlap / currentItems.length
+}
+
+/**
+ * Whether two failures are semantically the same, using both exact
+ * fingerprint match and set overlap. Returns true if the fingerprint
+ * matches exactly or the set overlap exceeds the threshold.
+ *
+ * @param priorEvidence - verification evidence from the previous failed attempt.
+ * @param currentEvidence - verification evidence from the current failed attempt.
+ * @param threshold - overlap fraction threshold (default 0.8).
+ * @returns true if the failures are semantically the same.
+ */
+export function isSemanticSameFailure(
+  priorEvidence: VerificationEvidence,
+  currentEvidence: VerificationEvidence,
+  threshold = 0.8,
+): boolean {
+  if (computeFailureFingerprint(priorEvidence) === computeFailureFingerprint(currentEvidence)) {
+    return true
+  }
+  return semanticFailureOverlap(priorEvidence, currentEvidence) >= threshold
+}
+
 // ---------------------------------------------------------------------------
 // Loop bounds and escalation
 // ---------------------------------------------------------------------------
@@ -224,8 +301,9 @@ export type EscalationAction =
  * history and bounds.
  *
  * Rules:
- * 1. If two consecutive Flash failures share the same fingerprint, escalate
- *    to Pro immediately — stop wasting Flash calls.
+ * 1. If two consecutive Flash failures share the same fingerprint or have
+ *    high semantic overlap, escalate to Pro immediately — stop wasting
+ *    Flash calls.
  * 2. If a Flash repair is still within bounds and the failure is new, allow
  *    one evidence-conditioned Flash repair.
  * 3. If Flash bounds are exhausted, escalate to Pro.
@@ -250,11 +328,17 @@ export function decideEscalation(
     const flashFailures = flashStages.filter(stage => !stage.verified)
 
     if (flashFailures.length >= 2) {
-      const fingerprints = flashFailures.map(stage => stage.failureFingerprint)
-      const prior = fingerprints[fingerprints.length - 2]
-      const current = fingerprints[fingerprints.length - 1]
-      if (prior !== undefined && current !== undefined && isSameFailure(prior, current)) {
+      const priorFailure = flashFailures[flashFailures.length - 2]
+      const currentFailure = flashFailures[flashFailures.length - 1]
+      const priorFp = priorFailure.failureFingerprint
+      const currentFp = currentFailure.failureFingerprint
+      if (priorFp !== undefined && currentFp !== undefined && isSameFailure(priorFp, currentFp)) {
         return { kind: 'escalate-to-pro' }
+      }
+      if (priorFailure.verificationEvidence !== undefined && currentFailure.verificationEvidence !== undefined) {
+        if (isSemanticSameFailure(priorFailure.verificationEvidence, currentFailure.verificationEvidence)) {
+          return { kind: 'escalate-to-pro' }
+        }
       }
     }
 
@@ -429,6 +513,45 @@ export function parseTakeoverDecision(output: string): TakeoverDecision | undefi
   return undefined
 }
 
+/**
+ * Construct the prompt for the workspace-only ablation (D1). Pro gets the
+ * failed Flash workspace but no structured FailurePackage — it must inspect
+ * the code and run verification itself.
+ *
+ * @param originalGoal - the original task goal.
+ * @returns the prompt string for Pro.
+ */
+export function constructWorkspaceOnlyPrompt(originalGoal: string): string {
+  return [
+    'You are taking over a coding task that a junior engineer attempted.',
+    '',
+    `Original goal: ${originalGoal}`,
+    '',
+    'The junior engineer left some code in the workspace. Inspect it, run the tests and typecheck, and fix whatever is broken.',
+    '',
+    'You must choose one of:',
+    '1. REPAIR_EXISTING — fix the existing code in the workspace',
+    '2. ROLLBACK_AND_REDO — start fresh and redo the task',
+    '',
+    'Before making any changes, state your decision as either "REPAIR_EXISTING" or "ROLLBACK_AND_REDO" on the first line, then explain briefly, then proceed.',
+  ].join('\n')
+}
+
+/**
+ * Construct the prompt for the evidence-only ablation (D2). Pro gets a clean
+ * workspace (no Flash code) but receives the full FailurePackage as text.
+ *
+ * @param failurePackage - the canonical failure evidence.
+ * @returns the prompt string for Pro.
+ */
+export function constructEvidenceOnlyPrompt(failurePackage: FailurePackage): string {
+  const base = constructProRepairPrompt(failurePackage)
+  return base.replace(
+    'You are taking over a coding task that a junior engineer attempted but failed.',
+    'You are taking over a coding task that a junior engineer attempted but failed. The workspace has been reset to its initial state — the junior engineer\'s code is gone. You have only the failure evidence below.',
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Policy metrics
 // ---------------------------------------------------------------------------
@@ -455,8 +578,24 @@ export interface PolicyMetrics {
   readonly loopViolations: number
   readonly repairExistingChoices: number
   readonly rollbackRedoChoices: number
+  /** Number of Pro stages where Pro actually rolled back Flash's files. */
+  readonly rollbackOccurred: number
+  /** Rollback rate among escalated tasks: rollbackOccurred / escalations. */
+  readonly rollbackRate: number
   readonly medianLatencyMs: number
   readonly p90LatencyMs: number
+}
+
+/** Repair advantage: compares Policy D (repair) against Policy C (fresh). */
+export interface RepairAdvantage {
+  /** P(verified | Pro repair) - P(verified | Pro fresh). Positive means repair helps. */
+  readonly verifiedSuccessAdvantage: number
+  /** CPT(Pro fresh) - CPT(Pro repair). Positive means repair is cheaper. */
+  readonly economicAdvantage: number
+  /** Pro rescue rate for repair minus pro rescue rate for fresh. */
+  readonly rescueRateAdvantage: number
+  /** Number of tasks escalated under both policies (the comparison denominator). */
+  readonly comparableTasks: number
 }
 
 /**
@@ -506,6 +645,9 @@ export function computePolicyMetrics(
   const rollbackRedoChoices = trajectories
     .flatMap(trajectory => trajectory.stages)
     .filter(stage => stage.takeoverDecision === 'ROLLBACK_AND_REDO').length
+  const rollbackOccurred = trajectories
+    .flatMap(trajectory => trajectory.stages)
+    .filter(stage => stage.rollbackOccurred === true).length
   const latencies = trajectories.map(trajectory =>
     trajectory.stages.reduce((sum, stage) => sum + stage.latencyMs, 0),
   )
@@ -531,8 +673,31 @@ export function computePolicyMetrics(
     loopViolations,
     repairExistingChoices,
     rollbackRedoChoices,
+    rollbackOccurred,
+    rollbackRate: escalated.length === 0 ? 0 : rollbackOccurred / escalated.length,
     medianLatencyMs: percentile(latencies, 0.5),
     p90LatencyMs: percentile(latencies, 0.9),
+  }
+}
+
+/**
+ * Compute the repair advantage of Policy D (Pro repair with evidence) over
+ * Policy C (Pro fresh start). Both metrics should be positive for repair to
+ * be considered beneficial.
+ *
+ * @param repairMetrics - metrics for flash-fail-pro-repair.
+ * @param freshMetrics - metrics for flash-fail-pro-fresh.
+ * @returns repair advantage comparison.
+ */
+export function computeRepairAdvantage(
+  repairMetrics: PolicyMetrics,
+  freshMetrics: PolicyMetrics,
+): RepairAdvantage {
+  return {
+    verifiedSuccessAdvantage: repairMetrics.verifiedRate - freshMetrics.verifiedRate,
+    economicAdvantage: freshMetrics.costPerVerifiedTask - repairMetrics.costPerVerifiedTask,
+    rescueRateAdvantage: repairMetrics.proRescueRate - freshMetrics.proRescueRate,
+    comparableTasks: Math.min(repairMetrics.escalations, freshMetrics.escalations),
   }
 }
 

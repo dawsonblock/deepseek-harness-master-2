@@ -16,17 +16,28 @@ v0.17.4 构建并验证真实修复实验基础设施。它定义规范 `Failure
 
 **v0.17.4 是研究实验。它不改变运行时路由权限。确定性顺序保持不变：手动选择 → 持久权限 → 硬策略约束 → 上下文/提供者可用性 → 权威启发式路由器。**
 
-实验在相同编码任务语料库上比较五个策略：
+实验在相同编码任务语料库上比较五个主要策略加两个消融策略：
 
 ```text
 A. flash-only: Flash → verify → done
 B. pro-only: Pro → verify → done
-C. flash-fail-pro-fresh: Flash → verify → fail → Pro fresh start (no evidence)
-D. flash-fail-pro-repair: Flash → verify → fail → FailurePackage → Pro repair with evidence
+C. flash-fail-pro-fresh: Flash → verify → fail → rollback to task-start → Pro fresh start (no evidence)
+D. flash-fail-pro-repair: Flash → verify → fail → preserve workspace → FailurePackage → Pro repair with evidence
 E. flash-repair-then-pro: Flash → verify → fail → Flash repair with evidence → Pro takeover if still failing
+D1. flash-fail-pro-workspace-only: Flash → fail → Pro gets workspace, no structured evidence (ablation)
+D2. flash-fail-pro-evidence-only: Flash → fail → Pro gets clean workspace + FailurePackage (ablation)
 ```
 
-策略 D 是主要结果。如果 D 优于 C，失败证据帮助 Pro 接管失败的 Flash 任务。
+策略 D 是主要结果。如果 D 优于 C，失败证据帮助 Pro 接管失败的 Flash 任务。消融策略隔离工作区收益（D1）和证据收益（D2）。
+
+### 策略 C 和策略 D 的可比性
+
+C 和 D 都给 Pro 相同的原始任务、相同的模型和相同的提供者设置。唯一预期差异是：
+
+- C：干净工作区（回滚到任务开始），无 FailurePackage。
+- D：保留 Flash 修改的工作区，提供完整 FailurePackage。
+
+这隔离了将失败尝试的状态和诊断证据交给 Pro 的效果。
 
 ### FailurePackage
 
@@ -63,11 +74,15 @@ interface FailurePackage {
 
 `computeFailureFingerprint()` 通过剥离绝对文件路径、行:列位置、时序、十六进制地址和附带格式来规范化失败证据，然后用 SHA-256 哈希排序后的规范化内容，截断为 16 个十六进制字符。因相同实质原因失败的两次尝试产生相同指纹，无论附带差异如何。
 
+### 语义失败重叠
+
+精确指纹相等不是唯一的无进度信号。两次失败可以在实质上相同但在文本上差异足以产生不同哈希。`semanticFailureOverlap()` 计算规范化失败项之间的确定性集合重叠，`isSemanticSameFailure()` 在指纹精确匹配或重叠超过阈值（默认 0.8）时返回 true。升级控制器使用两个信号：两次连续 Flash 失败具有高语义重叠时立即升级到 Pro。
+
 ### 进度感知同失败升级
 
 `classifyProgress()` 比较当前失败证据与先前失败证据，返回 `none`（首次失败或相同实质失败）、`partial`（更少或不同失败）或 `regression`（更多失败）。
 
-`decideEscalation()` 应用升级规则：两次连续 Flash 失败共享相同指纹后，立即升级到 Pro 而非浪费另一次 Flash 调用。这实现进度感知升级而非任意重试计数。
+`decideEscalation()` 应用升级规则：两次连续 Flash 失败共享相同指纹或具有高语义重叠后，立即升级到 Pro 而非浪费另一次 Flash 调用。这实现进度感知升级而非任意重试计数。
 
 ### 有界阶段循环
 
@@ -76,6 +91,8 @@ interface FailurePackage {
 ### Pro 接管决策
 
 Pro 通过 `constructProRepairPrompt()` 接收 `FailurePackage`，必须在进行任何更改之前在第一行声明 `REPAIR_EXISTING` 或 `ROLLBACK_AND_REDO`。`parseTakeoverDecision()` 提取选择。对于 `REPAIR_EXISTING`，Pro 在与 Flash 相同的工作区中工作。对于 `ROLLBACK_AND_REDO`，Pro 从干净工作区开始。
+
+运行器记录决策、是否实际发生回滚以及 Pro 更改的文件。这让实验发现 `REPAIR_EXISTING` 或 `ROLLBACK_AND_REDO` 是否对某些失败类型产生更高救援率，最终可以成为确定性策略。
 
 ### 客观验证
 
@@ -89,15 +106,20 @@ Pro 通过 `constructProRepairPrompt()` 接收 `FailurePackage`，必须在进�
 - **每验证任务成本** — 主要优化目标。
 - **Pro 救援率** = Flash 失败后由 Pro 验证的任务 / 升级到 Pro 的任务。
 - **升级成本效率** = 总升级成本 / 成功 Pro 救援。
+- **修复优势** = P(验证 | Pro 修复) − P(验证 | Pro 全新)；正值表示修复有帮助。
+- **修复经济优势** = CPT(Pro 全新) − CPT(Pro 修复)；正值表示修复更便宜。
 - **可审计升级率** = 有构建 FailurePackage 的升级 / 总升级。
-- **同失败检测率** — 重复 Flash 失败共享相同指纹的任务。
+- **同失败检测率** — 重复 Flash 失败共享相同指纹或高语义重叠的任务。
 - **循环违规** — 必须为 0。
 - **REPAIR_EXISTING 与 ROLLBACK_AND_REDO 选择分布。**
+- **回滚率** — Pro 实际回滚 Flash 文件的阶段 / 升级。
 - **中位数和 p90 延迟。**
+
+消融比较表并排报告 D1（仅工作区）、D2（仅证据）和 D3（工作区 + 证据）。如果 D3 优于 D1 和 D2，两个收益都有贡献。
 
 ### 无密钥验证
 
-`scripts/v0174-repair-core.spec.ts` 验证 53 个测试用例，覆盖指纹确定性、顺序独立性、路径规范化、进度分类、同失败检测、升级决策、循环边界执行、FailurePackage 构建、Pro 修复提示生成、接管决策解析和策略指标计算。所有测试在无 API 密钥的情况下通过。
+`scripts/v0174-repair-core.spec.ts` 验证 72 个测试用例，覆盖指纹确定性、顺序独立性、路径规范化、进度分类、同失败检测、语义失败重叠、升级决策、循环边界执行、FailurePackage 构建、Pro 修复提示生成、消融提示生成（仅工作区和仅证据）、接管决策解析、回滚跟踪、修复优势计算和策略指标计算。所有测试在无 API 密钥的情况下通过。
 
 ### 实时收集
 
@@ -129,6 +151,6 @@ v0.17.2 语料库使用通过正则验证的文本输出任务。修复架构（
 
 仓库现在有经过验证的真实证据条件修复实验基础设施。规范 `FailurePackage`、确定性指纹、进度感知升级和有界循环是具有无密钥测试覆盖的纯函数。运行器准备好使用轮换凭证进行实时收集。
 
-实验结果将决定 v0.18 是否将验证触发升级推广为权威运行时行为。推广门槛要求：Flash→Pro 修复在 Pro-only 验证成功率约 1-2 个百分点范围内或更好，每验证任务成本至少低约 40%，Pro 利用率低于约 20-25%，高救援效率，同失败检测防止无用重试，无无限循环，每次升级有可审计失败证据，每个最终结果接受独立验证。
+实验结果将决定 v0.18 是否将验证触发升级推广为权威运行时行为。资格门槛要求：所有升级证据存在（100%），循环违规为零，Flash→Pro 修复在 Pro-only 验证成功率约 1-2 个百分点范围内或更好，每验证任务成本比 Pro-only 至少低约 40%，Pro 利用率低于约 20-25%，高救援效率，同失败检测防止无用重试，无无限循环，每次升级有可审计失败证据，每个最终结果接受独立验证，策略 D 验证成功率不劣于策略 C，策略 D 每验证任务成本低于策略 C。策略 D 在小基准上不需要在原始成功率上击败 Pro-only。
 
 学习型路由研究保持降级为离线仪表。workload-v2 特征和贝叶斯历史最终可能为少数可预测浪费先尝试 Flash 的任务提供 Pro 优先覆盖，但该预测器对于响应式升级策略不是必需的。

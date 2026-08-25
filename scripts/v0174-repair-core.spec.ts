@@ -8,14 +8,19 @@ import {
   classifyProgress,
   computeFailureFingerprint,
   computePolicyMetrics,
+  computeRepairAdvantage,
+  constructEvidenceOnlyPrompt,
   constructFailurePackage,
   constructProRepairPrompt,
+  constructWorkspaceOnlyPrompt,
   countFailures,
   decideEscalation,
   detectLoopViolation,
   isSameFailure,
+  isSemanticSameFailure,
   normalizeFailureText,
   parseTakeoverDecision,
+  semanticFailureOverlap,
 } from './v0174-repair-core.ts'
 
 // ---------------------------------------------------------------------------
@@ -39,6 +44,17 @@ function makeStage(overrides: Partial<StageAttempt> & { model: 'flash' | 'pro' }
     costUsd: 0.001,
     latencyMs: 1000,
     usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150 },
+    ...overrides,
+  }
+}
+
+function makeTrajectory(overrides: Partial<TaskTrajectory>): TaskTrajectory {
+  return {
+    taskId: 'task-1',
+    policy: 'flash-only',
+    verified: false,
+    stages: [],
+    escalated: false,
     ...overrides,
   }
 }
@@ -503,17 +519,6 @@ describe('parseTakeoverDecision', () => {
 // ---------------------------------------------------------------------------
 
 describe('computePolicyMetrics', () => {
-  function makeTrajectory(overrides: Partial<TaskTrajectory>): TaskTrajectory {
-    return {
-      taskId: 'task-1',
-      policy: 'flash-only',
-      verified: false,
-      stages: [],
-      escalated: false,
-      ...overrides,
-    }
-  }
-
   it('computes flash-only metrics', () => {
     const trajectories = [
       makeTrajectory({
@@ -660,5 +665,293 @@ describe('computePolicyMetrics', () => {
     const metrics = computePolicyMetrics('flash-only', trajectories)
     expect(metrics.verifiedTasks).toBe(0)
     expect(metrics.costPerVerifiedTask).toBe(Infinity)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// semanticFailureOverlap
+// ---------------------------------------------------------------------------
+
+describe('semanticFailureOverlap', () => {
+  it('returns 1 for identical evidence', () => {
+    const evidence = makeEvidence({ failedCriteria: ['test a', 'test b'] })
+    expect(semanticFailureOverlap(evidence, evidence)).toBe(1)
+  })
+
+  it('returns 0 for completely disjoint evidence', () => {
+    const prior = makeEvidence({ failedCriteria: ['alpha'] })
+    const current = makeEvidence({ failedCriteria: ['beta'] })
+    expect(semanticFailureOverlap(prior, current)).toBe(0)
+  })
+
+  it('returns 0.5 when half of current failures are prior failures', () => {
+    const prior = makeEvidence({ failedCriteria: ['a', 'b'] })
+    const current = makeEvidence({ failedCriteria: ['a', 'c'] })
+    expect(semanticFailureOverlap(prior, current)).toBe(0.5)
+  })
+
+  it('returns 0 for empty current evidence', () => {
+    const prior = makeEvidence({ failedCriteria: ['a'] })
+    expect(semanticFailureOverlap(prior, makeEvidence())).toBe(0)
+  })
+
+  it('normalizes text before comparing', () => {
+    const prior = makeEvidence({ typeErrors: ['/home/user/src/index.ts:42:13 Type error'] })
+    const current = makeEvidence({ typeErrors: ['/tmp/worker/src/index.ts:42:13 Type error'] })
+    expect(semanticFailureOverlap(prior, current)).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isSemanticSameFailure
+// ---------------------------------------------------------------------------
+
+describe('isSemanticSameFailure', () => {
+  it('returns true for identical fingerprints', () => {
+    const evidence = makeEvidence({ failedCriteria: ['a'] })
+    expect(isSemanticSameFailure(evidence, evidence)).toBe(true)
+  })
+
+  it('returns true when overlap exceeds threshold', () => {
+    const prior = makeEvidence({ failedCriteria: ['a', 'b', 'c', 'd'] })
+    const current = makeEvidence({ failedCriteria: ['a', 'b', 'c', 'e'] })
+    expect(isSemanticSameFailure(prior, current, 0.7)).toBe(true)
+  })
+
+  it('returns false when overlap is below threshold', () => {
+    const prior = makeEvidence({ failedCriteria: ['a', 'b', 'c', 'd'] })
+    const current = makeEvidence({ failedCriteria: ['e', 'f', 'g', 'h'] })
+    expect(isSemanticSameFailure(prior, current, 0.8)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Ablation prompts
+// ---------------------------------------------------------------------------
+
+describe('constructWorkspaceOnlyPrompt', () => {
+  it('includes the original goal', () => {
+    const prompt = constructWorkspaceOnlyPrompt('Implement debounce')
+    expect(prompt).toContain('Implement debounce')
+  })
+
+  it('does not include structured failure evidence', () => {
+    const prompt = constructWorkspaceOnlyPrompt('Implement debounce')
+    expect(prompt).not.toContain('Failed acceptance criteria')
+    expect(prompt).not.toContain('Failing tests')
+    expect(prompt).not.toContain('Type errors')
+  })
+
+  it('instructs Pro to choose REPAIR or ROLLBACK', () => {
+    const prompt = constructWorkspaceOnlyPrompt('Implement debounce')
+    expect(prompt).toContain('REPAIR_EXISTING')
+    expect(prompt).toContain('ROLLBACK_AND_REDO')
+  })
+})
+
+describe('constructEvidenceOnlyPrompt', () => {
+  it('states the workspace was reset', () => {
+    const failurePackage = constructFailurePackage({
+      taskId: 'task-1',
+      routingDecisionId: 'rd-1',
+      originalGoal: 'Implement debounce',
+      model: 'deepseek-v4-flash',
+      changedFiles: ['debounce.ts'],
+      verification: makeEvidence({ failedCriteria: ['test failed'] }),
+      checkpoints: { taskStart: 'cp-0', afterFlash: 'cp-1' },
+    })
+    const prompt = constructEvidenceOnlyPrompt(failurePackage)
+    expect(prompt).toContain('reset')
+    expect(prompt).toContain('gone')
+  })
+
+  it('includes the failure evidence', () => {
+    const failurePackage = constructFailurePackage({
+      taskId: 'task-1',
+      routingDecisionId: 'rd-1',
+      originalGoal: 'Implement debounce',
+      model: 'deepseek-v4-flash',
+      changedFiles: ['debounce.ts'],
+      verification: makeEvidence({ failedCriteria: ['must handle leading edge'] }),
+      checkpoints: { taskStart: 'cp-0', afterFlash: 'cp-1' },
+    })
+    const prompt = constructEvidenceOnlyPrompt(failurePackage)
+    expect(prompt).toContain('must handle leading edge')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Rollback tracking in metrics
+// ---------------------------------------------------------------------------
+
+describe('rollback tracking', () => {
+  it('counts rollback occurrences', () => {
+    const trajectories = [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-repair',
+        verified: true,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false }),
+          makeStage({ model: 'pro', verified: true, rollbackOccurred: true }),
+        ],
+      }),
+      makeTrajectory({
+        taskId: 'task-2',
+        policy: 'flash-fail-pro-repair',
+        verified: false,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false }),
+          makeStage({ model: 'pro', verified: false, rollbackOccurred: false }),
+        ],
+      }),
+    ]
+    const metrics = computePolicyMetrics('flash-fail-pro-repair', trajectories)
+    expect(metrics.rollbackOccurred).toBe(1)
+    expect(metrics.rollbackRate).toBe(0.5)
+  })
+
+  it('reports zero rollback when none occurred', () => {
+    const trajectories = [
+      makeTrajectory({
+        policy: 'flash-fail-pro-repair',
+        verified: true,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false }),
+          makeStage({ model: 'pro', verified: true, rollbackOccurred: false }),
+        ],
+      }),
+    ]
+    const metrics = computePolicyMetrics('flash-fail-pro-repair', trajectories)
+    expect(metrics.rollbackOccurred).toBe(0)
+    expect(metrics.rollbackRate).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// computeRepairAdvantage
+// ---------------------------------------------------------------------------
+
+describe('computeRepairAdvantage', () => {
+  it('computes positive advantage when repair is better', () => {
+    const repairMetrics = computePolicyMetrics('flash-fail-pro-repair', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-repair',
+        verified: true,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false, costUsd: 0.001 }),
+          makeStage({ model: 'pro', verified: true, costUsd: 0.005 }),
+        ],
+      }),
+    ])
+    const freshMetrics = computePolicyMetrics('flash-fail-pro-fresh', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-fresh',
+        verified: false,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false, costUsd: 0.001 }),
+          makeStage({ model: 'pro', verified: false, costUsd: 0.01 }),
+        ],
+      }),
+    ])
+    const advantage = computeRepairAdvantage(repairMetrics, freshMetrics)
+    expect(advantage.verifiedSuccessAdvantage).toBeGreaterThan(0)
+    expect(advantage.rescueRateAdvantage).toBeGreaterThan(0)
+  })
+
+  it('computes negative advantage when fresh is better', () => {
+    const repairMetrics = computePolicyMetrics('flash-fail-pro-repair', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-repair',
+        verified: false,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false, costUsd: 0.001 }),
+          makeStage({ model: 'pro', verified: false, costUsd: 0.01 }),
+        ],
+      }),
+    ])
+    const freshMetrics = computePolicyMetrics('flash-fail-pro-fresh', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-fresh',
+        verified: true,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false, costUsd: 0.001 }),
+          makeStage({ model: 'pro', verified: true, costUsd: 0.005 }),
+        ],
+      }),
+    ])
+    const advantage = computeRepairAdvantage(repairMetrics, freshMetrics)
+    expect(advantage.verifiedSuccessAdvantage).toBeLessThan(0)
+    expect(advantage.rescueRateAdvantage).toBeLessThan(0)
+  })
+
+  it('computes economic advantage when repair is cheaper per verified task', () => {
+    const repairMetrics = computePolicyMetrics('flash-fail-pro-repair', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-repair',
+        verified: true,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false, costUsd: 0.001 }),
+          makeStage({ model: 'pro', verified: true, costUsd: 0.003 }),
+        ],
+      }),
+    ])
+    const freshMetrics = computePolicyMetrics('flash-fail-pro-fresh', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-fresh',
+        verified: true,
+        escalated: true,
+        stages: [
+          makeStage({ model: 'flash', verified: false, costUsd: 0.001 }),
+          makeStage({ model: 'pro', verified: true, costUsd: 0.01 }),
+        ],
+      }),
+    ])
+    const advantage = computeRepairAdvantage(repairMetrics, freshMetrics)
+    expect(advantage.economicAdvantage).toBeGreaterThan(0)
+  })
+
+  it('reports comparable tasks as the minimum escalation count', () => {
+    const repairMetrics = computePolicyMetrics('flash-fail-pro-repair', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-repair',
+        verified: true,
+        escalated: true,
+        stages: [makeStage({ model: 'flash', verified: false }), makeStage({ model: 'pro', verified: true })],
+      }),
+      makeTrajectory({
+        taskId: 'task-2',
+        policy: 'flash-fail-pro-repair',
+        verified: true,
+        escalated: true,
+        stages: [makeStage({ model: 'flash', verified: false }), makeStage({ model: 'pro', verified: true })],
+      }),
+    ])
+    const freshMetrics = computePolicyMetrics('flash-fail-pro-fresh', [
+      makeTrajectory({
+        taskId: 'task-1',
+        policy: 'flash-fail-pro-fresh',
+        verified: true,
+        escalated: true,
+        stages: [makeStage({ model: 'flash', verified: false }), makeStage({ model: 'pro', verified: true })],
+      }),
+    ])
+    const advantage = computeRepairAdvantage(repairMetrics, freshMetrics)
+    expect(advantage.comparableTasks).toBe(1)
   })
 })

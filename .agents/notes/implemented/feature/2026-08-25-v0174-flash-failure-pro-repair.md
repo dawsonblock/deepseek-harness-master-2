@@ -16,17 +16,28 @@ v0.17.4 builds and validates the real repair experiment infrastructure. It defin
 
 **v0.17.4 is a research experiment. It does not change runtime routing authority. The deterministic ordering remains unchanged: manual selection → durable authority → hard policy constraints → context/provider availability → authoritative heuristic router.**
 
-The experiment compares five policies on the identical coding-task corpus:
+The experiment compares five primary policies plus two ablation policies on the identical coding-task corpus:
 
 ```text
 A. flash-only: Flash → verify → done
 B. pro-only: Pro → verify → done
-C. flash-fail-pro-fresh: Flash → verify → fail → Pro fresh start (no evidence)
-D. flash-fail-pro-repair: Flash → verify → fail → FailurePackage → Pro repair with evidence
+C. flash-fail-pro-fresh: Flash → verify → fail → rollback to task-start → Pro fresh start (no evidence)
+D. flash-fail-pro-repair: Flash → verify → fail → preserve workspace → FailurePackage → Pro repair with evidence
 E. flash-repair-then-pro: Flash → verify → fail → Flash repair with evidence → Pro takeover if still failing
+D1. flash-fail-pro-workspace-only: Flash → fail → Pro gets workspace, no structured evidence (ablation)
+D2. flash-fail-pro-evidence-only: Flash → fail → Pro gets clean workspace + FailurePackage (ablation)
 ```
 
-Policy D is the primary result. If D outperforms C, failure evidence helps Pro take over failed Flash tasks.
+Policy D is the primary result. If D outperforms C, failure evidence helps Pro take over failed Flash tasks. The ablation policies isolate the workspace benefit (D1) from the evidence benefit (D2).
+
+### Comparability of Policy C and Policy D
+
+Both C and D give Pro the same original task, same model, and same provider settings. The only intended differences are:
+
+- C: clean workspace (rollback to task-start), no FailurePackage.
+- D: Flash's changed workspace preserved, full FailurePackage provided.
+
+This isolates the effect of handing Pro the failed attempt's state and diagnostic evidence.
 
 ### FailurePackage
 
@@ -63,11 +74,15 @@ The structure preserves the original goal, identifies the Flash model and routin
 
 `computeFailureFingerprint()` normalizes failure evidence by stripping absolute file paths, line:col positions, timing, hex addresses, and incidental formatting, then hashes the sorted normalized content with SHA-256 truncated to 16 hex characters. Two attempts that fail for the same substantive reasons produce the same fingerprint regardless of incidental differences.
 
+### Semantic failure overlap
+
+Exact fingerprint equality is not the only no-progress signal. Two failures can be substantively identical while differing enough textually to produce different hashes. `semanticFailureOverlap()` computes deterministic set overlap between normalized failure items, and `isSemanticSameFailure()` returns true when the fingerprint matches exactly or the overlap exceeds a threshold (default 0.8). The escalation controller uses both signals: two consecutive Flash failures with high semantic overlap escalate to Pro immediately.
+
 ### Progress-aware same-failure escalation
 
 `classifyProgress()` compares the current failure evidence to the prior failure evidence and returns `none` (first failure or same substantive failure), `partial` (fewer or different failures), or `regression` (more failures).
 
-`decideEscalation()` applies the escalation rule: after two consecutive Flash failures share the same fingerprint, escalate to Pro immediately rather than wasting another Flash call. This implements progress-aware escalation rather than arbitrary retry counts.
+`decideEscalation()` applies the escalation rule: after two consecutive Flash failures share the same fingerprint or have high semantic overlap, escalate to Pro immediately rather than wasting another Flash call. This implements progress-aware escalation rather than arbitrary retry counts.
 
 ### Bounded stage loops
 
@@ -76,6 +91,8 @@ The structure preserves the original goal, identifies the Flash model and routin
 ### Pro takeover decision
 
 Pro receives the `FailurePackage` via `constructProRepairPrompt()` and must state `REPAIR_EXISTING` or `ROLLBACK_AND_REDO` on the first line before making any changes. `parseTakeoverDecision()` extracts the choice. For `REPAIR_EXISTING`, Pro works in the same workspace as Flash. For `ROLLBACK_AND_REDO`, Pro starts from a clean workspace.
+
+The runner records the decision, whether rollback actually occurred, and the files Pro changed. This lets the experiment discover whether `REPAIR_EXISTING` or `ROLLBACK_AND_REDO` produces higher rescue rates for certain failure types, which can eventually become deterministic policy.
 
 ### Objective verification
 
@@ -89,15 +106,20 @@ The experiment reports:
 - **Cost per verified task** — primary optimization target.
 - **Pro Rescue Rate** = failed Flash tasks subsequently verified by Pro / tasks escalated to Pro.
 - **Escalation Cost Efficiency** = total escalation cost / successful Pro rescues.
+- **Repair Advantage** = P(verified | Pro repair) − P(verified | Pro fresh); positive means repair helps.
+- **Repair Economic Advantage** = CPT(Pro fresh) − CPT(Pro repair); positive means repair is cheaper.
 - **Auditable escalation rate** = escalations with a constructed FailurePackage / total escalations.
-- **Same-failure detection rate** — tasks where repeated Flash failures shared the same fingerprint.
+- **Same-failure detection rate** — tasks where repeated Flash failures shared the same fingerprint or high semantic overlap.
 - **Loop violations** — must be 0.
 - **REPAIR_EXISTING vs ROLLBACK_AND_REDO choice distribution.**
+- **Rollback rate** — Pro stages where Pro actually rolled back Flash's files / escalations.
 - **Median and p90 latency.**
+
+The ablation comparison table reports D1 (workspace only), D2 (evidence only), and D3 (workspace + evidence) side by side. If D3 outperforms both D1 and D2, both benefits contribute.
 
 ### Keyless validation
 
-`scripts/v0174-repair-core.spec.ts` validates 53 test cases covering fingerprint determinism, order independence, path normalization, progress classification, same-failure detection, escalation decisions, loop bound enforcement, FailurePackage construction, Pro repair prompt generation, takeover decision parsing, and policy metric computation. All tests pass without an API key.
+`scripts/v0174-repair-core.spec.ts` validates 72 test cases covering fingerprint determinism, order independence, path normalization, progress classification, same-failure detection, semantic failure overlap, escalation decisions, loop bound enforcement, FailurePackage construction, Pro repair prompt generation, ablation prompt generation (workspace-only and evidence-only), takeover decision parsing, rollback tracking, repair advantage computation, and policy metric computation. All tests pass without an API key.
 
 ### Live collection
 
@@ -129,6 +151,6 @@ The v0.17.2 corpus uses text-output tasks verified by regex. The repair architec
 
 The repository now has validated infrastructure for real evidence-conditioned repair experiments. The canonical `FailurePackage`, deterministic fingerprinting, progress-aware escalation, and bounded loops are pure functions with keyless test coverage. The runner is ready for live collection with a rotated credential.
 
-The experiment result will determine whether v0.18 promotes verification-triggered escalation to authoritative runtime behavior. The promotion gate requires: Flash→Pro repair within ~1-2 percentage points of Pro-only verified success or better, at least ~40% lower cost per verified task, Pro utilization below ~20-25%, high rescue efficiency, same-failure detection preventing useless retries, no infinite loops, every escalation having auditable failure evidence, and every final result receiving independent verification.
+The experiment result will determine whether v0.18 promotes verification-triggered escalation to authoritative runtime behavior. The qualification gate requires: all escalation evidence present (100%), loop violations zero, Flash→Pro repair within ~1-2 percentage points of Pro-only verified success or better, at least ~40% lower cost per verified task than Pro-only, Pro utilization below ~20-25%, high rescue efficiency, same-failure detection preventing useless retries, no infinite loops, every escalation having auditable failure evidence, every final result receiving independent verification, Policy D verified success non-inferior to Policy C, and Policy D cost per verified task lower than Policy C. Policy D is not required to beat Pro-only on raw success with a small benchmark.
 
 Learned-routing research remains demoted to offline instrumentation. The workload-v2 features and Bayesian history may eventually provide a Pro-first override for the tiny number of tasks where attempting Flash first is predictably wasteful, but that predictor is not needed for the reactive escalation policy.
