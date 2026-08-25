@@ -1,0 +1,351 @@
+{
+  "release": "v0.17.1",
+  "generatedAt": "2026-08-25T05:53:14.519Z",
+  "goal": "Reduce unnecessary Pro selections while preserving verified success",
+  "architecture": "shadow-mode",
+  "dataset": {
+    "source": "v0.16.0-rc1-paired-benchmark.json",
+    "totalExamples": 30,
+    "taskClasses": 15,
+    "positiveLabels": 3
+  },
+  "partitions": {
+    "train": {
+      "examples": 18,
+      "tasks": [
+        "arithmetic",
+        "capital-city",
+        "code-bug-fix",
+        "code-edit",
+        "debug-off-by-one",
+        "factual-explain",
+        "list-formatting",
+        "logic-puzzle",
+        "long-context-summary"
+      ]
+    },
+    "validation": {
+      "examples": 6,
+      "tasks": [
+        "multi-step-calculation",
+        "plan-feature",
+        "reasoning-proof"
+      ]
+    },
+    "test": {
+      "examples": 6,
+      "tasks": [
+        "structured-transform",
+        "verify-algorithm",
+        "yaml-to-json"
+      ]
+    }
+  },
+  "features": {
+    "version": 1,
+    "names": [
+      "complexity.explicitReasoningRequests",
+      "complexity.mathMarkers",
+      "complexity.architectureMarkers",
+      "complexity.codeBlocks",
+      "complexity.lengthBands",
+      "complexity.complexityScore",
+      "complexity.promptLength",
+      "structural.estimatedInputTokens",
+      "structural.messageCount",
+      "structural.toolSchemaCount",
+      "structural.attachedFileCount",
+      "structural.codeBlockCount",
+      "structural.structuredDataSize",
+      "structural.requestsStructuredOutput",
+      "structural.jsonTransformationIndicator",
+      "structural.multiFileIndicator",
+      "structural.toolRequirementIndicator",
+      "structural.verificationCriterionCount",
+      "categorical.expectsProAdvantage",
+      "historical.flashSuccessRateByTaskType",
+      "historical.proSuccessRateByTaskType",
+      "historical.flashToProRescueRate",
+      "historical.recentFlashFailureRate",
+      "historical.historicalCostDifference",
+      "historical.historicalSampleCount"
+    ],
+    "families": [
+      "complexity",
+      "structural",
+      "categorical",
+      "historical"
+    ]
+  },
+  "model": {
+    "version": 1,
+    "type": "multi-target-logistic-regression",
+    "trainingSize": 18,
+    "optimalThreshold": 0.1,
+    "featureWeights": {
+      "flash": [
+        0.1419591709818908,
+        0,
+        0,
+        0,
+        0.48451150034002927,
+        0.36328476563336903,
+        0.1745037178774209,
+        0.1688796405380577,
+        0,
+        0,
+        0,
+        0,
+        -0.11787609317042344,
+        0,
+        0,
+        0,
+        0,
+        -1.2405634246499382,
+        0.24935960224227613,
+        0,
+        0,
+        -2.2485566851566853e-16,
+        -4.497113370313371e-16,
+        -3.513369820557321e-18,
+        0
+      ],
+      "pro": [
+        0.1419591709818908,
+        0,
+        0,
+        0,
+        0.48451150034002927,
+        0.36328476563336903,
+        0.17450371787742086,
+        0.1688796405380577,
+        0,
+        0,
+        0,
+        0,
+        -0.11787609317042344,
+        0,
+        0,
+        0,
+        0,
+        -1.2405634246499382,
+        0.2493596022422761,
+        0,
+        0,
+        -2.2485566851566853e-16,
+        -4.497113370313371e-16,
+        -3.513369820557321e-18,
+        0
+      ],
+      "costDelta": [
+        0.00023252655276164648,
+        0,
+        0,
+        0,
+        -0.0019000542830652823,
+        -0.0004798396134712201,
+        0.0009235714685084812,
+        0.0009431475310908216,
+        0,
+        0,
+        0,
+        0,
+        0.0020174316547085474,
+        0,
+        0,
+        0,
+        0,
+        0.0034443696825411404,
+        0.0015542937152856183,
+        0,
+        0,
+        3.6700637887761687e-16,
+        7.340127577552337e-16,
+        5.734474669962764e-18,
+        0
+      ]
+    }
+  },
+  "testResults": [
+    {
+      "policy": "flash-only",
+      "verifiedRate": 0.5,
+      "costPerVerifiedTask": 0.0010535149333333333,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2206,
+      "p90Latency": 10978,
+      "proUtilization": 0,
+      "totalRuns": 6,
+      "verifiedPasses": 3
+    },
+    {
+      "policy": "pro-only",
+      "verifiedRate": 0.6666666666666666,
+      "costPerVerifiedTask": 0.0022482032499999997,
+      "proNecessityRecall": 1,
+      "proWasteRate": 0.3333333333333333,
+      "repairRate": 0,
+      "medianLatency": 2142.5,
+      "p90Latency": 15582,
+      "proUtilization": 1,
+      "totalRuns": 6,
+      "verifiedPasses": 4
+    },
+    {
+      "policy": "heuristic-router",
+      "verifiedRate": 0.5,
+      "costPerVerifiedTask": 0.0010535149333333333,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2206,
+      "p90Latency": 10978,
+      "proUtilization": 0,
+      "totalRuns": 6,
+      "verifiedPasses": 3
+    },
+    {
+      "policy": "learned-router",
+      "verifiedRate": 0.5,
+      "costPerVerifiedTask": 0.0010535149333333333,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2206,
+      "p90Latency": 10978,
+      "proUtilization": 0,
+      "totalRuns": 6,
+      "verifiedPasses": 3
+    }
+  ],
+  "allResults": [
+    {
+      "policy": "flash-only (all)",
+      "verifiedRate": 0.7333333333333333,
+      "costPerVerifiedTask": 0.0008465178909090909,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2843.5,
+      "p90Latency": 10978,
+      "proUtilization": 0,
+      "totalRuns": 30,
+      "verifiedPasses": 22
+    },
+    {
+      "policy": "pro-only (all)",
+      "verifiedRate": 0.7666666666666667,
+      "costPerVerifiedTask": 0.002405417608695651,
+      "proNecessityRecall": 1,
+      "proWasteRate": 0.6666666666666666,
+      "repairRate": 0,
+      "medianLatency": 3684.5,
+      "p90Latency": 16720,
+      "proUtilization": 1,
+      "totalRuns": 30,
+      "verifiedPasses": 23
+    },
+    {
+      "policy": "heuristic-router (all)",
+      "verifiedRate": 0.7333333333333333,
+      "costPerVerifiedTask": 0.0009828293636363636,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2843.5,
+      "p90Latency": 10978,
+      "proUtilization": 0.06666666666666667,
+      "totalRuns": 30,
+      "verifiedPasses": 22
+    },
+    {
+      "policy": "learned-router (all)",
+      "verifiedRate": 0.7333333333333333,
+      "costPerVerifiedTask": 0.0008465178909090909,
+      "proNecessityRecall": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2843.5,
+      "p90Latency": 10978,
+      "proUtilization": 0,
+      "totalRuns": 30,
+      "verifiedPasses": 22
+    }
+  ],
+  "perTaskPredictions": [
+    {
+      "taskId": "structured-transform/1",
+      "taskType": "structured-transform",
+      "complexityScore": 0,
+      "pFlashPass": 0.6352042821789082,
+      "pProPass": 0.6352042821789082,
+      "expectedCostDelta": -3.1091994302862362,
+      "recommendsPro": false,
+      "flashPassed": false,
+      "proPassed": true,
+      "classification": "pro-necessary"
+    },
+    {
+      "taskId": "structured-transform/2",
+      "taskType": "structured-transform",
+      "complexityScore": 0,
+      "pFlashPass": 0.6352042821789082,
+      "pProPass": 0.6352042821789082,
+      "expectedCostDelta": -3.1091994302862362,
+      "recommendsPro": false,
+      "flashPassed": false,
+      "proPassed": true,
+      "classification": "pro-necessary"
+    },
+    {
+      "taskId": "verify-algorithm/1",
+      "taskType": "factual-explain",
+      "complexityScore": 0,
+      "pFlashPass": 0.9149808219446462,
+      "pProPass": 0.9149808219446462,
+      "expectedCostDelta": -3.1136513920882485,
+      "recommendsPro": false,
+      "flashPassed": true,
+      "proPassed": true,
+      "classification": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "verify-algorithm/2",
+      "taskType": "factual-explain",
+      "complexityScore": 0,
+      "pFlashPass": 0.9149808219446462,
+      "pProPass": 0.9149808219446462,
+      "expectedCostDelta": -3.1136513920882485,
+      "recommendsPro": false,
+      "flashPassed": true,
+      "proPassed": true,
+      "classification": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "yaml-to-json/1",
+      "taskType": "structured-transform",
+      "complexityScore": 0,
+      "pFlashPass": 0.6208889169177768,
+      "pProPass": 0.6208889169177768,
+      "expectedCostDelta": -3.1080769886113435,
+      "recommendsPro": false,
+      "flashPassed": true,
+      "proPassed": false,
+      "classification": "flash-better"
+    },
+    {
+      "taskId": "yaml-to-json/2",
+      "taskType": "structured-transform",
+      "complexityScore": 0,
+      "pFlashPass": 0.6208889169177768,
+      "pProPass": 0.6208889169177768,
+      "expectedCostDelta": -3.1080769886113435,
+      "recommendsPro": false,
+      "flashPassed": false,
+      "proPassed": false,
+      "classification": "both-fail"
+    }
+  ]
+}

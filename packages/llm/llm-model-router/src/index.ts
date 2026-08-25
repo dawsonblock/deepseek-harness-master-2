@@ -34,6 +34,11 @@ import type { DiscoveredComplexity, DiscoveredTrigger, ModelRoutingDecisionEvent
 export { DEFAULT_ESCALATION_THRESHOLD, noFamilyAloneReaches, SCORER_VERSION, scoreComplexity } from './complexity.ts'
 export type { ComplexityReading, ComplexitySignals, ExtraMarkers } from './complexity.ts'
 export type { AuthorityEpoch, DiscoveredComplexity, DiscoveredTrigger, ModelRoutingDecisionEventData, RoutingAuthority, RoutingReason } from './types.ts'
+export { classifyTaskType, taskTypeExpectsProAdvantage } from './task-classifier.ts'
+export type { TaskType } from './task-classifier.ts'
+export { trainModel, predict, flattenFeatures, FEATURE_NAMES, FEATURE_VERSION, MODEL_VERSION } from './learned-router.ts'
+export type { TrainingExample, TrainedModel } from './learned-router.ts'
+export type { PreRoutingFeatureVector, StructuralFeatures, CategoricalFeatures, HistoricalFeatures, ModelPredictions, ShadowRoutingPredictionEventData } from './shadow-types.ts'
 
 /** Router policy version; stamped into every durable routing decision. */
 export const POLICY_VERSION = 2
@@ -195,9 +200,9 @@ export function resolveConfig(config: ModelRouterConfig): ResolvedModelRouterCon
     : config.discoveredEscalation === undefined
       ? { minToolCalls: DEFAULT_MIN_TOOL_CALLS, minToolResultChars: DEFAULT_MIN_TOOL_RESULT_CHARS }
       : {
-          minToolCalls: config.discoveredEscalation.minToolCalls ?? DEFAULT_MIN_TOOL_CALLS,
-          minToolResultChars: config.discoveredEscalation.minToolResultChars ?? DEFAULT_MIN_TOOL_RESULT_CHARS,
-        }
+        minToolCalls: config.discoveredEscalation.minToolCalls ?? DEFAULT_MIN_TOOL_CALLS,
+        minToolResultChars: config.discoveredEscalation.minToolResultChars ?? DEFAULT_MIN_TOOL_RESULT_CHARS,
+      }
   if (discoveredEscalation !== false) {
     for (const [bound, value] of [['minToolCalls', discoveredEscalation.minToolCalls], ['minToolResultChars', discoveredEscalation.minToolResultChars]] as const) {
       if (!Number.isSafeInteger(value) || value < 1) {
