@@ -35,10 +35,9 @@ export { DEFAULT_ESCALATION_THRESHOLD, noFamilyAloneReaches, SCORER_VERSION, sco
 export type { ComplexityReading, ComplexitySignals, ExtraMarkers } from './complexity.ts'
 export type { AuthorityEpoch, DiscoveredComplexity, DiscoveredTrigger, ModelRoutingDecisionEventData, RoutingAuthority, RoutingReason } from './types.ts'
 export { classifyTaskType, taskTypeExpectsProAdvantage } from './task-classifier.ts'
-export type { TaskType } from './task-classifier.ts'
 export { trainModel, predict, flattenFeatures, FEATURE_NAMES, FEATURE_VERSION, MODEL_VERSION } from './learned-router.ts'
 export type { TrainingExample, TrainedModel } from './learned-router.ts'
-export type { PreRoutingFeatureVector, StructuralFeatures, CategoricalFeatures, HistoricalFeatures, ModelPredictions, ShadowRoutingPredictionEventData } from './shadow-types.ts'
+export type { TaskType, PreRoutingFeatureVector, StructuralFeatures, CategoricalFeatures, HistoricalFeatures, ModelPredictions } from './shadow-types.ts'
 
 /** Router policy version; stamped into every durable routing decision. */
 export const POLICY_VERSION = 2

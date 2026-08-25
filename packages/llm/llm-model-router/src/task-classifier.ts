@@ -108,6 +108,7 @@ const RULES: readonly TaskTypeRule[] = [
  * Classify a turn's text into a task type using deterministic rules.
  * Returns 'unknown' when no rule matches.
  * @param text - the turn's concatenated request text.
+ * @returns the first matching task type or `unknown`.
  */
 export function classifyTaskType(text: string): TaskType {
   const sorted = [...RULES].sort((a, b) => a.priority - b.priority)
@@ -120,6 +121,8 @@ export function classifyTaskType(text: string): TaskType {
 /**
  * Whether a task type historically benefits from Pro, based on the
  * v0.16.0 benchmark evidence.
+ * @param type - deterministic task classification.
+ * @returns whether the benchmark records a Pro advantage for the type.
  */
 export function taskTypeExpectsProAdvantage(type: TaskType): boolean {
   const rule = RULES.find(r => r.type === type)

@@ -1,0 +1,841 @@
+{
+  "release": "v0.17.2",
+  "generatedAt": "2026-08-25T06:55:57.259Z",
+  "source": "v0.17.2-expanded-benchmark.json",
+  "dataset": {
+    "examples": 100,
+    "taskClasses": 50,
+    "proNecessary": 6,
+    "flashBetter": 4,
+    "bothFail": 3
+  },
+  "partitions": {
+    "train": {
+      "tasks": [
+        "arithmetic-percent",
+        "binary-conversion",
+        "capital-canada",
+        "code-chunk",
+        "code-dedupe",
+        "code-flatten",
+        "code-group",
+        "constraints-email",
+        "constraints-json",
+        "constraints-order",
+        "constraints-release",
+        "csv-people-json",
+        "csv-products-json",
+        "debug-async-map",
+        "debug-binary-search",
+        "debug-race",
+        "debug-reduce",
+        "json-filter",
+        "json-group",
+        "kv-json",
+        "log-json",
+        "long-design",
+        "plan-api",
+        "synthesis-cache",
+        "synthesis-consistency",
+        "synthesis-gc",
+        "synthesis-index",
+        "verify-auth",
+        "verify-cache-key",
+        "verify-pagination"
+      ],
+      "examples": 60
+    },
+    "validation": {
+      "tasks": [
+        "chemical-symbol",
+        "code-retry",
+        "constraints-summary",
+        "debug-sort",
+        "long-incident",
+        "plan-incident",
+        "synthesis-oauth",
+        "table-json",
+        "verify-rate-limit",
+        "xml-json"
+      ],
+      "examples": 20
+    },
+    "test": {
+      "tasks": [
+        "code-slugify",
+        "constraints-table",
+        "date-fact",
+        "debug-timeout",
+        "long-policy",
+        "plan-migration",
+        "synthesis-tcp-udp",
+        "verify-toposort",
+        "yaml-nested-json",
+        "yaml-service-json"
+      ],
+      "examples": 20
+    }
+  },
+  "features": {
+    "version": 1,
+    "names": [
+      "complexity.explicitReasoningRequests",
+      "complexity.mathMarkers",
+      "complexity.architectureMarkers",
+      "complexity.codeBlocks",
+      "complexity.lengthBands",
+      "complexity.complexityScore",
+      "complexity.promptLength",
+      "structural.estimatedInputTokens",
+      "structural.messageCount",
+      "structural.toolSchemaCount",
+      "structural.attachedFileCount",
+      "structural.codeBlockCount",
+      "structural.structuredDataSize",
+      "structural.requestsStructuredOutput",
+      "structural.jsonTransformationIndicator",
+      "structural.multiFileIndicator",
+      "structural.toolRequirementIndicator",
+      "structural.verificationCriterionCount",
+      "categorical.expectsProAdvantage",
+      "historical.flashSuccessRateByTaskType",
+      "historical.proSuccessRateByTaskType",
+      "historical.flashToProRescueRate",
+      "historical.recentFlashFailureRate",
+      "historical.historicalCostDifference",
+      "historical.historicalSampleCount"
+    ]
+  },
+  "model": {
+    "version": 2,
+    "type": "two-logistic-one-linear",
+    "trainingExamples": 60,
+    "selectedThreshold": 0.2,
+    "validationConstraintsMet": false
+  },
+  "validation": {
+    "baseline": {
+      "policy": "heuristic-router",
+      "examples": 20,
+      "verifiedPasses": 18,
+      "verifiedRate": 0.9,
+      "verifiedRate95": [
+        0.6989617935882066,
+        0.9721341060158468
+      ],
+      "totalCost": 0.013830532800000003,
+      "costPerVerifiedTask": 0.0007683629333333336,
+      "proNecessary": 1,
+      "proNecessaryCaught": 0,
+      "proNecessityRecall": 0,
+      "proNecessityRecall95": [
+        0,
+        0.7934567085261071
+      ],
+      "proWasteCount": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2227.5,
+      "p90Latency": 14343,
+      "proUtilization": 0
+    },
+    "sweep": [
+      {
+        "policy": "learned-0",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.0246016254,
+        "costPerVerifiedTask": 0.0013667569666666666,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 7,
+        "proWasteRate": 0.35,
+        "repairRate": 0,
+        "medianLatency": 2303.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.35
+      },
+      {
+        "policy": "learned-0.01",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.0198604156,
+        "costPerVerifiedTask": 0.0011033564222222222,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 3,
+        "proWasteRate": 0.15,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.15
+      },
+      {
+        "policy": "learned-0.02",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.017526865200000002,
+        "costPerVerifiedTask": 0.0009737147333333334,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 2,
+        "proWasteRate": 0.1,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.1
+      },
+      {
+        "policy": "learned-0.05",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.017526865200000002,
+        "costPerVerifiedTask": 0.0009737147333333334,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 2,
+        "proWasteRate": 0.1,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.1
+      },
+      {
+        "policy": "learned-0.08",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.017526865200000002,
+        "costPerVerifiedTask": 0.0009737147333333334,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 2,
+        "proWasteRate": 0.1,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.1
+      },
+      {
+        "policy": "learned-0.1",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.017526865200000002,
+        "costPerVerifiedTask": 0.0009737147333333334,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 2,
+        "proWasteRate": 0.1,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.1
+      },
+      {
+        "policy": "learned-0.15",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.017526865200000002,
+        "costPerVerifiedTask": 0.0009737147333333334,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 2,
+        "proWasteRate": 0.1,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 16345,
+        "proUtilization": 0.1
+      },
+      {
+        "policy": "learned-0.2",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.013830532800000003,
+        "costPerVerifiedTask": 0.0007683629333333336,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 0,
+        "proWasteRate": 0,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 14343,
+        "proUtilization": 0
+      },
+      {
+        "policy": "learned-0.3",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.013830532800000003,
+        "costPerVerifiedTask": 0.0007683629333333336,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 0,
+        "proWasteRate": 0,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 14343,
+        "proUtilization": 0
+      },
+      {
+        "policy": "learned-0.5",
+        "examples": 20,
+        "verifiedPasses": 18,
+        "verifiedRate": 0.9,
+        "verifiedRate95": [
+          0.6989617935882066,
+          0.9721341060158468
+        ],
+        "totalCost": 0.013830532800000003,
+        "costPerVerifiedTask": 0.0007683629333333336,
+        "proNecessary": 1,
+        "proNecessaryCaught": 0,
+        "proNecessityRecall": 0,
+        "proNecessityRecall95": [
+          0,
+          0.7934567085261071
+        ],
+        "proWasteCount": 0,
+        "proWasteRate": 0,
+        "repairRate": 0,
+        "medianLatency": 2227.5,
+        "p90Latency": 14343,
+        "proUtilization": 0
+      }
+    ]
+  },
+  "testResults": [
+    {
+      "policy": "flash-only",
+      "examples": 20,
+      "verifiedPasses": 17,
+      "verifiedRate": 0.85,
+      "verifiedRate95": [
+        0.6395767041130426,
+        0.9476322080405041
+      ],
+      "totalCost": 0.015216807200000002,
+      "costPerVerifiedTask": 0.000895106305882353,
+      "proNecessary": 2,
+      "proNecessaryCaught": 0,
+      "proNecessityRecall": 0,
+      "proNecessityRecall95": [
+        0,
+        0.6576280471103807
+      ],
+      "proWasteCount": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 4438.5,
+      "p90Latency": 16629,
+      "proUtilization": 0
+    },
+    {
+      "policy": "pro-only",
+      "examples": 20,
+      "verifiedPasses": 18,
+      "verifiedRate": 0.9,
+      "verifiedRate95": [
+        0.6989617935882066,
+        0.9721341060158468
+      ],
+      "totalCost": 0.041924632999999996,
+      "costPerVerifiedTask": 0.0023291462777777776,
+      "proNecessary": 2,
+      "proNecessaryCaught": 2,
+      "proNecessityRecall": 1,
+      "proNecessityRecall95": [
+        0.34237195288961925,
+        1
+      ],
+      "proWasteCount": 16,
+      "proWasteRate": 0.8,
+      "repairRate": 0,
+      "medianLatency": 4790.5,
+      "p90Latency": 16213,
+      "proUtilization": 1
+    },
+    {
+      "policy": "heuristic-router",
+      "examples": 20,
+      "verifiedPasses": 17,
+      "verifiedRate": 0.85,
+      "verifiedRate95": [
+        0.6395767041130426,
+        0.9476322080405041
+      ],
+      "totalCost": 0.015216807200000002,
+      "costPerVerifiedTask": 0.000895106305882353,
+      "proNecessary": 2,
+      "proNecessaryCaught": 0,
+      "proNecessityRecall": 0,
+      "proNecessityRecall95": [
+        0,
+        0.6576280471103807
+      ],
+      "proWasteCount": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 4438.5,
+      "p90Latency": 16629,
+      "proUtilization": 0
+    },
+    {
+      "policy": "learned-router",
+      "examples": 20,
+      "verifiedPasses": 17,
+      "verifiedRate": 0.85,
+      "verifiedRate95": [
+        0.6395767041130426,
+        0.9476322080405041
+      ],
+      "totalCost": 0.015216807200000002,
+      "costPerVerifiedTask": 0.000895106305882353,
+      "proNecessary": 2,
+      "proNecessaryCaught": 0,
+      "proNecessityRecall": 0,
+      "proNecessityRecall95": [
+        0,
+        0.6576280471103807
+      ],
+      "proWasteCount": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 4438.5,
+      "p90Latency": 16629,
+      "proUtilization": 0
+    }
+  ],
+  "diagnosticAllExampleResults": [
+    {
+      "policy": "flash-only",
+      "examples": 100,
+      "verifiedPasses": 91,
+      "verifiedRate": 0.91,
+      "verifiedRate95": [
+        0.8377362530335634,
+        0.9519280048361151
+      ],
+      "totalCost": 0.07148591520000003,
+      "costPerVerifiedTask": 0.000785559507692308,
+      "proNecessary": 6,
+      "proNecessaryCaught": 0,
+      "proNecessityRecall": 0,
+      "proNecessityRecall95": [
+        0,
+        0.3903430336530645
+      ],
+      "proWasteCount": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2553,
+      "p90Latency": 11913,
+      "proUtilization": 0
+    },
+    {
+      "policy": "pro-only",
+      "examples": 100,
+      "verifiedPasses": 93,
+      "verifiedRate": 0.93,
+      "verifiedRate95": [
+        0.8625032899347026,
+        0.9656811756359359
+      ],
+      "totalCost": 0.2118701140000001,
+      "costPerVerifiedTask": 0.0022781732688172056,
+      "proNecessary": 6,
+      "proNecessaryCaught": 6,
+      "proNecessityRecall": 1,
+      "proNecessityRecall95": [
+        0.6096569663469354,
+        0.9999999999999999
+      ],
+      "proWasteCount": 87,
+      "proWasteRate": 0.87,
+      "repairRate": 0,
+      "medianLatency": 4109,
+      "p90Latency": 21990,
+      "proUtilization": 1
+    },
+    {
+      "policy": "heuristic-router",
+      "examples": 100,
+      "verifiedPasses": 91,
+      "verifiedRate": 0.91,
+      "verifiedRate95": [
+        0.8377362530335634,
+        0.9519280048361151
+      ],
+      "totalCost": 0.07148591520000003,
+      "costPerVerifiedTask": 0.000785559507692308,
+      "proNecessary": 6,
+      "proNecessaryCaught": 0,
+      "proNecessityRecall": 0,
+      "proNecessityRecall95": [
+        0,
+        0.3903430336530645
+      ],
+      "proWasteCount": 0,
+      "proWasteRate": 0,
+      "repairRate": 0,
+      "medianLatency": 2553,
+      "p90Latency": 11913,
+      "proUtilization": 0
+    },
+    {
+      "policy": "learned-router",
+      "examples": 100,
+      "verifiedPasses": 93,
+      "verifiedRate": 0.93,
+      "verifiedRate95": [
+        0.8625032899347026,
+        0.9656811756359359
+      ],
+      "totalCost": 0.07938019360000004,
+      "costPerVerifiedTask": 0.0008535504688172047,
+      "proNecessary": 6,
+      "proNecessaryCaught": 2,
+      "proNecessityRecall": 0.3333333333333333,
+      "proNecessityRecall95": [
+        0.09676933255921683,
+        0.7000116786584712
+      ],
+      "proWasteCount": 3,
+      "proWasteRate": 0.03,
+      "repairRate": 0,
+      "medianLatency": 2665.5,
+      "p90Latency": 12336,
+      "proUtilization": 0.05
+    }
+  ],
+  "predictions": [
+    {
+      "taskId": "code-slugify",
+      "category": "code-edit",
+      "taskType": "code-edit",
+      "iteration": 1,
+      "pFlashPass": 0.9134114292087336,
+      "pProPass": 0.9743529260668632,
+      "expectedCostDelta": 0.0032360986855571533,
+      "verifiedImprovement": 0.06094149685812955,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "code-slugify",
+      "category": "code-edit",
+      "taskType": "code-edit",
+      "iteration": 2,
+      "pFlashPass": 0.9248281708389293,
+      "pProPass": 0.9734051862014761,
+      "expectedCostDelta": 0.0029864028437702225,
+      "verifiedImprovement": 0.04857701536254677,
+      "shadowModel": "Flash",
+      "actualClass": "pro-better"
+    },
+    {
+      "taskId": "constraints-table",
+      "category": "multi-constraint",
+      "taskType": "unknown",
+      "iteration": 1,
+      "pFlashPass": 0.9861484227255978,
+      "pProPass": 0.9488383027211098,
+      "expectedCostDelta": 0.0011546846089510352,
+      "verifiedImprovement": -0.03731012000448797,
+      "shadowModel": "Flash",
+      "actualClass": "pro-necessary"
+    },
+    {
+      "taskId": "constraints-table",
+      "category": "multi-constraint",
+      "taskType": "unknown",
+      "iteration": 2,
+      "pFlashPass": 0.9877108879977019,
+      "pProPass": 0.9430014466788713,
+      "expectedCostDelta": 0.0017294161725433775,
+      "verifiedImprovement": -0.04470944131883059,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "date-fact",
+      "category": "simple-factual",
+      "taskType": "simple-factual",
+      "iteration": 1,
+      "pFlashPass": 0.9738359591465972,
+      "pProPass": 0.987697943905451,
+      "expectedCostDelta": 0.004045198590964567,
+      "verifiedImprovement": 0.013861984758853807,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "date-fact",
+      "category": "simple-factual",
+      "taskType": "simple-factual",
+      "iteration": 2,
+      "pFlashPass": 0.9781808338992549,
+      "pProPass": 0.987105588289096,
+      "expectedCostDelta": 0.0037097199501313245,
+      "verifiedImprovement": 0.008924754389841083,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "debug-timeout",
+      "category": "debugging",
+      "taskType": "factual-explain",
+      "iteration": 1,
+      "pFlashPass": 0.9961631855854696,
+      "pProPass": 0.8772300203693061,
+      "expectedCostDelta": 0.0023795028555075844,
+      "verifiedImprovement": -0.11893316521616348,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "debug-timeout",
+      "category": "debugging",
+      "taskType": "factual-explain",
+      "iteration": 2,
+      "pFlashPass": 0.9965293021518671,
+      "pProPass": 0.8759420778269148,
+      "expectedCostDelta": 0.0022683177588927452,
+      "verifiedImprovement": -0.12058722432495228,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "long-policy",
+      "category": "long-context",
+      "taskType": "unknown",
+      "iteration": 1,
+      "pFlashPass": 0.9933251453091119,
+      "pProPass": 0.8489783645968916,
+      "expectedCostDelta": 0.0016038252040914936,
+      "verifiedImprovement": -0.1443467807122203,
+      "shadowModel": "Flash",
+      "actualClass": "both-fail"
+    },
+    {
+      "taskId": "long-policy",
+      "category": "long-context",
+      "taskType": "unknown",
+      "iteration": 2,
+      "pFlashPass": 0.9955698720361781,
+      "pProPass": 0.8935598969985096,
+      "expectedCostDelta": 0.002238514485157761,
+      "verifiedImprovement": -0.10200997503766851,
+      "shadowModel": "Flash",
+      "actualClass": "flash-better"
+    },
+    {
+      "taskId": "plan-migration",
+      "category": "planning",
+      "taskType": "planning",
+      "iteration": 1,
+      "pFlashPass": 0.8860841006445209,
+      "pProPass": 0.9889316527516538,
+      "expectedCostDelta": 0.003235098113914886,
+      "verifiedImprovement": 0.10284755210713292,
+      "shadowModel": "Flash",
+      "actualClass": "pro-necessary"
+    },
+    {
+      "taskId": "plan-migration",
+      "category": "planning",
+      "taskType": "planning",
+      "iteration": 2,
+      "pFlashPass": 0.8639451319899891,
+      "pProPass": 0.9683160097958148,
+      "expectedCostDelta": 0.0026193381550188815,
+      "verifiedImprovement": 0.10437087780582566,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "synthesis-tcp-udp",
+      "category": "factual-synthesis",
+      "taskType": "unknown",
+      "iteration": 1,
+      "pFlashPass": 0.9931101453992741,
+      "pProPass": 0.9576739824047646,
+      "expectedCostDelta": 0.002052532025442833,
+      "verifiedImprovement": -0.03543616299450947,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "synthesis-tcp-udp",
+      "category": "factual-synthesis",
+      "taskType": "unknown",
+      "iteration": 2,
+      "pFlashPass": 0.9930203263865091,
+      "pProPass": 0.9436060018052915,
+      "expectedCostDelta": 0.0010576460031036688,
+      "verifiedImprovement": -0.04941432458121753,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "verify-toposort",
+      "category": "verification-heavy",
+      "taskType": "factual-explain",
+      "iteration": 1,
+      "pFlashPass": 0.9977641980696421,
+      "pProPass": 0.8328443523858234,
+      "expectedCostDelta": 0.0022897288154588667,
+      "verifiedImprovement": -0.16491984568381868,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "verify-toposort",
+      "category": "verification-heavy",
+      "taskType": "factual-explain",
+      "iteration": 2,
+      "pFlashPass": 0.9979879437372486,
+      "pProPass": 0.8307854297910349,
+      "expectedCostDelta": 0.00216563279799543,
+      "verifiedImprovement": -0.16720251394621377,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "yaml-nested-json",
+      "category": "structured-transform",
+      "taskType": "structured-transform",
+      "iteration": 1,
+      "pFlashPass": 0.9546804444099886,
+      "pProPass": 0.989955097026177,
+      "expectedCostDelta": 0.002686858112585393,
+      "verifiedImprovement": 0.03527465261618845,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "yaml-nested-json",
+      "category": "structured-transform",
+      "taskType": "structured-transform",
+      "iteration": 2,
+      "pFlashPass": 0.9603245537017773,
+      "pProPass": 0.9896270870077943,
+      "expectedCostDelta": 0.0024768445150034303,
+      "verifiedImprovement": 0.029302533306017065,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "yaml-service-json",
+      "category": "structured-transform",
+      "taskType": "structured-transform",
+      "iteration": 1,
+      "pFlashPass": 0.8552828371515162,
+      "pProPass": 0.9971623963106514,
+      "expectedCostDelta": 0.002877790776030892,
+      "verifiedImprovement": 0.1418795591591352,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    },
+    {
+      "taskId": "yaml-service-json",
+      "category": "structured-transform",
+      "taskType": "structured-transform",
+      "iteration": 2,
+      "pFlashPass": 0.8707180602320744,
+      "pProPass": 0.9970767635346387,
+      "expectedCostDelta": 0.002689675477541755,
+      "verifiedImprovement": 0.12635870330256427,
+      "shadowModel": "Flash",
+      "actualClass": "both-pass-pro-more-expensive"
+    }
+  ]
+}

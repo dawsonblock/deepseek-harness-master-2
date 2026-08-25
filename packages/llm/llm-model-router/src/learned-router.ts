@@ -1,7 +1,7 @@
 /**
- * Multi-target learned router model. Trains three separate logistic
- * regression models: P(Flash passes), P(Pro passes), and expected cost
- * difference. The routing decision is then a threshold on the utility
+ * Multi-target learned router model. Trains logistic regressions for
+ * P(Flash passes) and P(Pro passes), plus linear regression for expected
+ * cost difference. The routing decision is then a threshold on the utility
  * difference rather than a single opaque classification.
  *
  * The model uses only pre-routing features, preserving the invariant:
@@ -25,7 +25,7 @@ export interface TrainingExample {
 export interface TrainedModel {
   flashModel: LogisticModel
   proModel: LogisticModel
-  costDeltaModel: LogisticModel
+  costDeltaModel: LinearModel
   featureNames: string[]
   /** Standardization means from training data. */
   means: number[]
@@ -43,8 +43,14 @@ interface LogisticModel {
   bias: number
 }
 
+/** Internal linear regression model. */
+interface LinearModel {
+  weights: number[]
+  bias: number
+}
+
 /** Current model schema version. */
-export const MODEL_VERSION = 1
+export const MODEL_VERSION = 2
 
 /** Feature version, incremented when the feature vector changes. */
 export const FEATURE_VERSION = 1
@@ -84,7 +90,11 @@ function sigmoid(z: number): number {
   return expZ / (1 + expZ)
 }
 
-/** Extract a numeric feature array from a feature vector in canonical order. */
+/**
+ * Extract a numeric feature array in canonical order.
+ * @param fv - complete pre-routing feature vector.
+ * @returns numeric values aligned with {@link FEATURE_NAMES}.
+ */
 export function flattenFeatures(fv: PreRoutingFeatureVector): number[] {
   return [
     fv.complexity.explicitReasoningRequests,
@@ -121,21 +131,51 @@ function trainLogistic(
   iterations: number,
 ): LogisticModel {
   const nFeatures = examples[0]?.x.length ?? 0
-  const weights = new Array(nFeatures).fill(0)
+  const weights = new Array<number>(nFeatures).fill(0)
   let bias = 0
 
   for (let iter = 0; iter < iterations; iter++) {
-    const gradW = new Array(nFeatures).fill(0)
+    const gradW = new Array<number>(nFeatures).fill(0)
     let gradB = 0
     for (const { x, y } of examples) {
       const z = bias + weights.reduce((s, w, i) => s + w * (x[i] ?? 0), 0)
       const p = sigmoid(z)
       const error = p - y
-      for (let i = 0; i < nFeatures; i++) gradW[i] += error * (x[i] ?? 0)
+      for (let i = 0; i < nFeatures; i++) gradW[i] = (gradW[i] ?? 0) + error * (x[i] ?? 0)
       gradB += error
     }
     const n = examples.length
-    for (let i = 0; i < nFeatures; i++) weights[i] -= learningRate * (gradW[i] ?? 0) / n
+    for (let i = 0; i < nFeatures; i++) {
+      weights[i] = (weights[i] ?? 0) - learningRate * (gradW[i] ?? 0) / n
+    }
+    bias -= learningRate * gradB / n
+  }
+
+  return { weights, bias }
+}
+
+function trainLinear(
+  examples: Array<{ x: number[]; y: number }>,
+  learningRate: number,
+  iterations: number,
+): LinearModel {
+  const nFeatures = examples[0]?.x.length ?? 0
+  const weights = new Array<number>(nFeatures).fill(0)
+  let bias = 0
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const gradW = new Array<number>(nFeatures).fill(0)
+    let gradB = 0
+    for (const { x, y } of examples) {
+      const prediction = bias + weights.reduce((sum, weight, i) => sum + weight * (x[i] ?? 0), 0)
+      const error = prediction - y
+      for (let i = 0; i < nFeatures; i++) gradW[i] = (gradW[i] ?? 0) + error * (x[i] ?? 0)
+      gradB += error
+    }
+    const n = examples.length
+    for (let i = 0; i < nFeatures; i++) {
+      weights[i] = (weights[i] ?? 0) - learningRate * (gradW[i] ?? 0) / n
+    }
     bias -= learningRate * gradB / n
   }
 
@@ -147,6 +187,7 @@ function trainLogistic(
  * @param examples - paired Flash/Pro training examples.
  * @param learningRate - gradient descent learning rate.
  * @param iterations - gradient descent iterations.
+ * @returns the three fitted targets and training standardization values.
  */
 export function trainModel(
   examples: TrainingExample[],
@@ -170,39 +211,39 @@ export function trainModel(
   const nFeatures = FEATURE_NAMES.length
 
   // Standardize
-  const means = new Array(nFeatures).fill(0)
-  const stds = new Array(nFeatures).fill(1)
+  const means = new Array<number>(nFeatures).fill(0)
+  const stds = new Array<number>(nFeatures).fill(0)
   for (const x of flat) {
-    for (let i = 0; i < nFeatures; i++) means[i] += x[i] ?? 0
+    for (let i = 0; i < nFeatures; i++) means[i] = (means[i] ?? 0) + (x[i] ?? 0)
   }
-  for (let i = 0; i < nFeatures; i++) means[i] /= flat.length
+  for (let i = 0; i < nFeatures; i++) means[i] = (means[i] ?? 0) / flat.length
   for (const x of flat) {
     for (let i = 0; i < nFeatures; i++) {
-      stds[i] += ((x[i] ?? 0) - means[i]) ** 2
+      stds[i] = (stds[i] ?? 0) + ((x[i] ?? 0) - (means[i] ?? 0)) ** 2
     }
   }
-  for (let i = 0; i < nFeatures; i++) stds[i] = Math.sqrt(stds[i] / flat.length) || 1
+  for (let i = 0; i < nFeatures; i++) stds[i] = Math.sqrt((stds[i] ?? 0) / flat.length) || 1
 
   const standardize = (x: number[]): number[] =>
-    x.map((v, i) => (v - means[i]) / stds[i])
+    x.map((v, i) => (v - (means[i] ?? 0)) / (stds[i] ?? 1))
 
   const flashExamples = examples.map((ex, i) => ({
-    x: standardize(flat[i]),
+    x: standardize(flat[i] ?? []),
     y: ex.flashPassed ? 1 : 0,
   }))
   const proExamples = examples.map((ex, i) => ({
-    x: standardize(flat[i]),
+    x: standardize(flat[i] ?? []),
     y: ex.proPassed ? 1 : 0,
   }))
   const costDeltaExamples = examples.map((ex, i) => ({
-    x: standardize(flat[i]),
+    x: standardize(flat[i] ?? []),
     y: ex.proCost - ex.flashCost,
   }))
 
   return {
     flashModel: trainLogistic(flashExamples, learningRate, iterations),
     proModel: trainLogistic(proExamples, learningRate, iterations),
-    costDeltaModel: trainLogistic(costDeltaExamples, learningRate, iterations),
+    costDeltaModel: trainLinear(costDeltaExamples, learningRate, iterations),
     featureNames: [...FEATURE_NAMES],
     means,
     stds,
@@ -216,6 +257,7 @@ export function trainModel(
  * @param model - the trained multi-target model.
  * @param features - the pre-routing feature vector.
  * @param proCostThreshold - minimum verified-rate improvement to justify Pro cost.
+ * @returns probability, cost, recommendation, and confidence predictions.
  */
 export function predict(
   model: TrainedModel,
@@ -233,7 +275,9 @@ export function predict(
     }
   }
 
-  const x = flattenFeatures(features).map((v, i) => (v - model.means[i]) / model.stds[i])
+  const x = flattenFeatures(features).map((v, i) =>
+    (v - (model.means[i] ?? 0)) / (model.stds[i] ?? 1),
+  )
 
   const zFlash = model.flashModel.bias + model.flashModel.weights.reduce((s, w, i) => s + w * (x[i] ?? 0), 0)
   const zPro = model.proModel.bias + model.proModel.weights.reduce((s, w, i) => s + w * (x[i] ?? 0), 0)

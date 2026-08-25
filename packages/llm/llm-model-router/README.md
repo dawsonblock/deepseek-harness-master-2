@@ -72,7 +72,7 @@ Both tiers must be distinct provider/model pairs and resolve through `ctx.llm` e
 
 #### What the model sees
 
-Only the request header's provider/model/effort changes between tiers. The conversation surface is identical on both routes, and no routing metadata enters model-visible content.
+Only the request header's `provider`, `model`, and `reasoningEffort` change between tiers. The conversation surface is identical on both routes, and no routing metadata enters model-visible content.
 
 #### Token effect
 
@@ -86,6 +86,6 @@ Switching tiers between turns changes the serving model, so provider prefix cach
 
 - **English + Simplified Chinese vocabulary** — other languages escalate through explicit-reasoning, code-block, and length signals plus deployment `extraMarkers`, not built-in vocabulary.
 - **Discovered-escalation triggers are volume heuristics** — tool-call count and result characters are proxies for difficulty, not semantics; calibration against verified outcomes is the deferred follow-up this event vocabulary enables.
-- **Fixed weights** — points, caps, and threshold are package constants except `escalationThreshold`; a learned policy would consume the same durable decisions.
+- **Fixed authoritative policy** — points, caps, and threshold are package constants except `escalationThreshold`; the exported learned-model helpers support offline and shadow evaluation but do not control the plugin's route.
 - **Opt-in composition** — the router is not part of the default bundle; deployments add the plugin line explicitly.
 - **Runtime-state and outcome signals not yet consumed** — verification failures, repair rounds, and reasoning-context pressure are the audit's proposed stronger escalation signals, deferred to the empirical-optimization release.
