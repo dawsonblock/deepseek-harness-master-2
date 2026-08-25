@@ -1680,7 +1680,825 @@ describe('MinHeap', () => {
       }
     },
   },
+  // --- Genuinely hard fixtures: hidden tests, from-scratch design ---
+  {
+    id: 'implement-state-machine',
+    category: 'architectural-design',
+    description: 'Implement a finite state machine with guards and actions from a spec',
+    expectsFlashFailure: true,
+    task: `Implement a finite state machine library in \`stateMachine.ts\` with the following API:
+
+- \`createMachine(config)\` returns a machine definition
+- \`createInterpreter(machine)\` returns an interpreter with:
+  - \`send(event)\` — sends an event, returns the current state
+  - \`subscribe(listener)\` — calls listener on every transition, returns unsubscribe
+  - \`state\` — getter returning { value: string, context: object }
+  - \`can(event)\` — returns true if the event would cause a transition from the current state
+
+Config shape:
+\`\`\`ts
+{
+  initial: 'idle',
+  context: { count: 0 },
+  states: {
+    idle: {
+      on: { START: { target: 'running', actions: ['resetCount'] } },
+    },
+    running: {
+      on: {
+        TICK: { target: 'running', actions: ['incrementCount'], guard: 'canTick' },
+        STOP: { target: 'idle' },
+        PAUSE: { target: 'paused' },
+      },
+    },
+    paused: {
+      on: { RESUME: { target: 'running' }, STOP: { target: 'idle' } },
+    },
+  },
+  actions: {
+    resetCount: (ctx) => ({ ...ctx, count: 0 }),
+    incrementCount: (ctx) => ({ ...ctx, count: ctx.count + 1 }),
+  },
+  guards: {
+    canTick: (ctx, event) => ctx.count < 5,
+  },
+}
+\`\`\`
+
+Guards return false to block a transition. Actions receive context and event, return new context.
+If a guard blocks, the state and context do not change.
+Export \`createMachine\` and \`createInterpreter\` as named exports.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', STATE_MACHINE_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-middleware-stack',
+    category: 'architectural-design',
+    description: 'Implement a middleware pipeline with async handlers and error handling',
+    expectsFlashFailure: true,
+    task: `Implement a middleware pipeline in \`middleware.ts\` with the following API:
+
+- \`createPipeline()\` returns a pipeline with:
+  - \`use(middleware)\` — registers a middleware (returns the pipeline for chaining)
+  - \`run(context)\` — executes the pipeline, returns a Promise<result>
+
+Middleware signature:
+\`\`\`ts
+type Middleware<T> = (ctx: T, next: () => Promise<void>) => Promise<void>
+\`\`\`
+
+Each middleware calls \`next()\` to pass control to the next middleware.
+If a middleware does not call \`next()\`, downstream middleware does not run.
+
+The pipeline must support:
+1. **Error middleware**: if a middleware throws, the error propagates to upstream middleware that catch it via try/catch around \`await next()\`.
+2. **Early return**: a middleware can set \`ctx.result\` and not call \`next()\`.
+3. **Ordering**: middleware runs in registration order, unwinding in reverse.
+
+Export \`createPipeline\` and the \`Middleware\` type as named exports.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', MIDDLEWARE_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-reactive-store',
+    category: 'architectural-design',
+    description: 'Implement a reactive store with selectors and computed values',
+    expectsFlashFailure: true,
+    task: `Implement a reactive store in \`store.ts\` with the following API:
+
+- \`createStore<T>(initialState: T)\` returns:
+  - \`getState()\` — returns current state
+  - \`setState(partial: Partial<T>)\` — merges partial into state, notifies subscribers
+  - \`subscribe(listener)\` — listener receives (newState, oldState), returns unsubscribe
+  - \`select<R>(selector: (state: T) => R)\` — returns a derived store with:
+    - \`get()\` — returns the selector result
+    - \`subscribe(listener)\` — only fires when the selector result changes (shallow equality)
+    - returns unsubscribe
+
+The select() method must:
+1. Only notify subscribers when the computed value actually changes
+2. Support chaining: store.select(s => s.users).select(users => users.length)
+3. Work with arrays and objects (shallow comparison)
+
+Export \`createStore\` as a named export.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', REACTIVE_STORE_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-graph-traversal',
+    category: 'algorithmic-design',
+    description: 'Implement weighted graph with Dijkstra and topological sort',
+    expectsFlashFailure: true,
+    task: `Implement a weighted directed graph in \`graph.ts\` with:
+
+- \`class Graph<T>\` with:
+  - \`addNode(id: string, data: T)\` — adds a node
+  - \`addEdge(from: string, to: string, weight: number)\` — adds a directed edge
+  - \`dijkstra(start: string, end: string)\` — returns { path: string[], distance: number } or null if no path
+  - \`topologicalSort()\` — returns string[] in topological order, throws if cycle exists
+
+The graph must handle:
+1. Multiple paths between same nodes (picks shortest)
+2. Disconnected graphs (dijkstra returns null if unreachable)
+3. Self-loops and cycles (topologicalSort throws on cycle)
+4. Negative weights are not allowed (throw on addEdge if weight < 0)
+
+Export \`Graph\` as a named export.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', GRAPH_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-dependency-injector',
+    category: 'architectural-design',
+    description: 'Implement a DI container with scopes, factories, and singleton/transient lifetimes',
+    expectsFlashFailure: true,
+    task: `Implement a dependency injection container in \`di.ts\` with:
+
+- \`class Container\` with:
+  - \`register<T>(token: string, factory: (container: Container) => T, lifetime?: 'singleton' | 'transient')\`
+    - Default lifetime is 'transient'
+    - Singleton: factory runs once, result cached
+    - Transient: factory runs every resolve
+  - \`resolve<T>(token: string): T\`
+    - Throws if token not registered
+    - Resolves dependencies recursively
+  - \`createScope()\` — returns a new Container that inherits registrations from parent
+    - Scoped container can override registrations
+    - Singleton resolved in scope caches in scope, not parent
+  - \`dispose()\` — calls \`dispose()\` on all resolved singletons that have it
+
+Handle circular dependencies by throwing an error with the cycle path.
+
+Export \`Container\` as a named export.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', DI_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-parser-combinator',
+    category: 'algorithmic-design',
+    description: 'Implement a parser combinator library from scratch',
+    expectsFlashFailure: true,
+    task: `Implement a parser combinator library in \`parser.ts\` with:
+
+- \`type Parser<T>\` — a function (input: string) => { success: true; value: T; rest: string } | { success: false; error: string }
+- \`string(s: string): Parser<string>\` — matches literal string
+- \`regex(pattern: RegExp): Parser<string>\` — matches regex at current position
+- \`map<T, U>(parser: Parser<T>, fn: (value: T) => U): Parser<U>\` — transforms result
+- \`seq<T>(...parsers: Parser<T>[]): Parser<T[]>\` — matches all in sequence
+- \`choice<T>(...parsers: Parser<T>[]): Parser<T>\` — matches first that succeeds
+- \`many<T>(parser: Parser<T>): Parser<T[]>\` — matches zero or more
+- \`optional<T>(parser: Parser<T>): Parser<T | null>\` — matches zero or one
+- \`between<T>(open: Parser<unknown>, content: Parser<T>, close: Parser<unknown>): Parser<T>\` — matches content between open and close
+- \`parse<T>(parser: Parser<T>, input: string): T\` — runs parser, throws on failure or if rest is non-empty
+
+Export all functions and the Parser type as named exports.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', PARSER_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-transactional-map',
+    category: 'concurrency-design',
+    description: 'Implement a transactional key-value store with nested transactions',
+    expectsFlashFailure: true,
+    task: `Implement a transactional key-value store in \`txMap.ts\` with:
+
+- \`class TransactionalMap\` with:
+  - \`get(key: string): unknown | undefined\`
+  - \`set(key: string, value: unknown): void\`
+  - \`delete(key: string): void\`
+  - \`begin(): Transaction\` — starts a transaction
+  - \`commit(tx: Transaction): void\` — applies all changes atomically
+  - \`rollback(tx: Transaction): void\` — discards all changes
+
+- \`class Transaction\` (returned by begin()):
+  - \`get(key: string): unknown | undefined\` — reads from staged changes or falls back to main store
+  - \`set(key: string, value: unknown): void\` — stages a set
+  - \`delete(key: string): void\` — stages a delete
+  - \`has(key: string): boolean\` — checks staged changes or main store
+  - \`begin(): Transaction\` — starts a nested transaction
+
+Transactions must:
+1. Be isolated — changes not visible to main store until commit
+2. Support nested transactions — begin() inside a transaction creates a nested one
+3. Nested commit applies to parent, nested rollback discards to parent level
+4. Atomic — commit applies all or nothing
+
+Export \`TransactionalMap\` as a named export.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', TX_MAP_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
 ]
+
+// ---------------------------------------------------------------------------
+// Hidden test strings for from-scratch design fixtures
+// ---------------------------------------------------------------------------
+
+const STATE_MACHINE_TEST = `
+import { describe, it, expect } from 'vitest'
+import { createMachine, createInterpreter } from './stateMachine.ts'
+
+const machine = createMachine({
+  initial: 'idle',
+  context: { count: 0 },
+  states: {
+    idle: { on: { START: { target: 'running', actions: ['resetCount'] } } },
+    running: { on: {
+      TICK: { target: 'running', actions: ['incrementCount'], guard: 'canTick' },
+      STOP: { target: 'idle' },
+      PAUSE: { target: 'paused' },
+    } },
+    paused: { on: { RESUME: { target: 'running' }, STOP: { target: 'idle' } } },
+  },
+  actions: {
+    resetCount: (ctx: any) => ({ ...ctx, count: 0 }),
+    incrementCount: (ctx: any) => ({ ...ctx, count: ctx.count + 1 }),
+  },
+  guards: { canTick: (ctx: any) => ctx.count < 5 },
+})
+
+describe('StateMachine', () => {
+  it('starts in initial state', () => {
+    const i = createInterpreter(machine)
+    expect(i.state.value).toBe('idle')
+    expect(i.state.context.count).toBe(0)
+  })
+  it('transitions on events', () => {
+    const i = createInterpreter(machine)
+    i.send({ type: 'START' })
+    expect(i.state.value).toBe('running')
+  })
+  it('runs actions on transition', () => {
+    const i = createInterpreter(machine)
+    i.send({ type: 'START' })
+    i.send({ type: 'TICK' })
+    expect(i.state.context.count).toBe(1)
+  })
+  it('guards block transitions', () => {
+    const i = createInterpreter(machine)
+    i.send({ type: 'START' })
+    for (let n = 0; n < 10; n++) i.send({ type: 'TICK' })
+    expect(i.state.context.count).toBe(5)
+  })
+  it('can() checks if event would transition', () => {
+    const i = createInterpreter(machine)
+    expect(i.can({ type: 'START' })).toBe(true)
+    expect(i.can({ type: 'TICK' })).toBe(false)
+    i.send({ type: 'START' })
+    expect(i.can({ type: 'TICK' })).toBe(true)
+  })
+  it('subscribe receives state updates', () => {
+    const i = createInterpreter(machine)
+    const states: string[] = []
+    i.subscribe((s) => states.push(s.value))
+    i.send({ type: 'START' })
+    i.send({ type: 'TICK' })
+    i.send({ type: 'PAUSE' })
+    expect(states).toEqual(['running', 'running', 'paused'])
+  })
+  it('paused state transitions', () => {
+    const i = createInterpreter(machine)
+    i.send({ type: 'START' })
+    i.send({ type: 'PAUSE' })
+    i.send({ type: 'RESUME' })
+    i.send({ type: 'STOP' })
+    expect(i.state.value).toBe('idle')
+  })
+  it('resetCount resets context', () => {
+    const i = createInterpreter(machine)
+    i.send({ type: 'START' })
+    i.send({ type: 'TICK' })
+    i.send({ type: 'TICK' })
+    i.send({ type: 'STOP' })
+    i.send({ type: 'START' })
+    expect(i.state.context.count).toBe(0)
+  })
+})
+`
+
+const MIDDLEWARE_TEST = `
+import { describe, it, expect } from 'vitest'
+import { createPipeline, type Middleware } from './middleware.ts'
+
+type Ctx = { log: string[]; result?: string; error?: string }
+
+describe('MiddlewarePipeline', () => {
+  it('runs middleware in order', async () => {
+    const p = createPipeline<Ctx>()
+    p.use(async (ctx, next) => { ctx.log.push('A-before'); await next(); ctx.log.push('A-after') })
+    p.use(async (ctx, next) => { ctx.log.push('B-before'); await next(); ctx.log.push('B-after') })
+    const r = await p.run({ log: [] })
+    expect(r.log).toEqual(['A-before', 'B-before', 'B-after', 'A-after'])
+  })
+  it('stops if next() not called', async () => {
+    const p = createPipeline<Ctx>()
+    p.use(async (ctx) => { ctx.result = 'stopped' })
+    p.use(async (ctx, next) => { ctx.log.push('no'); await next() })
+    const r = await p.run({ log: [] })
+    expect(r.result).toBe('stopped')
+    expect(r.log).toEqual([])
+  })
+  it('propagates errors to upstream', async () => {
+    const p = createPipeline<Ctx>()
+    p.use(async (ctx, next) => { try { await next() } catch (e) { ctx.error = String(e) } })
+    p.use(async () => { throw new Error('boom') })
+    const r = await p.run({ log: [] })
+    expect(r.error).toBe('Error: boom')
+  })
+  it('supports chaining use()', async () => {
+    const p = createPipeline<Ctx>()
+      .use(async (ctx, next) => { ctx.log.push('1'); await next() })
+      .use(async (ctx, next) => { ctx.log.push('2'); await next() })
+    const r = await p.run({ log: [] })
+    expect(r.log).toEqual(['1', '2'])
+  })
+  it('handles empty pipeline', async () => {
+    const p = createPipeline<Ctx>()
+    const r = await p.run({ log: [] })
+    expect(r.log).toEqual([])
+  })
+  it('multiple catch levels', async () => {
+    const p = createPipeline<Ctx>()
+    let caught: string[] = []
+    p.use(async (ctx, next) => { try { await next() } catch { caught.push('outer') } })
+    p.use(async (ctx, next) => { try { await next() } catch { caught.push('inner'); throw new Error('rethrown') } })
+    p.use(async () => { throw new Error('original') })
+    await p.run({ log: [] })
+    expect(caught).toEqual(['inner', 'outer'])
+  })
+})
+`
+
+const REACTIVE_STORE_TEST = `
+import { describe, it, expect, vi } from 'vitest'
+import { createStore } from './store.ts'
+
+describe('ReactiveStore', () => {
+  it('stores and retrieves state', () => {
+    const s = createStore({ count: 0, name: 'test' })
+    expect(s.getState()).toEqual({ count: 0, name: 'test' })
+  })
+  it('setState merges partial', () => {
+    const s = createStore({ count: 0, name: 'test' })
+    s.setState({ count: 5 })
+    expect(s.getState()).toEqual({ count: 5, name: 'test' })
+  })
+  it('subscribe fires on setState', () => {
+    const s = createStore({ count: 0 })
+    const fn = vi.fn()
+    s.subscribe(fn)
+    s.setState({ count: 1 })
+    expect(fn).toHaveBeenCalledWith({ count: 1 }, { count: 0 })
+  })
+  it('unsubscribe stops notifications', () => {
+    const s = createStore({ count: 0 })
+    const fn = vi.fn()
+    const unsub = s.subscribe(fn)
+    s.setState({ count: 1 })
+    expect(fn).toHaveBeenCalledTimes(1)
+    unsub()
+    s.setState({ count: 2 })
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+  it('select creates derived store', () => {
+    const s = createStore({ count: 5, name: 'test' })
+    expect(s.select(st => st.count).get()).toBe(5)
+  })
+  it('select only fires on change', () => {
+    const s = createStore({ count: 0, name: 'a' })
+    const cs = s.select(st => st.count)
+    const fn = vi.fn()
+    cs.subscribe(fn)
+    s.setState({ name: 'b' })
+    expect(fn).not.toHaveBeenCalled()
+    s.setState({ count: 1 })
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(fn).toHaveBeenCalledWith(1, 0)
+  })
+  it('select chaining', () => {
+    const s = createStore({ users: [{ name: 'a' }, { name: 'b' }] })
+    const cs = s.select(st => st.users).select(u => u.length)
+    expect(cs.get()).toBe(2)
+    const fn = vi.fn()
+    cs.subscribe(fn)
+    s.setState({ users: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] })
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(fn).toHaveBeenCalledWith(3, 2)
+  })
+  it('select no fire on shallow-equal', () => {
+    const s = createStore({ items: [1, 2, 3] })
+    const cs = s.select(st => st.items)
+    const fn = vi.fn()
+    cs.subscribe(fn)
+    s.setState({ items: [1, 2, 3] })
+    expect(fn).not.toHaveBeenCalled()
+  })
+})
+`
+
+const GRAPH_TEST = `
+import { describe, it, expect } from 'vitest'
+import { Graph } from './graph.ts'
+
+describe('Graph', () => {
+  it('Dijkstra shortest path', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B'); g.addNode('c', 'C')
+    g.addEdge('a', 'b', 1); g.addEdge('b', 'c', 2); g.addEdge('a', 'c', 5)
+    expect(g.dijkstra('a', 'c')).toEqual({ path: ['a', 'b', 'c'], distance: 3 })
+  })
+  it('null for unreachable', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B')
+    g.addEdge('a', 'b', 1)
+    expect(g.dijkstra('b', 'a')).toBe(null)
+  })
+  it('multiple paths picks shortest', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B'); g.addNode('c', 'C'); g.addNode('d', 'D')
+    g.addEdge('a', 'b', 1); g.addEdge('a', 'c', 2)
+    g.addEdge('b', 'd', 5); g.addEdge('c', 'd', 1)
+    expect(g.dijkstra('a', 'd')).toEqual({ path: ['a', 'c', 'd'], distance: 3 })
+  })
+  it('same start and end', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A')
+    expect(g.dijkstra('a', 'a')).toEqual({ path: ['a'], distance: 0 })
+  })
+  it('topologicalSort valid order', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B'); g.addNode('c', 'C')
+    g.addEdge('a', 'b', 1); g.addEdge('a', 'c', 1); g.addEdge('b', 'c', 1)
+    const sorted = g.topologicalSort()
+    expect(sorted.indexOf('a')).toBeLessThan(sorted.indexOf('b'))
+    expect(sorted.indexOf('a')).toBeLessThan(sorted.indexOf('c'))
+    expect(sorted.indexOf('b')).toBeLessThan(sorted.indexOf('c'))
+  })
+  it('topologicalSort throws on cycle', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B')
+    g.addEdge('a', 'b', 1); g.addEdge('b', 'a', 1)
+    expect(() => g.topologicalSort()).toThrow()
+  })
+  it('throws on negative weight', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B')
+    expect(() => g.addEdge('a', 'b', -1)).toThrow()
+  })
+  it('handles self-loop in Dijkstra', () => {
+    const g = new Graph<string>()
+    g.addNode('a', 'A'); g.addNode('b', 'B')
+    g.addEdge('a', 'a', 1); g.addEdge('a', 'b', 2)
+    expect(g.dijkstra('a', 'b')).toEqual({ path: ['a', 'b'], distance: 2 })
+  })
+})
+`
+
+const DI_TEST = `
+import { describe, it, expect } from 'vitest'
+import { Container } from './di.ts'
+
+describe('Container', () => {
+  it('resolves registered deps', () => {
+    const c = new Container()
+    c.register('db', () => ({ query: () => 'data' }))
+    expect(c.resolve<{ query: () => string }>('db').query()).toBe('data')
+  })
+  it('transient creates new instances', () => {
+    const c = new Container()
+    let n = 0
+    c.register('svc', () => ({ id: ++n }), 'transient')
+    expect(c.resolve<{ id: number }>('svc').id).not.toBe(c.resolve<{ id: number }>('svc').id)
+  })
+  it('singleton returns same instance', () => {
+    const c = new Container()
+    let n = 0
+    c.register('svc', () => ({ id: ++n }), 'singleton')
+    expect(c.resolve<{ id: number }>('svc')).toBe(c.resolve<{ id: number }>('svc'))
+  })
+  it('resolves nested deps', () => {
+    const c = new Container()
+    c.register('config', () => ({ host: 'localhost' }))
+    c.register('db', (ct) => ({ host: ct.resolve<{ host: string }>('config').host }))
+    expect(c.resolve<{ host: string }>('db').host).toBe('localhost')
+  })
+  it('throws on unregistered', () => {
+    const c = new Container()
+    expect(() => c.resolve('missing')).toThrow()
+  })
+  it('createScope inherits parent', () => {
+    const c = new Container()
+    c.register('base', () => 'parent', 'singleton')
+    expect(c.createScope().resolve<string>('base')).toBe('parent')
+  })
+  it('scope overrides parent', () => {
+    const c = new Container()
+    c.register('svc', () => 'parent', 'singleton')
+    const sc = c.createScope()
+    sc.register('svc', () => 'child', 'singleton')
+    expect(c.resolve<string>('svc')).toBe('parent')
+    expect(sc.resolve<string>('svc')).toBe('child')
+  })
+  it('detects circular deps', () => {
+    const c = new Container()
+    c.register('a', (ct) => ct.resolve('b'))
+    c.register('b', (ct) => ct.resolve('a'))
+    expect(() => c.resolve('a')).toThrow()
+  })
+  it('dispose calls dispose on singletons', () => {
+    const c = new Container()
+    let disposed = false
+    c.register('svc', () => ({ dispose: () => { disposed = true } }), 'singleton')
+    c.resolve<{ dispose: () => void }>('svc')
+    c.dispose()
+    expect(disposed).toBe(true)
+  })
+})
+`
+
+const PARSER_TEST = `
+import { describe, it, expect } from 'vitest'
+import { string, regex, map, seq, choice, many, optional, between, parse } from './parser.ts'
+
+describe('Parser combinators', () => {
+  it('string matches literal', () => {
+    expect(parse(string('hello'), 'hello')).toBe('hello')
+  })
+  it('regex matches pattern', () => {
+    expect(parse(regex(/\\d+/), '12345')).toBe('12345')
+  })
+  it('map transforms result', () => {
+    expect(parse(map(regex(/\\d+/), Number), '42')).toBe(42)
+  })
+  it('seq matches in order', () => {
+    expect(parse(seq(string('a'), string('b'), string('c')), 'abc')).toEqual(['a', 'b', 'c'])
+  })
+  it('choice matches first success', () => {
+    const p = choice(string('yes'), string('no'))
+    expect(parse(p, 'no')).toBe('no')
+    expect(parse(p, 'yes')).toBe('yes')
+  })
+  it('many matches zero or more', () => {
+    expect(parse(many(string('a')), 'aaa')).toEqual(['a', 'a', 'a'])
+    expect(parse(many(string('a')), '')).toEqual([])
+  })
+  it('optional matches zero or one', () => {
+    const p = seq(optional(string('hi')), string('world'))
+    expect(parse(p, 'hiworld')).toEqual(['hi', 'world'])
+    expect(parse(p, 'world')).toEqual([null, 'world'])
+  })
+  it('between matches content', () => {
+    expect(parse(between(string('('), regex(/[^)]+/), string(')')), '(hello)')).toBe('hello')
+  })
+  it('parse throws on incomplete', () => {
+    expect(() => parse(string('hello'), 'hel')).toThrow()
+  })
+  it('parse throws on trailing input', () => {
+    expect(() => parse(string('hello'), 'helloworld')).toThrow()
+  })
+  it('complex: JSON-like parse', () => {
+    const ws = regex(/\\s*/)
+    const val = choice(
+      map(regex(/\\d+/), Number),
+      map(between(string('"'), regex(/[^"]*/), string('"')), String),
+    )
+    const pair = seq(between(string('"'), regex(/[^"]*/), string('"')), ws, string(':'), ws, val)
+    const obj = between(string('{'), pair, string('}'))
+    expect(parse(obj, '{"age": 42}')[4]).toBe(42)
+  })
+})
+`
+
+const TX_MAP_TEST = `
+import { describe, it, expect } from 'vitest'
+import { TransactionalMap } from './txMap.ts'
+
+describe('TransactionalMap', () => {
+  it('stores and retrieves', () => {
+    const m = new TransactionalMap()
+    m.set('a', 1)
+    expect(m.get('a')).toBe(1)
+  })
+  it('delete removes', () => {
+    const m = new TransactionalMap()
+    m.set('a', 1); m.delete('a')
+    expect(m.get('a')).toBe(undefined)
+  })
+  it('transaction isolated until commit', () => {
+    const m = new TransactionalMap()
+    m.set('a', 1)
+    const tx = m.begin()
+    tx.set('a', 2); tx.set('b', 3)
+    expect(m.get('a')).toBe(1)
+    expect(m.get('b')).toBe(undefined)
+    expect(tx.get('a')).toBe(2)
+    expect(tx.get('b')).toBe(3)
+  })
+  it('commit applies changes', () => {
+    const m = new TransactionalMap()
+    m.set('a', 1)
+    const tx = m.begin()
+    tx.set('a', 2); tx.set('b', 3)
+    m.commit(tx)
+    expect(m.get('a')).toBe(2)
+    expect(m.get('b')).toBe(3)
+  })
+  it('rollback discards', () => {
+    const m = new TransactionalMap()
+    m.set('a', 1)
+    const tx = m.begin()
+    tx.set('a', 99); tx.delete('a')
+    m.rollback(tx)
+    expect(m.get('a')).toBe(1)
+  })
+  it('nested transactions', () => {
+    const m = new TransactionalMap()
+    m.set('x', 1)
+    const tx1 = m.begin()
+    tx1.set('x', 2)
+    const tx2 = tx1.begin()
+    tx2.set('x', 3)
+    expect(tx2.get('x')).toBe(3)
+    expect(tx1.get('x')).toBe(2)
+    expect(m.get('x')).toBe(1)
+    m.commit(tx2)
+    expect(tx1.get('x')).toBe(3)
+    expect(m.get('x')).toBe(1)
+    m.commit(tx1)
+    expect(m.get('x')).toBe(3)
+  })
+  it('nested rollback does not affect parent', () => {
+    const m = new TransactionalMap()
+    m.set('x', 1)
+    const tx1 = m.begin()
+    tx1.set('x', 2)
+    const tx2 = tx1.begin()
+    tx2.set('x', 99)
+    m.rollback(tx2)
+    expect(tx1.get('x')).toBe(2)
+    m.commit(tx1)
+    expect(m.get('x')).toBe(2)
+  })
+  it('transaction delete isolated', () => {
+    const m = new TransactionalMap()
+    m.set('a', 1); m.set('b', 2)
+    const tx = m.begin()
+    tx.delete('a')
+    expect(tx.get('a')).toBe(undefined)
+    expect(tx.has('a')).toBe(false)
+    expect(tx.has('b')).toBe(true)
+    expect(m.get('a')).toBe(1)
+    m.commit(tx)
+    expect(m.get('a')).toBe(undefined)
+  })
+})
+`
 
 // ---------------------------------------------------------------------------
 // Execution helpers
