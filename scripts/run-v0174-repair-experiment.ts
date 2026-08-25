@@ -79,13 +79,20 @@ async function writeWorkspaceFile(workspace: string, relativePath: string, conte
   await writeFile(fullPath, `${content}\n`, 'utf8')
 }
 
-/** Run a command in a workspace and capture stdout+stderr. */
+/** Run a command in a workspace and capture stdout+stderr. Uses the repo's
+ * node_modules/.bin on PATH so tsc and vitest are available in temp workspaces. */
 async function runInWorkspace(workspace: string, command: string[]): Promise<{ code: number; output: string }> {
   const { spawn } = await import('node:child_process')
+  const repoBin = join(REPO_ROOT, 'node_modules', '.bin')
+  const env = {
+    ...process.env,
+    CI: 'true',
+    PATH: `${repoBin}:${process.env.PATH ?? ''}`,
+  }
   return new Promise((resolve) => {
     const child = spawn(command[0], command.slice(1), {
       cwd: workspace,
-      env: { ...process.env, CI: 'true' },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let output = ''
@@ -111,8 +118,7 @@ function parseTypeErrors(output: string): string[] {
 /** Parse test runner output into failing test names. */
 function parseFailingTests(output: string): string[] {
   return output.split('\n')
-    .filter(line => /✓|✗|FAIL|×|failed|FAIL/i.test(line))
-    .filter(line => !/passed|✓/.test(line))
+    .filter(line => /FAIL|×|failed|❯.*failed/i.test(line))
     .map(line => line.trim())
     .filter(line => line.length > 0)
 }
@@ -125,7 +131,8 @@ const TEST_PACKAGE_JSON = JSON.stringify({
   type: 'module',
 }, null, 2)
 
-/** Create a minimal tsconfig.json for strict typechecking. */
+/** Create a minimal tsconfig.json for strict typechecking. Excludes test
+ * files (which import vitest) and only checks implementation files. */
 const TEST_TSCONFIG = JSON.stringify({
   compilerOptions: {
     strict: true,
@@ -136,8 +143,10 @@ const TEST_TSCONFIG = JSON.stringify({
     esModuleInterop: true,
     skipLibCheck: true,
     noEmit: true,
+    allowImportingTsExtensions: true,
   },
   include: ['*.ts'],
+  exclude: ['*.test.ts'],
 }, null, 2)
 
 // ---------------------------------------------------------------------------
