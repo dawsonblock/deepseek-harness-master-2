@@ -596,6 +596,1090 @@ describe('curry', () => {
       }
     },
   },
+  // --- Hard fixtures: designed to challenge Flash ---
+  {
+    id: 'fix-rate-limiter-state-bug',
+    category: 'state-management-bug',
+    description: 'Fix a rate limiter with a subtle state reset bug',
+    expectsFlashFailure: true,
+    task: 'The file `rateLimiter.ts` contains a token-bucket rate limiter with a bug: after the bucket refills, it does not reset `lastRefillTime` correctly, causing all subsequent `allow()` calls to instantly drain the bucket. Fix the bug so `rateLimiter.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'rateLimiter.ts', `
+export class RateLimiter {
+  private tokens: number
+  private lastRefillTime: number
+  constructor(
+    private readonly capacity: number,
+    private readonly refillRatePerMs: number,
+  ) {
+    this.tokens = capacity
+    this.lastRefillTime = Date.now()
+  }
+  allow(): boolean {
+    const now = Date.now()
+    const elapsed = now - this.lastRefillTime
+    const refilled = elapsed * this.refillRatePerMs
+    if (refilled > 0) {
+      this.tokens = Math.min(this.capacity, this.tokens + refilled)
+    }
+    if (this.tokens >= 1) {
+      this.tokens -= 1
+      return true
+    }
+    return false
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'rateLimiter.test.ts', `
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { RateLimiter } from './rateLimiter.ts'
+
+describe('RateLimiter', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('allows up to capacity initially', () => {
+    const rl = new RateLimiter(3, 0.001)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(false)
+  })
+
+  it('refills tokens over time', () => {
+    const rl = new RateLimiter(2, 0.001)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(false)
+    vi.advanceTimersByTime(1000)
+    expect(rl.allow()).toBe(true)
+  })
+
+  it('does not over-refill beyond capacity', () => {
+    const rl = new RateLimiter(2, 0.001)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(true)
+    vi.advanceTimersByTime(10000)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(false)
+  })
+
+  it('refills correctly after multiple intervals', () => {
+    const rl = new RateLimiter(2, 0.001)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(true)
+    vi.advanceTimersByTime(500)
+    expect(rl.allow()).toBe(true)
+    vi.advanceTimersByTime(500)
+    expect(rl.allow()).toBe(true)
+    expect(rl.allow()).toBe(false)
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-async-race-condition',
+    category: 'async-race-bug',
+    description: 'Fix an async race condition in a cache-with-inflight-tracking module',
+    expectsFlashFailure: true,
+    task: 'The file `inflightCache.ts` has a race condition: when two callers request the same key simultaneously, the second caller does not await the in-flight promise and instead starts a new fetch. Fix the bug so `inflightCache.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'inflightCache.ts', `
+export class InflightCache<K, V> {
+  private cache = new Map<K, V>()
+  private inflight = new Map<K, Promise<V>>()
+  constructor(private readonly fetcher: (key: K) => Promise<V>) {}
+  async get(key: K): Promise<V> {
+    const cached = this.cache.get(key)
+    if (cached !== undefined) return cached
+    const existing = this.inflight.get(key)
+    if (existing !== undefined) return existing
+    const promise = this.fetcher(key)
+    this.inflight.set(key, promise)
+    const value = await promise
+    this.cache.set(key, value)
+    this.inflight.delete(key)
+    return value
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'inflightCache.test.ts', `
+import { describe, it, expect, vi } from 'vitest'
+import { InflightCache } from './inflightCache.ts'
+
+describe('InflightCache', () => {
+  it('caches results', async () => {
+    const fetcher = vi.fn(async (key: string) => \`value-\${key}\`)
+    const cache = new InflightCache(fetcher)
+    expect(await cache.get('a')).toBe('value-a')
+    expect(await cache.get('a')).toBe('value-a')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates concurrent requests', async () => {
+    const fetcher = vi.fn(async (key: string) => {
+      await new Promise(r => setTimeout(r, 50))
+      return \`value-\${key}\`
+    })
+    const cache = new InflightCache(fetcher)
+    const [r1, r2] = await Promise.all([cache.get('a'), cache.get('a')])
+    expect(r1).toBe('value-a')
+    expect(r2).toBe('value-a')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('deduplicates three concurrent requests', async () => {
+    const fetcher = vi.fn(async (key: string) => {
+      await new Promise(r => setTimeout(r, 50))
+      return \`value-\${key}\`
+    })
+    const cache = new InflightCache(fetcher)
+    const [r1, r2, r3] = await Promise.all([
+      cache.get('x'), cache.get('x'), cache.get('x'),
+    ])
+    expect(r1).toBe('value-x')
+    expect(r2).toBe('value-x')
+    expect(r3).toBe('value-x')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-multi-file-event-bus',
+    category: 'multi-file-bug',
+    description: 'Fix a multi-file event bus where typed event removal is broken',
+    expectsFlashFailure: true,
+    task: 'The files `eventBus.ts` and `typedEvents.ts` implement a typed event bus. The `off()` method does not correctly remove listeners because it compares function references after they are wrapped. Fix the bug so `eventBus.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'typedEvents.ts', `
+export interface EventMap {
+  'user:login': { userId: string; timestamp: number }
+  'user:logout': { userId: string }
+  'data:update': { key: string; value: unknown }
+}
+`)
+      await writeWorkspaceFile(workspace, 'eventBus.ts', `
+import type { EventMap } from './typedEvents.ts'
+
+type EventName = keyof EventMap
+type Listener<K extends EventName> = (payload: EventMap[K]) => void
+
+export class EventBus {
+  private listeners = new Map<EventName, Map<Listener<EventName>, Listener<EventName>>>()
+
+  on<K extends EventName>(event: K, listener: Listener<K>): () => void {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Map())
+    const wrapped = listener as Listener<EventName>
+    this.listeners.get(event)!.set(wrapped, wrapped)
+    return () => this.off(event, listener)
+  }
+
+  off<K extends EventName>(event: K, listener: Listener<K>): void {
+    const map = this.listeners.get(event)
+    if (!map) return
+    map.delete(listener as Listener<EventName>)
+  }
+
+  emit<K extends EventName>(event: K, payload: EventMap[K]): void {
+    const map = this.listeners.get(event)
+    if (!map) return
+    for (const listener of map.values()) {
+      listener(payload)
+    }
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'eventBus.test.ts', `
+import { describe, it, expect, vi } from 'vitest'
+import { EventBus } from './eventBus.ts'
+
+describe('EventBus', () => {
+  it('calls listeners on emit', () => {
+    const bus = new EventBus()
+    const fn = vi.fn()
+    bus.on('user:login', fn)
+    bus.emit('user:login', { userId: 'u1', timestamp: 123 })
+    expect(fn).toHaveBeenCalledWith({ userId: 'u1', timestamp: 123 })
+  })
+
+  it('removes listeners via off()', () => {
+    const bus = new EventBus()
+    const fn = vi.fn()
+    bus.on('user:logout', fn)
+    bus.off('user:logout', fn)
+    bus.emit('user:logout', { userId: 'u1' })
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('removes listeners via the returned disposer', () => {
+    const bus = new EventBus()
+    const fn = vi.fn()
+    const dispose = bus.on('data:update', fn)
+    dispose()
+    bus.emit('data:update', { key: 'k', value: 42 })
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('does not affect other listeners when one is removed', () => {
+    const bus = new EventBus()
+    const fn1 = vi.fn()
+    const fn2 = vi.fn()
+    bus.on('user:login', fn1)
+    bus.on('user:login', fn2)
+    bus.off('user:login', fn1)
+    bus.emit('user:login', { userId: 'u2', timestamp: 456 })
+    expect(fn1).not.toHaveBeenCalled()
+    expect(fn2).toHaveBeenCalledWith({ userId: 'u2', timestamp: 456 })
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-type-safe-result-chain',
+    category: 'type-system-failure',
+    description: 'Fix type errors in a Result/Either chain with proper narrowing',
+    expectsFlashFailure: true,
+    task: 'The file `result.ts` has TypeScript type errors: the `map` and `flatMap` methods do not properly narrow the Ok vs Error variants, and the `unwrap` method has an unsafe return type. Fix the type errors so `tsc --noEmit` passes and `result.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'result.ts', `
+export type Result<T, E> = Ok<T, E> | Err<T, E>
+
+export class Ok<T, E> {
+  constructor(readonly value: T) {}
+  isOk(): this is Ok<T, E> { return true }
+  isErr(): this is Err<T, E> { return false }
+  map<U>(fn: (value: T) => U): Result<U, E> {
+    return new Ok(fn(this.value))
+  }
+  flatMap<U>(fn: (value: T) => Result<U, E>): Result<U, E> {
+    return fn(this.value)
+  }
+  unwrap(): T {
+    return this.value
+  }
+}
+
+export class Err<T, E> {
+  constructor(readonly error: E) {}
+  isOk(): this is Ok<T, E> { return false }
+  isErr(): this is Err<T, E> { return true }
+  map<U>(fn: (value: T) => U): Result<U, E> {
+    return new Err(this.error)
+  }
+  flatMap<U>(fn: (value: T) => Result<U, E>): Result<U, E> {
+    return new Err(this.error)
+  }
+  unwrap(): T {
+    throw new Error(\`unwrap called on Err: \${String(this.error)}\`)
+  }
+}
+
+export function ok<T, E>(value: T): Result<T, E> {
+  return new Ok(value)
+}
+
+export function err<T, E>(error: E): Result<T, E> {
+  return new Err(error)
+}
+`)
+      await writeWorkspaceFile(workspace, 'result.test.ts', `
+import { describe, it, expect } from 'vitest'
+import { ok, err, type Result } from './result.ts'
+
+describe('Result', () => {
+  it('map transforms Ok values', () => {
+    const r = ok<number, string>(5).map(x => x * 2)
+    expect(r.isOk()).toBe(true)
+    if (r.isOk()) expect(r.value).toBe(10)
+  })
+
+  it('map does not transform Err', () => {
+    const r = err<number, string>('fail').map(x => x * 2)
+    expect(r.isErr()).toBe(true)
+    if (r.isErr()) expect(r.error).toBe('fail')
+  })
+
+  it('flatMap chains Ok', () => {
+    const r = ok<number, string>(5)
+      .flatMap(x => ok<string, string>(\`num:\${x}\`))
+    expect(r.isOk()).toBe(true)
+    if (r.isOk()) expect(r.value).toBe('num:5')
+  })
+
+  it('flatMap short-circuits on Err', () => {
+    const r = err<number, string>('fail')
+      .flatMap(x => ok<string, string>(\`num:\${x}\`))
+    expect(r.isErr()).toBe(true)
+    if (r.isErr()) expect(r.error).toBe('fail')
+  })
+
+  it('unwrap returns value on Ok', () => {
+    expect(ok<number, string>(42).unwrap()).toBe(42)
+  })
+
+  it('unwrap throws on Err', () => {
+    expect(() => err<number, string>('bad').unwrap()).toThrow()
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-observable-pipeline',
+    category: 'architectural-misunderstanding',
+    description: 'Fix a broken observable pipeline with map, filter, and take operators',
+    expectsFlashFailure: true,
+    task: 'The file `observable.ts` implements a minimal observable with `pipe`, `map`, `filter`, and `take` operators. The `take` operator does not properly complete the subscription after N values, and `pipe` does not correctly chain operators. Fix the bugs so `observable.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'observable.ts', `
+type Subscriber<T> = (value: T) => void
+type Unsubscribe = () => void
+
+export class Observable<T> {
+  constructor(private readonly subscribeFn: (subscriber: Subscriber<T>) => Unsubscribe) {}
+  subscribe(subscriber: Subscriber<T>): Unsubscribe {
+    return this.subscribeFn(subscriber)
+  }
+  pipe<U>(...operators: Array<(obs: Observable<T>) => Observable<U>>): Observable<U> {
+    return operators.reduce((acc, op) => op(acc), this as Observable<unknown>) as Observable<U>
+  }
+}
+
+export function map<T, U>(fn: (value: T) => U): (obs: Observable<T>) => Observable<U> {
+  return (obs: Observable<T>) => new Observable<U>((subscriber) => {
+    return obs.subscribe((value) => subscriber(fn(value)))
+  })
+}
+
+export function filter<T>(pred: (value: T) => boolean): (obs: Observable<T>) => Observable<T> {
+  return (obs: Observable<T>) => new Observable<T>((subscriber) => {
+    return obs.subscribe((value) => {
+      if (pred(value)) subscriber(value)
+    })
+  })
+}
+
+export function take<T>(n: number): (obs: Observable<T>) => Observable<T> {
+  return (obs: Observable<T>) => new Observable<T>((subscriber) => {
+    let count = 0
+    const unsub = obs.subscribe((value) => {
+      if (count < n) {
+        count++
+        subscriber(value)
+      }
+    })
+    return unsub
+  })
+}
+`)
+      await writeWorkspaceFile(workspace, 'observable.test.ts', `
+import { describe, it, expect } from 'vitest'
+import { Observable, map, filter, take } from './observable.ts'
+
+function fromArray<T>(values: T[]): Observable<T> {
+  return new Observable<T>((subscriber) => {
+    for (const v of values) subscriber(v)
+    return () => {}
+  })
+}
+
+describe('Observable', () => {
+  it('map transforms values', () => {
+    const results: number[] = []
+    fromArray([1, 2, 3]).pipe(map(x => x * 10)).subscribe(v => results.push(v))
+    expect(results).toEqual([10, 20, 30])
+  })
+
+  it('filter removes values', () => {
+    const results: number[] = []
+    fromArray([1, 2, 3, 4, 5]).pipe(filter(x => x % 2 === 0)).subscribe(v => results.push(v))
+    expect(results).toEqual([2, 4])
+  })
+
+  it('take limits the number of values', () => {
+    const results: number[] = []
+    fromArray([1, 2, 3, 4, 5]).pipe(take(3)).subscribe(v => results.push(v))
+    expect(results).toEqual([1, 2, 3])
+  })
+
+  it('chained pipe works', () => {
+    const results: number[] = []
+    fromArray([1, 2, 3, 4, 5, 6])
+      .pipe(
+        filter(x => x % 2 === 0),
+        map(x => x * 10),
+        take(2),
+      )
+      .subscribe(v => results.push(v))
+    expect(results).toEqual([20, 40])
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-trie-implementation',
+    category: 'algorithmic-bug',
+    description: 'Fix a broken Trie implementation with incorrect search and delete',
+    expectsFlashFailure: true,
+    task: 'The file `trie.ts` implements a Trie with `insert`, `search`, `startsWith`, and `delete` methods. The `search` method incorrectly returns true for prefixes that are not complete words, and `delete` does not properly prune empty nodes. Fix the bugs so `trie.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'trie.ts', `
+class TrieNode {
+  children = new Map<string, TrieNode>()
+  isEndOfWord = false
+}
+
+export class Trie {
+  private root = new TrieNode()
+
+  insert(word: string): void {
+    let node = this.root
+    for (const char of word) {
+      if (!node.children.has(char)) node.children.set(char, new TrieNode())
+      node = node.children.get(char)!
+    }
+    node.isEndOfWord = true
+  }
+
+  search(word: string): boolean {
+    let node = this.root
+    for (const char of word) {
+      if (!node.children.has(char)) return false
+      node = node.children.get(char)!
+    }
+    return true
+  }
+
+  startsWith(prefix: string): boolean {
+    let node = this.root
+    for (const char of prefix) {
+      if (!node.children.has(char)) return false
+      node = node.children.get(char)!
+    }
+    return true
+  }
+
+  delete(word: string): void {
+    const deleteHelper = (node: TrieNode, word: string, index: number): boolean => {
+      if (index === word.length) {
+        if (!node.isEndOfWord) return false
+        node.isEndOfWord = false
+        return node.children.size === 0
+      }
+      const char = word[index]
+      const child = node.children.get(char)
+      if (child === undefined) return false
+      const shouldDelete = deleteHelper(child, word, index + 1)
+      if (shouldDelete) {
+        node.children.delete(char)
+        return node.children.size === 0 && !node.isEndOfWord
+      }
+      return false
+    }
+    deleteHelper(this.root, word, 0)
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'trie.test.ts', `
+import { describe, it, expect } from 'vitest'
+import { Trie } from './trie.ts'
+
+describe('Trie', () => {
+  it('inserts and searches complete words', () => {
+    const trie = new Trie()
+    trie.insert('apple')
+    expect(trie.search('apple')).toBe(true)
+    expect(trie.search('app')).toBe(false)
+  })
+
+  it('startsWith finds prefixes', () => {
+    const trie = new Trie()
+    trie.insert('apple')
+    trie.insert('app')
+    expect(trie.startsWith('app')).toBe(true)
+    expect(trie.startsWith('apl')).toBe(false)
+  })
+
+  it('search distinguishes words from prefixes', () => {
+    const trie = new Trie()
+    trie.insert('apple')
+    trie.insert('app')
+    expect(trie.search('app')).toBe(true)
+    expect(trie.search('appl')).toBe(false)
+  })
+
+  it('delete removes words', () => {
+    const trie = new Trie()
+    trie.insert('apple')
+    trie.insert('app')
+    trie.delete('apple')
+    expect(trie.search('apple')).toBe(false)
+    expect(trie.search('app')).toBe(true)
+  })
+
+  it('delete prunes empty nodes', () => {
+    const trie = new Trie()
+    trie.insert('app')
+    trie.delete('app')
+    expect(trie.search('app')).toBe(false)
+    expect(trie.startsWith('a')).toBe(false)
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-lru-cache',
+    category: 'data-structure-bug',
+    description: 'Fix an LRU cache with broken eviction order',
+    expectsFlashFailure: true,
+    task: 'The file `lruCache.ts` implements an LRU cache using a Map. The eviction logic has a bug: it evicts the most recently used item instead of the least recently used, and `get` does not update recency. Fix the bugs so `lruCache.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'lruCache.ts', `
+export class LRUCache<K, V> {
+  private cache = new Map<K, V>()
+  constructor(private readonly capacity: number) {}
+  get(key: K): V | undefined {
+    return this.cache.get(key)
+  }
+  set(key: K, value: V): void {
+    if (this.cache.size >= this.capacity) {
+      const firstKey = this.cache.keys().next().value
+      if (firstKey !== undefined) this.cache.delete(firstKey)
+    }
+    this.cache.set(key, value)
+  }
+  has(key: K): boolean {
+    return this.cache.has(key)
+  }
+  get size(): number {
+    return this.cache.size
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'lruCache.test.ts', `
+import { describe, it, expect } from 'vitest'
+import { LRUCache } from './lruCache.ts'
+
+describe('LRUCache', () => {
+  it('stores and retrieves values', () => {
+    const cache = new LRUCache<string, number>(3)
+    cache.set('a', 1)
+    cache.set('b', 2)
+    expect(cache.get('a')).toBe(1)
+    expect(cache.get('b')).toBe(2)
+  })
+
+  it('evicts the least recently used item when capacity is exceeded', () => {
+    const cache = new LRUCache<string, number>(2)
+    cache.set('a', 1)
+    cache.set('b', 2)
+    cache.get('a')
+    cache.set('c', 3)
+    expect(cache.has('a')).toBe(true)
+    expect(cache.has('b')).toBe(false)
+    expect(cache.has('c')).toBe(true)
+  })
+
+  it('get updates recency', () => {
+    const cache = new LRUCache<string, number>(2)
+    cache.set('a', 1)
+    cache.set('b', 2)
+    cache.get('a')
+    cache.set('c', 3)
+    expect(cache.has('a')).toBe(true)
+    expect(cache.has('b')).toBe(false)
+  })
+
+  it('set on existing key updates value and recency', () => {
+    const cache = new LRUCache<string, number>(2)
+    cache.set('a', 1)
+    cache.set('b', 2)
+    cache.set('a', 10)
+    cache.set('c', 3)
+    expect(cache.has('a')).toBe(true)
+    expect(cache.get('a')).toBe(10)
+    expect(cache.has('b')).toBe(false)
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-validation-pipeline',
+    category: 'api-contract-bug',
+    description: 'Fix a validation pipeline that incorrectly accepts invalid data',
+    expectsFlashFailure: true,
+    task: 'The file `validator.ts` implements a schema validator with `string`, `number`, `object`, and `array` validators. The `object` validator does not check all required keys, and the `array` validator does not validate individual elements. Fix the bugs so `validator.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'validator.ts', `
+export type ValidationResult = { ok: true; value: unknown } | { ok: false; errors: string[] }
+
+export interface Validator {
+  validate(input: unknown): ValidationResult
+}
+
+export function string(): Validator {
+  return {
+    validate(input: unknown) {
+      if (typeof input === 'string') return { ok: true, value: input }
+      return { ok: false, errors: ['expected string'] }
+    },
+  }
+}
+
+export function number(): Validator {
+  return {
+    validate(input: unknown) {
+      if (typeof input === 'number') return { ok: true, value: input }
+      return { ok: false, errors: ['expected number'] }
+    },
+  }
+}
+
+export function object(schema: Record<string, Validator>): Validator {
+  return {
+    validate(input: unknown) {
+      if (typeof input !== 'object' || input === null) {
+        return { ok: false, errors: ['expected object'] }
+      }
+      const obj = input as Record<string, unknown>
+      const errors: string[] = []
+      const result: Record<string, unknown> = {}
+      for (const [key, validator] of Object.entries(schema)) {
+        const fieldResult = validator.validate(obj[key])
+        if (fieldResult.ok) {
+          result[key] = fieldResult.value
+        } else {
+          errors.push(...fieldResult.errors.map(e => \`\${key}: \${e}\`))
+        }
+      }
+      if (errors.length > 0) return { ok: false, errors }
+      return { ok: true, value: result }
+    },
+  }
+}
+
+export function array(elementValidator: Validator): Validator {
+  return {
+    validate(input: unknown) {
+      if (!Array.isArray(input)) return { ok: false, errors: ['expected array'] }
+      return { ok: true, value: input }
+    },
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'validator.test.ts', `
+import { describe, it, expect } from 'vitest'
+import { string, number, object, array } from './validator.ts'
+
+describe('validators', () => {
+  it('string accepts strings', () => {
+    expect(string().validate('hello').ok).toBe(true)
+    expect(string().validate(42).ok).toBe(false)
+  })
+
+  it('number accepts numbers', () => {
+    expect(number().validate(42).ok).toBe(true)
+    expect(number().validate('42').ok).toBe(false)
+  })
+
+  it('object validates all required keys', () => {
+    const schema = object({ name: string(), age: number() })
+    expect(schema.validate({ name: 'Alice', age: 30 }).ok).toBe(true)
+    expect(schema.validate({ name: 'Alice' }).ok).toBe(false)
+    expect(schema.validate({ age: 30 }).ok).toBe(false)
+  })
+
+  it('object rejects non-objects', () => {
+    const schema = object({ name: string() })
+    expect(schema.validate(null).ok).toBe(false)
+    expect(schema.validate('hello').ok).toBe(false)
+  })
+
+  it('array validates each element', () => {
+    const schema = array(number())
+    expect(schema.validate([1, 2, 3]).ok).toBe(true)
+    expect(schema.validate([1, 'two', 3]).ok).toBe(false)
+    expect(schema.validate('not array').ok).toBe(false)
+  })
+
+  it('nested object inside array', () => {
+    const schema = array(object({ name: string() }))
+    expect(schema.validate([{ name: 'a' }, { name: 'b' }]).ok).toBe(true)
+    expect(schema.validate([{ name: 'a' }, { age: 1 }]).ok).toBe(false)
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-promise-queue-concurrency',
+    category: 'async-concurrency-bug',
+    description: 'Fix a promise queue with broken concurrency control',
+    expectsFlashFailure: true,
+    task: 'The file `promiseQueue.ts` implements a concurrency-limited promise queue. The concurrency control is broken: it starts all tasks immediately instead of limiting to `concurrency` at a time. Fix the bug so `promiseQueue.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'promiseQueue.ts', `
+export class PromiseQueue<T> {
+  constructor(private readonly concurrency: number) {}
+  async run(tasks: Array<() => Promise<T>>): Promise<T[]> {
+    const results: T[] = new Array(tasks.length)
+    let nextIndex = 0
+    const runNext = async (): Promise<void> => {
+      while (nextIndex < tasks.length) {
+        const index = nextIndex++
+        results[index] = await tasks[index]()
+      }
+    }
+    await Promise.all(Array.from({ length: tasks.length }, () => runNext()))
+    return results
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'promiseQueue.test.ts', `
+import { describe, it, expect, vi } from 'vitest'
+import { PromiseQueue } from './promiseQueue.ts'
+
+describe('PromiseQueue', () => {
+  it('runs all tasks and returns results in order', async () => {
+    const queue = new PromiseQueue<number>(2)
+    const tasks = [
+      () => Promise.resolve(1),
+      () => Promise.resolve(2),
+      () => Promise.resolve(3),
+    ]
+    const results = await queue.run(tasks)
+    expect(results).toEqual([1, 2, 3])
+  })
+
+  it('limits concurrency', async () => {
+    let active = 0
+    let maxActive = 0
+    const queue = new PromiseQueue<number>(2)
+    const makeTask = (value: number) => async (): Promise<number> => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      await new Promise(r => setTimeout(r, 50))
+      active--
+      return value
+    }
+    await queue.run([makeTask(1), makeTask(2), makeTask(3), makeTask(4), makeTask(5)])
+    expect(maxActive).toBeLessThanOrEqual(2)
+  })
+
+  it('handles empty task list', async () => {
+    const queue = new PromiseQueue<number>(3)
+    const results = await queue.run([])
+    expect(results).toEqual([])
+  })
+
+  it('preserves order even with varying completion times', async () => {
+    const queue = new PromiseQueue<number>(2)
+    const tasks = [
+      async () => { await new Promise(r => setTimeout(r, 100)); return 1 },
+      async () => { await new Promise(r => setTimeout(r, 10)); return 2 },
+      async () => { await new Promise(r => setTimeout(r, 50)); return 3 },
+    ]
+    const results = await queue.run(tasks)
+    expect(results).toEqual([1, 2, 3])
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'fix-binary-heap',
+    category: 'algorithmic-bug',
+    description: 'Fix a binary min-heap with broken sift-down logic',
+    expectsFlashFailure: true,
+    task: 'The file `minHeap.ts` implements a binary min-heap with `insert`, `extractMin`, and `peek` methods. The `siftDown` method has an off-by-one error that causes the heap property to be violated after extraction. Fix the bug so `minHeap.test.ts` passes. Do not change the test file.',
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+      await writeWorkspaceFile(workspace, 'minHeap.ts', `
+export class MinHeap {
+  private heap: number[] = []
+  get size(): number { return this.heap.length }
+  insert(value: number): void {
+    this.heap.push(value)
+    this.siftUp(this.heap.length - 1)
+  }
+  peek(): number | undefined {
+    return this.heap[0]
+  }
+  extractMin(): number | undefined {
+    if (this.heap.length === 0) return undefined
+    const min = this.heap[0]
+    const last = this.heap.pop()!
+    if (this.heap.length > 0) {
+      this.heap[0] = last
+      this.siftDown(0)
+    }
+    return min
+  }
+  private siftUp(index: number): void {
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2)
+      if (this.heap[index] >= this.heap[parent]) break
+      ;[this.heap[index], this.heap[parent]] = [this.heap[parent], this.heap[index]]
+      index = parent
+    }
+  }
+  private siftDown(index: number): void {
+    const n = this.heap.length
+    while (true) {
+      const left = 2 * index + 1
+      const right = 2 * index + 2
+      let smallest = index
+      if (left < n && this.heap[left] < this.heap[smallest]) smallest = left
+      if (right < n && this.heap[right] < this.heap[smallest]) smallest = right
+      if (smallest === index) break
+      ;[this.heap[index], this.heap[smallest]] = [this.heap[smallest], this.heap[index]]
+      index = smallest
+    }
+  }
+}
+`)
+      await writeWorkspaceFile(workspace, 'minHeap.test.ts', `
+import { describe, it, expect } from 'vitest'
+import { MinHeap } from './minHeap.ts'
+
+describe('MinHeap', () => {
+  it('extracts elements in sorted order', () => {
+    const heap = new MinHeap()
+    const values = [5, 3, 8, 1, 9, 2, 7, 4, 6]
+    for (const v of values) heap.insert(v)
+    const sorted: number[] = []
+    while (heap.size > 0) sorted.push(heap.extractMin()!)
+    expect(sorted).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it('peek returns minimum without removing', () => {
+    const heap = new MinHeap()
+    heap.insert(5)
+    heap.insert(1)
+    heap.insert(3)
+    expect(heap.peek()).toBe(1)
+    expect(heap.size).toBe(3)
+  })
+
+  it('handles single element', () => {
+    const heap = new MinHeap()
+    heap.insert(42)
+    expect(heap.extractMin()).toBe(42)
+    expect(heap.size).toBe(0)
+  })
+
+  it('handles duplicate values', () => {
+    const heap = new MinHeap()
+    for (const v of [3, 1, 3, 1, 3]) heap.insert(v)
+    const sorted: number[] = []
+    while (heap.size > 0) sorted.push(heap.extractMin()!)
+    expect(sorted).toEqual([1, 1, 3, 3, 3])
+  })
+
+  it('maintains heap property after mixed operations', () => {
+    const heap = new MinHeap()
+    heap.insert(10)
+    heap.insert(5)
+    heap.insert(15)
+    expect(heap.extractMin()).toBe(5)
+    heap.insert(3)
+    heap.insert(20)
+    heap.insert(7)
+    const sorted: number[] = []
+    while (heap.size > 0) sorted.push(heap.extractMin()!)
+    expect(sorted).toEqual([3, 7, 10, 15, 20])
+  })
+})
+`)
+    },
+    verify: async (workspace) => {
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
