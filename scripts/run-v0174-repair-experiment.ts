@@ -190,9 +190,9 @@ describe('debounce', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -254,9 +254,9 @@ describe('throttle', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -305,9 +305,9 @@ describe('memoize', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -355,9 +355,9 @@ describe('sortNumbers', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -421,9 +421,9 @@ describe('promisePool', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -483,9 +483,9 @@ describe('deepEqual', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -529,9 +529,9 @@ describe('doubleAll', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
@@ -577,9 +577,9 @@ describe('curry', () => {
 `)
     },
     verify: async (workspace) => {
-      const typecheck = await runInWorkspace(workspace, ['npx', 'tsc', '--noEmit'])
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
       const typeErrors = parseTypeErrors(typecheck.output)
-      const testRun = await runInWorkspace(workspace, ['npx', 'vitest', 'run', '--reporter=verbose'])
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
       const failingTests = parseFailingTests(testRun.output)
       const passed = typecheck.code === 0 && testRun.code === 0
       const failedCriteria: string[] = []
