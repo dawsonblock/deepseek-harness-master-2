@@ -319,7 +319,8 @@ export function decideEscalation(
   bounds: LoopBounds = DEFAULT_LOOP_BOUNDS,
 ): EscalationAction {
   if (stages.length === 0) return { kind: 'stop' }
-  const lastStage = stages[stages.length - 1]
+  const lastStage = stages.at(-1)
+  if (lastStage === undefined) return { kind: 'stop' }
   if (lastStage.verified) return { kind: 'stop' }
   if (stages.length >= bounds.maxTotalStages) return { kind: 'stop' }
 
@@ -328,16 +329,18 @@ export function decideEscalation(
     const flashFailures = flashStages.filter(stage => !stage.verified)
 
     if (flashFailures.length >= 2) {
-      const priorFailure = flashFailures[flashFailures.length - 2]
-      const currentFailure = flashFailures[flashFailures.length - 1]
-      const priorFp = priorFailure.failureFingerprint
-      const currentFp = currentFailure.failureFingerprint
-      if (priorFp !== undefined && currentFp !== undefined && isSameFailure(priorFp, currentFp)) {
-        return { kind: 'escalate-to-pro' }
-      }
-      if (priorFailure.verificationEvidence !== undefined && currentFailure.verificationEvidence !== undefined) {
-        if (isSemanticSameFailure(priorFailure.verificationEvidence, currentFailure.verificationEvidence)) {
+      const priorFailure = flashFailures.at(-2)
+      const currentFailure = flashFailures.at(-1)
+      if (priorFailure !== undefined && currentFailure !== undefined) {
+        const priorFp = priorFailure.failureFingerprint
+        const currentFp = currentFailure.failureFingerprint
+        if (priorFp !== undefined && currentFp !== undefined && isSameFailure(priorFp, currentFp)) {
           return { kind: 'escalate-to-pro' }
+        }
+        if (priorFailure.verificationEvidence !== undefined && currentFailure.verificationEvidence !== undefined) {
+          if (isSemanticSameFailure(priorFailure.verificationEvidence, currentFailure.verificationEvidence)) {
+            return { kind: 'escalate-to-pro' }
+          }
         }
       }
     }
@@ -628,8 +631,11 @@ export function computePolicyMetrics(
       .filter(stage => stage.model === 'flash' && !stage.verified)
     if (flashFailures.length < 2) return false
     for (let index = 1; index < flashFailures.length; index++) {
-      const prior = flashFailures[index - 1].failureFingerprint
-      const current = flashFailures[index].failureFingerprint
+      const priorStage = flashFailures.at(index - 1)
+      const currentStage = flashFailures.at(index)
+      if (priorStage === undefined || currentStage === undefined) continue
+      const prior = priorStage.failureFingerprint
+      const current = currentStage.failureFingerprint
       if (prior !== undefined && current !== undefined && isSameFailure(prior, current)) {
         return true
       }

@@ -296,7 +296,11 @@ function extractEstimates(events: SessionEvent[]): {
     }
   }
 
-  return { preRoutingEstimate, postRoutingEstimate, estimatorPrecision }
+  return {
+    ...preRoutingEstimate !== undefined ? { preRoutingEstimate } : {},
+    ...postRoutingEstimate !== undefined ? { postRoutingEstimate } : {},
+    ...estimatorPrecision !== undefined ? { estimatorPrecision } : {},
+  }
 }
 
 interface RoutingDecisionEvent {

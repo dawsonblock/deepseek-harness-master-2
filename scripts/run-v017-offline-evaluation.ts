@@ -357,7 +357,7 @@ function median(values: number[]): number {
 
 function evaluatePolicy(
   policyName: string,
-  testExamples: LabeledExample[],
+  _testExamples: LabeledExample[],
   decisions: Array<{ example: LabeledExample; usePro: boolean }>,
 ): PolicyEvaluation {
   let verifiedPasses = 0

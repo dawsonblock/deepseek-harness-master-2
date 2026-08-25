@@ -417,7 +417,7 @@ function extractFromEvents(events: SessionEvent[]): {
 
   for (const event of events) {
     if (event.type === 'model/usage') {
-      const data = event.data as { usage: Record<string, number>; routingDecisionId?: string }
+      const data = event.data as unknown as { usage: Record<string, number>; routingDecisionId?: string }
       const u = data.usage
       inputTokens += u.inputTokens ?? 0
       outputTokens += u.outputTokens ?? 0

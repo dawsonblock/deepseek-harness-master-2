@@ -107,7 +107,7 @@ const TASK_TEXTS: Record<string, string> = {
 // Feature extraction
 // ---------------------------------------------------------------------------
 
-function extractStructuralFeatures(taskId: string, taskText: string, taskClass: { criteriaCount: number }): StructuralFeatures {
+function extractStructuralFeatures(_taskId: string, taskText: string, taskClass: { criteriaCount: number }): StructuralFeatures {
   const codeBlockCount = (taskText.match(/```/g)?.length ?? 0) / 2 | 0
   const jsonMarkers = (taskText.match(/\bjson\b/gi)?.length ?? 0) + (taskText.match(/\{[^}]*\}/g)?.length ?? 0)
   const yamlMarkers = (taskText.match(/\byaml\b/gi)?.length ?? 0) + (taskText.match(/^[a-z]+:\s/gm)?.length ?? 0)
@@ -248,7 +248,7 @@ interface PolicyResult {
 
 function evaluatePolicy(
   policyName: string,
-  examples: Example[],
+  _examples: Example[],
   decisions: Array<{ ex: Example; usePro: boolean }>,
 ): PolicyResult {
   let verifiedPasses = 0

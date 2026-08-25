@@ -105,7 +105,7 @@ describe('usageBySession', () => {
   })
 
   it('selects the billing band from each usage event timestamp', () => {
-    const usage = { inputTokens: 1_000, outputTokens: 1_000, cacheMissTokens: 1_000, source: 'provider' }
+    const usage = { inputTokens: 1_000, outputTokens: 1_000, cacheMissTokens: 1_000, source: 'provider' as const }
     const offPeak = extractUsageRecords([
       usageEvent(1, 1, 1, 1, 'deepseek-official', 'deepseek-v4-flash', usage, undefined,
         Date.parse('2026-08-18T05:00:00Z')),

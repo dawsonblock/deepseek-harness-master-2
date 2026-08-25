@@ -89,16 +89,19 @@ async function runInWorkspace(workspace: string, command: string[]): Promise<{ c
     CI: 'true',
     PATH: `${repoBin}:${process.env.PATH ?? ''}`,
   }
+  const cmd = command[0] ?? ''
+  const args = command.slice(1)
+  if (cmd === '') return Promise.resolve({ code: 1, output: 'empty command' })
   return new Promise((resolve) => {
-    const child = spawn(command[0], command.slice(1), {
+    const child = spawn(cmd, args, {
       cwd: workspace,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
     })
     let output = ''
     child.stdout.on('data', (data: Buffer) => { output += data.toString() })
     child.stderr.on('data', (data: Buffer) => { output += data.toString() })
-    child.on('close', (code) => {
+    child.on('close', (code: number | null) => {
       resolve({ code: code ?? 1, output })
     })
     child.on('error', () => {
@@ -888,8 +891,14 @@ async function executePolicy(
       // Detect whether Pro actually rolled back: compare files after Pro to initial state
       const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
       const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
-        || (proChangedFiles.length > 0 && proChangedFiles.every(file => flashStage.changedFiles?.includes(file) === false))
-      stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred, changedFiles: proChangedFiles })
+        || (proChangedFiles.length > 0
+          && proChangedFiles.every(file => flashStage.changedFiles?.includes(file) === false))
+      stages.push({
+        ...proStage,
+        ...decision !== undefined ? { takeoverDecision: decision } : {},
+        rollbackOccurred,
+        changedFiles: proChangedFiles,
+      })
     }
   } else if (policy === 'flash-repair-then-pro') {
     // Policy E: Flash fail → one evidence-conditioned Flash repair → Pro takeover if still failing
@@ -914,7 +923,12 @@ async function executePolicy(
         const decision = parseTakeoverDecision(proStage.output)
         const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
         const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
-        stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred, changedFiles: proChangedFiles })
+        stages.push({
+          ...proStage,
+          ...decision !== undefined ? { takeoverDecision: decision } : {},
+          rollbackOccurred,
+          changedFiles: proChangedFiles,
+        })
       }
     }
   } else if (policy === 'flash-fail-pro-workspace-only') {
@@ -931,7 +945,12 @@ async function executePolicy(
       const decision = parseTakeoverDecision(proStage.output)
       const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
       const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
-      stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred, changedFiles: proChangedFiles })
+      stages.push({
+        ...proStage,
+        ...decision !== undefined ? { takeoverDecision: decision } : {},
+        rollbackOccurred,
+        changedFiles: proChangedFiles,
+      })
     }
   } else if (policy === 'flash-fail-pro-evidence-only') {
     // Ablation D2: Pro gets a clean workspace (no Flash code) but receives the
@@ -947,11 +966,12 @@ async function executePolicy(
       const evidencePrompt = constructEvidenceOnlyPrompt(failurePackage)
       const proStage = await runStage('pro', evidencePrompt, proWs, proInitial, flashStage.verificationEvidence)
       const decision = parseTakeoverDecision(proStage.output)
-      stages.push({ ...proStage, takeoverDecision: decision, rollbackOccurred: false })
+      stages.push({ ...proStage, ...decision !== undefined ? { takeoverDecision: decision } : {}, rollbackOccurred: false })
     }
   }
 
-  const verified = stages.length > 0 && stages[stages.length - 1].verified
+  const lastStage = stages.at(-1)
+  const verified = lastStage !== undefined && lastStage.verified
   return {
     trajectory: {
       taskId,
