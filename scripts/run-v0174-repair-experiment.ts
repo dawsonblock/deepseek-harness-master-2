@@ -699,7 +699,7 @@ async function runAgentTurn(
     }
   } finally {
     if (uninstallFailLoud !== undefined) uninstallFailLoud()
-    if (ctx !== undefined) await ctx.stop()
+    if (ctx !== undefined) await ctx.fiber.dispose()
   }
 }
 
