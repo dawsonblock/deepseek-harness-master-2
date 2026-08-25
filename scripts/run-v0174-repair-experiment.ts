@@ -634,7 +634,7 @@ function extractEvents(events: SessionEvent[]): ExtractedEvents {
   return { inputTokens, outputTokens, reasoningTokens, totalTokens, output, toolCalls, toolFailures }
 }
 
-async function generateConfig(model: string, workDir: string): Promise<string> {
+async function generateConfig(model: string, workDir: string, workspace: string): Promise<string> {
   const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
   let base = await readFile(basePath, 'utf8')
   base = base.replace(/model: deepseek-v4-flash/, `model: ${model}`)
@@ -642,6 +642,8 @@ async function generateConfig(model: string, workDir: string): Promise<string> {
     /compression: !!js "process.env.DSH_SNAPSHOT === undefined \? 'zstd' : 'none'"/,
     "compression: 'none'",
   )
+  // Point the agent's working directory at the fixture workspace, not process.cwd()
+  base = base.replace(/cwd: !!js process\.cwd\(\)/g, `cwd: '${workspace}'`)
   const configPath = join(workDir, 'cordis.yml')
   await writeFile(configPath, base, 'utf8')
   return configPath
@@ -660,41 +662,57 @@ async function runAgentTurn(
   model: string,
   workspace: string,
 ): Promise<RunResult> {
-  const configPath = await generateConfig(model, workspace)
+  const configPath = await generateConfig(model, workspace, workspace)
   const events: SessionEvent[] = []
   let uninstallFailLoud: (() => void) | undefined
   let ctx: Context | undefined
 
   try {
+    await mkdir(join(workspace, 'sessions'), { recursive: true })
     loadEnv('v0174-repair-experiment')
     uninstallFailLoud = installFailLoud('v0174-repair-experiment')
     ctx = await boot('v0174-repair-experiment', resolveConfigPath(configPath, undefined))
     const started = Date.now()
-    await runFixtureTurn(ctx, { task, onEvent: (_sessionId, event) => events.push(event) })
+    const turnResult = await runFixtureTurn(ctx, { task, onEvent: (_sessionId, event) => events.push(event) })
     const latencyMs = Date.now() - started
     const extracted = extractEvents(events)
-    if (extracted.output === '' && extracted.totalTokens === 0) {
+    // Prefer the return value from runFixtureTurn for output and usage,
+    // fall back to event extraction if the return value is empty.
+    const output = turnResult.output !== '' ? turnResult.output : extracted.output
+    const inputTokens = turnResult.usage?.inputTokens ?? extracted.inputTokens
+    const outputTokens = turnResult.usage?.outputTokens ?? extracted.outputTokens
+    const reasoningTokens = turnResult.usage?.reasoningTokens ?? extracted.reasoningTokens
+    const totalTokens = turnResult.usage?.totalTokens ?? extracted.totalTokens
+    if (output === '' && totalTokens === 0) {
       throw new Error('Provider returned no assistant output or usage')
     }
     const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date(started))
     const costUsd = pricing === undefined
       ? 0
       : calculateCost({
-        inputTokens: extracted.inputTokens,
-        outputTokens: extracted.outputTokens,
+        inputTokens,
+        outputTokens,
         cacheReadTokens: 0,
-        cacheMissTokens: extracted.inputTokens,
-        reasoningTokens: extracted.reasoningTokens,
-        totalTokens: extracted.totalTokens,
+        cacheMissTokens: inputTokens,
+        reasoningTokens,
+        totalTokens,
         source: 'provider',
       }, pricing).amount
     const routingDecision = events.find(event => event.type === 'model/routing-decision')
     const routingDecisionId = (routingDecision?.data as { routingDecisionId?: string })?.routingDecisionId ?? 'unknown'
     return {
-      output: extracted.output,
+      output,
       costUsd,
       latencyMs,
-      usage: extracted,
+      usage: {
+        inputTokens,
+        outputTokens,
+        reasoningTokens,
+        totalTokens,
+        output,
+        toolCalls: extracted.toolCalls,
+        toolFailures: extracted.toolFailures,
+      },
       routingDecisionId,
     }
   } finally {
