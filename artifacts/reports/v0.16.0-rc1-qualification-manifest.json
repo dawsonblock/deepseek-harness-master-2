@@ -1,10 +1,10 @@
 {
-  "release": "v0.16.0-rc.1",
+  "release": "v0.16.0",
   "qualificationTarget": {
-    "gitCommit": "bd536027efe3ffcda7d619aa80fc8330502c3aea",
+    "gitCommit": "a7bbdd5e244101f9ddcfe61304cfd38e4967592a",
     "gitBranch": "master",
     "gitRemote": "https://github.com/dawsonblock/deepseek-harness-master-2.git",
-    "pinnedAt": "2026-08-25T00:05:00Z"
+    "pinnedAt": "2026-08-25T00:10:00Z"
   },
   "runtime": {
     "node": "v22.22.3",
