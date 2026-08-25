@@ -1,10 +1,10 @@
 {
   "release": "v0.16.0-rc.1",
   "qualificationTarget": {
-    "gitCommit": "8415dd34c3f3bb3c62dfd6df6a8cdbd6cd1bb7b3",
+    "gitCommit": "bd536027efe3ffcda7d619aa80fc8330502c3aea",
     "gitBranch": "master",
     "gitRemote": "https://github.com/dawsonblock/deepseek-harness-master-2.git",
-    "pinnedAt": "2026-08-24T23:30:00Z"
+    "pinnedAt": "2026-08-25T00:05:00Z"
   },
   "runtime": {
     "node": "v22.22.3",
@@ -148,6 +148,18 @@
       "reasoning tokens preserved but not billed as second output bucket",
       "pricing version recorded for every cost calculation",
       "routingDecisionId consistent across model/routing-decision, model/request, model/usage, RoutingOutcome"
-    ]
+    ],
+    "benchmark": {
+      "taskClasses": 15,
+      "categories": ["simple-factual", "factual-formatting", "short-code-edit", "multi-step-reasoning", "debugging", "structured-transformation", "planning", "verification-heavy", "long-context-analysis", "tool-heavy"],
+      "policies": ["flash-only", "pro-only", "current-router"],
+      "iterations": 2,
+      "cacheControl": "cold-then-warm-per-task",
+      "coreMetric": "CostPerVerifiedTask = TotalCost / VerifiedPasses",
+      "reports": [
+        "artifacts/reports/v0.16.0-rc1-paired-benchmark.json",
+        "artifacts/reports/v0.16.0-rc1-paired-benchmark.md"
+      ]
+    }
   }
 }
