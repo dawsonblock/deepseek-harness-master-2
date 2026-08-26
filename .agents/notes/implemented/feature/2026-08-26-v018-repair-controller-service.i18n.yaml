@@ -1,0 +1,5 @@
+agent-note:
+  - file: 2026-08-26-v018-repair-controller-service.md
+    translations:
+      - file: 2026-08-26-v018-repair-controller-service.zh.md
+        language: zh

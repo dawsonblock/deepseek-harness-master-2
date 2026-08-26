@@ -3728,6 +3728,15 @@ importers:
         specifier: workspace:^
         version: link:../tools
 
+  packages/core/repair-controller:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../session
+
   packages/core/scope:
     devDependencies:
       '@deepseek-ai/cordis':
