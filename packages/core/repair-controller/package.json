@@ -34,6 +34,10 @@
       "types": "./lib/types/state-machine.d.ts",
       "default": "./lib/state-machine.js"
     },
+    "./event-ordering": {
+      "types": "./lib/types/event-ordering.d.ts",
+      "default": "./lib/event-ordering.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -42,6 +46,7 @@
     "lib/invariant.js",
     "lib/events.js",
     "lib/state-machine.js",
+    "lib/event-ordering.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],

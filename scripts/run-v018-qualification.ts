@@ -20,7 +20,7 @@
  * @module v018-qualification
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile, unlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -846,7 +846,11 @@ async function loadCheckpoint(): Promise<Checkpoint | undefined> {
 
 async function saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
   await mkdir(REPORT_DIR, { recursive: true })
-  await writeFile(CHECKPOINT_PATH, `${JSON.stringify(checkpoint, null, 2)}\n`, 'utf8')
+  // Atomic write: write to temp file, then rename. This prevents
+  // corruption if the process is killed mid-write.
+  const tempPath = `${CHECKPOINT_PATH}.tmp`
+  await writeFile(tempPath, `${JSON.stringify(checkpoint, null, 2)}\n`, 'utf8')
+  await rename(tempPath, CHECKPOINT_PATH)
 }
 
 // ---------------------------------------------------------------------------
