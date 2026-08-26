@@ -1,18 +1,20 @@
 /**
- * Keyless negative sandbox test: verifies that workspace-write mode restricts
- * READS outside the workspace, not merely writes.
+ * Keyless negative sandbox test suite: verifies that workspace-isolated mode
+ * restricts READS outside the workspace, not merely writes.
  *
- * Creates a sentinel file outside the workspace, then attempts to read it
- * from inside the sandbox. Also verifies normal reads/writes inside the
- * workspace still succeed.
+ * Nine tests cover direct reads, relative traversal, symlink escapes, and
+ * child-process escapes. On macOS (Seatbelt), read isolation uses a
+ * protected-path denylist over an allow-all-reads baseline; on Linux
+ * (bwrap/Landlock), only essential system paths plus the workspace are
+ * mounted. This suite qualifies whichever backend is available on the host.
  *
- * Exit code 0: read isolation confirmed (sentinel read denied, workspace OK).
- * Exit code 1: read isolation missing (sentinel read succeeded — FAIL).
+ * Exit code 0: all tests passed — read isolation confirmed.
+ * Exit code 1: at least one test failed — read isolation is incomplete.
  * Exit code 2: sandbox unavailable on this platform (skip, not a failure).
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -33,6 +35,26 @@ function runConfined(sandbox: LocalSandboxProvider, command: string, policy: San
   return { result, confined }
 }
 
+/** Check that a command produced no readable output (deny succeeded). */
+function assertDenied(label: string, stdout: string, exitCode: number | null): boolean {
+  if (stdout.trim().length > 0) {
+    console.error(`  FAIL: ${label} — output leaked: "${stdout.trim().slice(0, 60)}"`)
+    return false
+  }
+  console.log(`  PASS: ${label} (exit ${exitCode})`)
+  return true
+}
+
+/** Check that a command produced expected output (allow succeeded). */
+function assertAllowed(label: string, stdout: string, expected: string): boolean {
+  if (stdout.trim() === expected) {
+    console.log(`  PASS: ${label}`)
+    return true
+  }
+  console.error(`  FAIL: ${label} — expected "${expected}", got "${stdout.trim()}"`)
+  return false
+}
+
 async function main(): Promise<void> {
   const sentinelDir = join(tmpdir(), 'benchmark-secret')
   const sentinelPath = join(sentinelDir, 'holdout-sentinel.txt')
@@ -45,7 +67,9 @@ async function main(): Promise<void> {
   const workspace = mkdtempSync(join(tmpdir(), 'sandbox-isolation-ws-'))
   writeFileSync(join(workspace, 'workspace-file.txt'), 'workspace content', 'utf8')
 
-  const benchmarkSource = join(REPO_ROOT, 'scripts', 'run-v0174-repair-experiment.ts')
+  const benchmarkScriptsDir = join(REPO_ROOT, 'scripts')
+  const benchmarkReportsDir = join(REPO_ROOT, 'artifacts', 'reports')
+  const benchmarkAgentsDir = join(REPO_ROOT, '.agents')
 
   const ctx = new Context()
   let sandbox: LocalSandboxProvider
@@ -64,51 +88,110 @@ async function main(): Promise<void> {
     workspaceRoot: workspace,
     protectedReadPaths: [
       realpathSync(sentinelDir),
-      join(REPO_ROOT, 'scripts'),
+      benchmarkScriptsDir,
+      benchmarkReportsDir,
+      benchmarkAgentsDir,
     ],
   }
+
   let allPassed = true
 
-  // Test 1: Read sentinel file outside workspace — MUST be denied
-  console.log('Test 1: Read sentinel file outside workspace')
-  const t1 = runConfined(sandbox, `cat '${sentinelPath}'`, policy)
-  if (t1.result.stdout.trim() === sentinelContent) {
-    console.error(`  FAIL: sentinel file was readable! Got: "${t1.result.stdout.trim().slice(0, 40)}"`)
-    allPassed = false
-  } else {
-    console.log(`  PASS: sentinel file not readable (exit ${t1.result.status})`)
+  // === Basic isolation tests ===
+
+  console.log('Test 1: Direct absolute protected-path read')
+  {
+    const t = runConfined(sandbox, `cat '${sentinelPath}'`, policy)
+    allPassed = assertDenied('sentinel file not readable', t.result.stdout, t.result.status) && allPassed
   }
 
-  // Test 2: Read benchmark runner source — MUST be denied
   console.log('Test 2: Read benchmark runner source by absolute path')
-  const t2 = runConfined(sandbox, `head -1 '${benchmarkSource}'`, policy)
-  if (t2.result.stdout.trim().length > 0) {
-    console.error(`  FAIL: benchmark source was readable! Got: "${t2.result.stdout.trim().slice(0, 60)}"`)
-    allPassed = false
-  } else {
-    console.log(`  PASS: benchmark source not readable (exit ${t2.result.status})`)
+  {
+    const t = runConfined(sandbox, `head -1 '${join(benchmarkScriptsDir, 'run-v0174-repair-experiment.ts')}'`, policy)
+    allPassed = assertDenied('benchmark source not readable', t.result.stdout, t.result.status) && allPassed
   }
 
-  // Test 3: Read inside workspace — MUST succeed
-  console.log('Test 3: Read file inside workspace')
-  const t3 = runConfined(sandbox, 'cat workspace-file.txt', policy)
-  if (t3.result.stdout.trim() === 'workspace content') {
-    console.log('  PASS: workspace file readable')
-  } else {
-    console.error(`  FAIL: workspace file not readable! Got: "${t3.result.stdout.trim()}"`)
-    allPassed = false
+  console.log('Test 3: Read inside workspace')
+  {
+    const t = runConfined(sandbox, 'cat workspace-file.txt', policy)
+    allPassed = assertAllowed('workspace file readable', t.result.stdout, 'workspace content') && allPassed
   }
 
-  // Test 4: Write inside workspace — MUST succeed
-  console.log('Test 4: Write file inside workspace')
-  const t4 = runConfined(sandbox, 'echo test > output.txt', policy)
-  if (t4.result.status === 0 && existsSync(join(workspace, 'output.txt'))) {
-    console.log('  PASS: workspace write succeeded')
-  } else {
-    console.error(`  FAIL: workspace write failed (exit ${t4.result.status})`)
-    allPassed = false
+  console.log('Test 4: Write inside workspace')
+  {
+    const t = runConfined(sandbox, 'echo test > output.txt', policy)
+    if (t.result.status === 0 && existsSync(join(workspace, 'output.txt'))) {
+      console.log('  PASS: workspace write succeeded')
+    } else {
+      console.error(`  FAIL: workspace write failed (exit ${t.result.status})`)
+      allPassed = false
+    }
   }
 
+  // === Adversarial escape tests ===
+
+  console.log('Test 5: Relative path traversal to protected path')
+  {
+    // Compute a relative path from the workspace to the sentinel directory
+    const relPath = (() => {
+      const wsParts = workspace.split('/').filter(Boolean)
+      const sentinelParts = realpathSync(sentinelDir).split('/').filter(Boolean)
+      let common = 0
+      while (common < wsParts.length && common < sentinelParts.length && wsParts[common] === sentinelParts[common]) {
+        common++
+      }
+      const upCount = wsParts.length - common
+      const downParts = sentinelParts.slice(common)
+      return `${'../'.repeat(upCount)}${downParts.join('/')}/holdout-sentinel.txt`
+    })()
+    const t = runConfined(sandbox, `cat '${relPath}'`, policy)
+    allPassed = assertDenied('traversal read denied', t.result.stdout, t.result.status) && allPassed
+  }
+
+  console.log('Test 6: Symlink inside workspace → protected file')
+  {
+    const linkPath = join(workspace, 'leak-file')
+    try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+    try {
+      symlinkSync(sentinelPath, linkPath)
+    } catch {
+      console.log('  SKIP: cannot create symlink (platform restriction)')
+      try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+      return
+    }
+    const t = runConfined(sandbox, 'cat leak-file', policy)
+    allPassed = assertDenied('symlink-to-file read denied', t.result.stdout, t.result.status) && allPassed
+    try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+  }
+
+  console.log('Test 7: Symlink inside workspace → protected directory')
+  {
+    const linkPath = join(workspace, 'leak-dir')
+    try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+    try {
+      symlinkSync(realpathSync(sentinelDir), linkPath)
+    } catch {
+      console.log('  SKIP: cannot create symlink (platform restriction)')
+      try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+      return
+    }
+    const t = runConfined(sandbox, 'cat leak-dir/holdout-sentinel.txt', policy)
+    allPassed = assertDenied('symlink-to-dir read denied', t.result.stdout, t.result.status) && allPassed
+    try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+  }
+
+  console.log('Test 8: Child process attempts protected read')
+  {
+    const t = runConfined(sandbox, `bash -c "cat '${sentinelPath}'"`, policy)
+    allPassed = assertDenied('child bash read denied', t.result.stdout, t.result.status) && allPassed
+  }
+
+  console.log('Test 9: Node child process attempts protected read')
+  {
+    const t = runConfined(sandbox, `node -e "const fs=require('fs');process.stdout.write(fs.readFileSync('${sentinelPath}','utf8'))"`, policy)
+    allPassed = assertDenied('child node read denied', t.result.stdout, t.result.status) && allPassed
+  }
+
+  // Cleanup
   rmSync(sentinelDir, { recursive: true, force: true })
   rmSync(workspace, { recursive: true, force: true })
 
@@ -116,7 +199,7 @@ async function main(): Promise<void> {
     console.log('\nAll tests passed — read isolation confirmed.')
     process.exit(0)
   } else {
-    console.error('\nFAIL: read isolation is missing — sandbox allows reads outside workspace.')
+    console.error('\nFAIL: at least one isolation test failed.')
     process.exit(1)
   }
 }

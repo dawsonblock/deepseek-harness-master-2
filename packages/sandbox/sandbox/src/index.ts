@@ -27,6 +27,11 @@ export { canonicalPath, writableRoots } from './roots.ts'
  * writes to the workspace root and essential system paths only;
  * `danger-full-access` bypasses confinement. Network and process visibility
  * are outside this vocabulary.
+ *
+ * `workspace-isolated` read-isolation semantics differ by platform backend:
+ * bwrap and Landlock use mount-namespace/gallow-list isolation (unmounted
+ * paths are unreachable), while Seatbelt uses a protected-path denylist over
+ * allow-all-reads (see `protectedReadPaths`). Qualify each backend separately.
  */
 export type SandboxMode = 'read-only' | 'workspace-write' | 'workspace-isolated' | 'danger-full-access'
 

@@ -1,6 +1,31 @@
 /**
  * Internal platform-profile builders for the local sandbox provider.
  *
+ * `workspace-isolated` has different read-isolation semantics by platform:
+ *
+ * - **bwrap (Linux): mount-namespace allowlist.** Only the workspace root and
+ *   essential system directories (bin, lib, usr, etc) are mounted. Host files
+ *   outside the mount set are invisible — genuine filesystem isolation.
+ *   `protectedReadPaths` is not consumed because unmounted paths are
+ *   inherently unreachable.
+ *
+ * - **Landlock (Linux): allow-list grants.** Read access is granted only to
+ *   essential system paths and the workspace root. Like bwrap, ungranted paths
+ *   are unreachable. `protectedReadPaths` is not consumed.
+ *
+ * - **Seatbelt (macOS): protected-path denylist.** A deny-by-default read
+ *   policy causes process aborts because the macOS dynamic linker and system
+ *   frameworks require broad read access. The practical approach is
+ *   allow-all-reads with explicit `(deny file-read*)` rules for each entry in
+ *   `protectedReadPaths`. Seatbelt resolves symlinks before matching, so
+ *   symlink escapes to protected paths are denied. This is not the same
+ *   guarantee as "the process can only read the workspace" — it is "the
+ *   process cannot read the listed paths." The completeness of isolation
+ *   depends on the denylist covering every sensitive host path.
+ *
+ * Qualify each backend separately with the same adversarial test suite; do
+ * not assume that proving one backend proves another.
+ *
  * @module @deepseek-ai/dsh-sandbox-local/profiles
  */
 
@@ -10,12 +35,7 @@ import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 
 /**
  * Build the bwrap profile arguments for one file-effect policy.
- *
- * `workspace-isolated` differs from `workspace-write` by binding only the
- * workspace root and essential system directories (bin, lib, usr) rather than
- * the entire host filesystem read-only. This prevents the confined process
- * from reading files outside the workspace.
- *
+ * `workspace-isolated` uses a mount-namespace allowlist; see module doc.
  * @param policy - file-effect policy to express as bwrap mounts.
  * @returns profile arguments before the trailing separator and command argv.
  */
@@ -46,10 +66,7 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 
 /**
  * Build the Landlock launcher grants for one file-effect policy.
- *
- * `workspace-isolated` grants read access only to essential system paths and
- * the workspace root, rather than the entire filesystem.
- *
+ * `workspace-isolated` uses allow-list grants; see module doc.
  * @param policy - file-effect policy to express as Landlock allow-list grants.
  * @returns launcher grant arguments before the trailing separator and command argv.
  */
@@ -77,14 +94,7 @@ function sbplString(path: string): string {
  * writable roots come from the shared {@link writableRoots} helper (canonical,
  * deduplicated) so the Seatbelt grant and the in-process fs fence
  * (`@deepseek-ai/dsh-fs-sandbox`) can never drift apart.
- *
- * `workspace-isolated` denies reads to the configured protected paths while
- * allowing all other reads and writes only under the workspace root. On macOS,
- * a deny-by-default read policy causes process aborts because the dynamic
- * linker and system frameworks require broad read access to function. The
- * practical approach is allow-all-reads with explicit deny rules for sensitive
- * directories.
- *
+ * `workspace-isolated` uses a protected-path denylist; see module doc.
  * @param policy - file-effect policy to express as an SBPL profile.
  * @returns sandbox-exec arguments before the trailing separator and command argv.
  */

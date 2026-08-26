@@ -3337,8 +3337,11 @@ async function generateConfig(model: string, workDir: string, workspace: string)
   // Point the agent's working directory at the fixture workspace, not process.cwd()
   base = base.replace(/cwd: !!js process\.cwd\(\)/g, `cwd: '${workspace}'`)
   // Use the sandboxed bash executor with read isolation. The model can only
-  // read and write within the task workspace. Reads to the benchmark runner
-  // source and test definitions are explicitly denied.
+  // read and write within the task workspace. Reads to benchmark source, test
+  // definitions, reports, agent notes, and fixture definitions are denied.
+  // On macOS (Seatbelt) this is a denylist over allow-all-reads; on Linux
+  // (bwrap/Landlock) unmounted paths are inherently unreachable. See the
+  // profiles.ts module doc for the platform-specific semantics.
   base = base.replace(
     /- id: bash\n  name: '@deepseek-ai\/dsh-bash-local'/,
     `- id: sandbox
@@ -3350,6 +3353,11 @@ async function generateConfig(model: string, workDir: string, workspace: string)
     workspaceRoot: '${workspace}'
     protectedReadPaths:
       - '${join(REPO_ROOT, 'scripts')}'
+      - '${join(REPO_ROOT, 'artifacts')}'
+      - '${join(REPO_ROOT, '.agents')}'
+      - '${join(REPO_ROOT, 'packages')}'
+      - '${join(REPO_ROOT, 'docs')}'
+      - '${join(REPO_ROOT, 'website')}'
 - id: bash
   name: '@deepseek-ai/dsh-bash-sandbox'`,
   )
