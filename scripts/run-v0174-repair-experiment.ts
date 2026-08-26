@@ -58,7 +58,7 @@ const MODELS = { flash: 'deepseek-v4-flash', pro: 'deepseek-v4-pro' } as const
 // ---------------------------------------------------------------------------
 
 /** One coding-task fixture with file-based setup and objective verification. */
-interface CodingTaskFixture {
+export interface CodingTaskFixture {
   readonly id: string
   readonly category: string
   readonly description: string
@@ -74,7 +74,7 @@ interface CodingTaskFixture {
 }
 
 /** Write a file in a workspace directory. */
-async function writeWorkspaceFile(workspace: string, relativePath: string, content: string): Promise<void> {
+export async function writeWorkspaceFile(workspace: string, relativePath: string, content: string): Promise<void> {
   const fullPath = join(workspace, relativePath)
   const dir = fullPath.slice(0, fullPath.lastIndexOf('/'))
   await mkdir(dir, { recursive: true })
@@ -83,7 +83,7 @@ async function writeWorkspaceFile(workspace: string, relativePath: string, conte
 
 /** Run a command in a workspace and capture stdout+stderr. Uses the repo's
  * node_modules/.bin on PATH so tsc and vitest are available in temp workspaces. */
-async function runInWorkspace(workspace: string, command: string[]): Promise<{ code: number; output: string }> {
+export async function runInWorkspace(workspace: string, command: string[]): Promise<{ code: number; output: string }> {
   const { spawn } = await import('node:child_process')
   const repoBin = join(REPO_ROOT, 'node_modules', '.bin')
   const env = {
@@ -113,7 +113,7 @@ async function runInWorkspace(workspace: string, command: string[]): Promise<{ c
 }
 
 /** Parse typecheck output into individual error lines. */
-function parseTypeErrors(output: string): string[] {
+export function parseTypeErrors(output: string): string[] {
   return output.split('\n')
     .filter(line => /error TS\d+:/.test(line))
     .map(line => line.trim())
@@ -121,7 +121,7 @@ function parseTypeErrors(output: string): string[] {
 }
 
 /** Parse test runner output into failing test names. */
-function parseFailingTests(output: string): string[] {
+export function parseFailingTests(output: string): string[] {
   return output.split('\n')
     .filter(line => /FAIL|×|failed|❯.*failed/i.test(line))
     .map(line => line.trim())
@@ -129,7 +129,7 @@ function parseFailingTests(output: string): string[] {
 }
 
 /** Create a minimal package.json for TypeScript test execution. */
-const TEST_PACKAGE_JSON = JSON.stringify({
+export const TEST_PACKAGE_JSON = JSON.stringify({
   name: 'repair-fixture',
   version: '0.0.0',
   private: true,
@@ -138,7 +138,7 @@ const TEST_PACKAGE_JSON = JSON.stringify({
 
 /** Create a minimal tsconfig.json for strict typechecking. Excludes test
  * files (which import vitest) and only checks implementation files. */
-const TEST_TSCONFIG = JSON.stringify({
+export const TEST_TSCONFIG = JSON.stringify({
   compilerOptions: {
     strict: true,
     noImplicitAny: true,
@@ -158,7 +158,7 @@ const TEST_TSCONFIG = JSON.stringify({
 // Fixture definitions
 // ---------------------------------------------------------------------------
 
-const FIXTURES: readonly CodingTaskFixture[] = [
+export const FIXTURES: readonly CodingTaskFixture[] = [
   {
     id: 'implement-debounce',
     category: 'code-implement',
@@ -3253,7 +3253,7 @@ describe('typeInference holdout', () => {
 `
 
 /** Create a holdout verifier that runs a separate test suite never exposed to the model. */
-function createHoldoutVerifier(getTestContent: () => string): (workspace: string) => Promise<WorkspaceVerificationResult> {
+export function createHoldoutVerifier(getTestContent: () => string): (workspace: string) => Promise<WorkspaceVerificationResult> {
   return async (workspace: string) => {
     await writeWorkspaceFile(workspace, '__holdout_test__.test.ts', getTestContent())
     const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
