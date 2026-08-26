@@ -23,10 +23,12 @@ export { canonicalPath, writableRoots } from './roots.ts'
 /**
  * File-effect policy for confined processes. `read-only` permits only required
  * sinks such as `/dev/null`; `workspace-write` also permits the workspace and a
- * backend-defined temp area; `danger-full-access` bypasses confinement. Network
- * and process visibility are outside this vocabulary.
+ * backend-defined temp area; `workspace-isolated` restricts both reads and
+ * writes to the workspace root and essential system paths only;
+ * `danger-full-access` bypasses confinement. Network and process visibility
+ * are outside this vocabulary.
  */
-export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+export type SandboxMode = 'read-only' | 'workspace-write' | 'workspace-isolated' | 'danger-full-access'
 
 /** A confining (non-`danger-full-access`) mode — the modes a {@link SandboxPolicy} can carry. */
 export type ConfinedSandboxMode = Exclude<SandboxMode, 'danger-full-access'>
@@ -39,7 +41,7 @@ export type ConfinedSandboxMode = Exclude<SandboxMode, 'danger-full-access'>
 export interface SandboxExecutionPolicy {
   /** The file-effect mode this execution runs under. */
   mode: SandboxMode
-  /** Absolute root directory `workspace-write` may write under. */
+  /** Absolute root directory `workspace-write` and `workspace-isolated` may write under. */
   workspaceRoot: string
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
@@ -49,6 +51,13 @@ export interface SandboxExecutionPolicy {
    * for agentless calls, which fall back to per-call backend state.
    */
   sessionId?: SessionId
+  /**
+   * Directory paths whose contents the confined process must not read.
+   * Only effective under `workspace-isolated` mode; ignored by other modes.
+   * Used to protect benchmark source, test definitions, and other sensitive
+   * host files from model discovery.
+   */
+  protectedReadPaths?: string[]
 }
 
 /**

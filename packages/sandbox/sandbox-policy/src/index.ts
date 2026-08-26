@@ -41,6 +41,8 @@ function renderPolicyContext(policy: SandboxExecutionPolicy): string {
       return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
       return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+    case 'workspace-isolated':
+      return `Current DSH file policy: workspace-isolated. The process may read and write only within the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Reads to protected host paths are denied.`
     case 'danger-full-access':
       return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
@@ -72,6 +74,11 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /**
+   * Directory paths whose contents the confined process must not read.
+   * Only effective under `workspace-isolated` mode; ignored by other modes.
+   */
+  protectedReadPaths?: string[]
 }
 
 /** Inputs that select the sandbox policy for one capability call. */
@@ -91,16 +98,19 @@ export interface SandboxPolicyRequest {
 export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
-    mode: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('read-only'),
+    mode: z.union(['read-only', 'workspace-write', 'workspace-isolated', 'danger-full-access'] as const).default('read-only'),
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
+    protectedReadPaths: z.array(z.string()).default([]),
   })
 
   /** The deployment default mode — the fallback beneath a session override. */
   readonly defaultMode: SandboxMode
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  /** Paths the confined process must not read under `workspace-isolated` mode. */
+  readonly protectedReadPaths: string[]
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
     // schemastery (static Config) already filled `mode`; the cast records that
@@ -108,6 +118,7 @@ export class SandboxPolicyService extends Service {
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+    this.protectedReadPaths = config.protectedReadPaths ?? []
 
     ctx.inject(['systemPrompt'], (scope: Context) => {
       scope.systemPrompt.context({
@@ -138,6 +149,7 @@ export class SandboxPolicyService extends Service {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
       ...session === undefined ? {} : { sessionId: session.id },
+      ...this.protectedReadPaths.length > 0 ? { protectedReadPaths: this.protectedReadPaths } : {},
     }
   }
 

@@ -287,5 +287,7 @@
     "noInfiniteLoops": "Max 3 Flash + 1-2 Pro calls per task",
     "auditableEvidence": "Every escalation has auditable failure evidence",
     "independentVerification": "Every final result receives independent verification"
-  }
+  },
+  "costAccountingSuperseded": true,
+  "costAccountingNote": "Dollar metrics in this report were produced under a cache-read accounting bug that treated cached input tokens as free. The corrected pipeline extracts cacheReadTokens and cacheMissTokens from canonical model/usage events. The original trajectory data was not preserved, so these costs cannot be repriced without re-running the benchmark. Treat all dollar amounts as directionally correct but not final. The relative finding (Flash + repair cheaper than Pro one-shot) is likely still valid because cache hits reduce cost for both policies, but the precise ratios may change."
 }

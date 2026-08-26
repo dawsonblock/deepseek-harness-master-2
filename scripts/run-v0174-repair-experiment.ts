@@ -3336,6 +3336,23 @@ async function generateConfig(model: string, workDir: string, workspace: string)
   )
   // Point the agent's working directory at the fixture workspace, not process.cwd()
   base = base.replace(/cwd: !!js process\.cwd\(\)/g, `cwd: '${workspace}'`)
+  // Use the sandboxed bash executor with read isolation. The model can only
+  // read and write within the task workspace. Reads to the benchmark runner
+  // source and test definitions are explicitly denied.
+  base = base.replace(
+    /- id: bash\n  name: '@deepseek-ai\/dsh-bash-local'/,
+    `- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: workspace-isolated
+    workspaceRoot: '${workspace}'
+    protectedReadPaths:
+      - '${join(REPO_ROOT, 'scripts')}'
+- id: bash
+  name: '@deepseek-ai/dsh-bash-sandbox'`,
+  )
   const configPath = join(workDir, 'cordis.yml')
   await writeFile(configPath, base, 'utf8')
   return configPath
