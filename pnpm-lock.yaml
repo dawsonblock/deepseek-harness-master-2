@@ -3737,6 +3737,27 @@ importers:
         specifier: workspace:^
         version: link:../session
 
+  packages/core/repair-runtime:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../agent
+      '@deepseek-ai/dsh-goal':
+        specifier: workspace:^
+        version: link:../../goal/goal
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-repair-controller':
+        specifier: workspace:^
+        version: link:../repair-controller
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../session
+
   packages/core/scope:
     devDependencies:
       '@deepseek-ai/cordis':

@@ -1,0 +1,36 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../goal/goal"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../core/repair-controller"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    }
+  ]
+}
