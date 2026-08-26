@@ -858,8 +858,15 @@ async function loadCheckpoint(): Promise<Checkpoint | undefined> {
 
 async function saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
   await mkdir(REPORT_DIR, { recursive: true })
-  // Atomic write: write to temp file, then rename. This prevents
-  // corruption if the process is killed mid-write.
+  // Atomic replacement: write to a temp file, then rename. This
+  // prevents partial-json corruption if the process is killed mid-write.
+  // This is atomic-replacement durable (process crash safe) but not
+  // power-loss durable — a machine failure between write and rename
+  // could leave the temp file without updating the target. For
+  // power-loss durability, add fsync(temp) before rename and
+  // fsync(parent directory) after rename. The production session
+  // persistence layer provides the stronger semantics; this checkpoint
+  // is a convenience for resuming interrupted qualification runs.
   const tempPath = `${CHECKPOINT_PATH}.tmp`
   await writeFile(tempPath, `${JSON.stringify(checkpoint, null, 2)}\n`, 'utf8')
   await rename(tempPath, CHECKPOINT_PATH)

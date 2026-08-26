@@ -21,8 +21,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GoalRef, GoalVerificationCheck, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { FailurePackage, ModelRef, RepairAttempt, RepairDecision } from '@deepseek-ai/dsh-repair-controller'
-import { classifyProgress, computeFailureFingerprint } from '@deepseek-ai/dsh-repair-controller'
+import type { FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits } from '@deepseek-ai/dsh-repair-controller'
+import { classifyProgress, computeFailureFingerprint, computeFailurePackageId, decideRepair } from '@deepseek-ai/dsh-repair-controller'
 // Import the events module to trigger declaration merging for repair/* and model/escalation events.
 import '@deepseek-ai/dsh-repair-controller/events'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -44,7 +44,7 @@ export interface RepairRuntimeConfig {
 }
 
 /** Per-goal repair state. */
-interface RepairState {
+export interface RepairState {
   repairId: string
   attempts: RepairAttempt[]
   totalCostUsd: number
@@ -257,6 +257,206 @@ export function reconstructRepairState(
   }
 }
 
+/** Dependencies needed by the extracted repair event handler. */
+export interface RepairHandlerDeps {
+  /** The Flash model ref. */
+  readonly flashModel: ModelRef
+  /** The Pro model ref. */
+  readonly proModel: ModelRef
+  /** Repair limits. */
+  readonly limits: RepairLimits
+  /** The decide function (production or injected). */
+  readonly decide: typeof decideRepair
+  /** Whether Pro model is available for escalation. */
+  readonly proModelAvailable: boolean
+  /** Whether the current model was manually selected. */
+  readonly manualModelSelection: boolean
+}
+
+/** Result of handling one verification failure. */
+export interface RepairHandlerResult {
+  readonly action: RepairDecision['action']
+  readonly reason: string | undefined
+  readonly followupContent: ContentBlock[] | undefined
+  readonly events: SessionEvent[]
+  readonly repairId: string
+  readonly attemptNumber: number
+}
+
+/**
+ * Handle one goal/verification FAIL event through the full repair
+ * runtime path: build evidence, call the controller, emit durable
+ * events, and produce a followup message if needed. This is the
+ * extracted core of the plugin's session/event handler, testable
+ * without a full Cordis context.
+ *
+ * @param session - the session to append events to.
+ * @param state - the mutable repair state for this goal.
+ * @param deps - handler dependencies (models, limits, decide function).
+ * @param turn - the current turn number.
+ * @param checks - the verification checks from the failed goal.
+ * @returns the handler result with action, events, and optional followup.
+ */
+export function handleVerificationFailure(
+  session: Session,
+  state: RepairState,
+  deps: RepairHandlerDeps,
+  turn: number,
+  checks: readonly GoalVerificationCheck[],
+): RepairHandlerResult {
+  const changedFiles = changedFilesInTurn(session.events, turn)
+  const failure = buildFailurePackage(checks, changedFiles)
+
+  const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? `unknown-${state.attempts.length + 1}`
+  const model = modelFromRoutingDecision(session.events, routingDecisionId) ?? deps.flashModel
+
+  const attemptNumber = state.attempts.length + 1
+  const lastAttempt = state.attempts.length > 0
+    ? state.attempts[state.attempts.length - 1]
+    : undefined
+  const priorFailure = lastAttempt?.failurePackage
+  const progress = priorFailure !== undefined
+    ? classifyProgress(priorFailure, failure)
+    : 'none'
+  const fingerprint = computeFailureFingerprint(failure)
+  const failurePackageId = computeFailurePackageId(session.id, turn, routingDecisionId)
+
+  const attempt: RepairAttempt = {
+    attempt: attemptNumber,
+    model,
+    routingDecisionId,
+    verified: false,
+    verificationStatus: 'verified-fail',
+    failureFingerprint: fingerprint,
+    progress,
+    failurePackage: failure,
+    failurePackageId,
+    costUsd: 0,
+    latencyMs: 0,
+  }
+  state.attempts.push(attempt)
+
+  // Emit repair/evidence
+  session.append('repair/evidence', {
+    repairId: state.repairId,
+    turn,
+    step: 0,
+    attempt: attemptNumber,
+    routingDecisionId,
+    failureFingerprint: fingerprint,
+    failurePackageId,
+    progress,
+    failedCriteria: failure.failedCriteria,
+    failingTests: failure.failingTests,
+    typeErrors: failure.typeErrors,
+    buildErrors: failure.buildErrors,
+    changedFiles: failure.changedFiles,
+  }, { ignorable: true })
+
+  // Call the repair controller
+  const decisionInput: RepairDecisionInput = {
+    sessionId: session.id,
+    turn,
+    step: 0,
+    initialModel: deps.flashModel,
+    currentModel: model,
+    attempts: state.attempts,
+    latestFailure: failure,
+    budget: {
+      totalCostUsd: state.totalCostUsd,
+      elapsedMs: Date.now() - state.startedAt,
+    },
+    limits: deps.limits,
+    ...(deps.proModelAvailable !== true ? { proModelAvailable: false } : {}),
+    ...(deps.manualModelSelection ? { manualModelSelection: true } : {}),
+  }
+  const decision = deps.decide(decisionInput)
+
+  // Emit repair/decision
+  session.append('repair/decision', {
+    repairId: state.repairId,
+    turn,
+    step: 0,
+    attempt: attemptNumber,
+    action: decision.action,
+    ...(decision.action === 'pro-escalate' ? { reason: decision.reason } : {}),
+    ...(decision.action === 'stop' ? { reason: decision.reason } : {}),
+    failureFingerprint: fingerprint,
+  }, { ignorable: true })
+
+  let followupContent: ContentBlock[] | undefined
+
+  switch (decision.action) {
+    case 'complete': {
+      session.append('repair/completed', {
+        repairId: state.repairId,
+        turn,
+        step: 0,
+        finalRoutingDecisionId: routingDecisionId,
+        verified: true,
+        totalAttempts: state.attempts.length,
+        flashAttempts: state.flashAttempts,
+        proAttempts: state.proAttempts,
+        totalCostUsd: state.totalCostUsd,
+        elapsedMs: Date.now() - state.startedAt,
+      }, { ignorable: true })
+      break
+    }
+    case 'flash-repair': {
+      state.flashAttempts += 1
+      followupContent = renderRepairPrompt(decision.evidence, state.attempts.length + 1)
+      break
+    }
+    case 'pro-escalate': {
+      state.proAttempts += 1
+      session.append('model/escalation', {
+        repairId: state.repairId,
+        turn,
+        step: 0,
+        fromRoutingDecisionId: routingDecisionId,
+        toRoutingDecisionId: `pro-${state.repairId}-${state.proAttempts}`,
+        repairOf: routingDecisionId,
+        fromModel: model.model,
+        toModel: deps.proModel.model,
+        reason: decision.reason,
+        failureFingerprint: fingerprint,
+        flashAttempts: state.flashAttempts,
+      }, { ignorable: true })
+      followupContent = renderProEscalationPrompt(decision.evidence, state.flashAttempts)
+      break
+    }
+    case 'stop': {
+      session.append('repair/completed', {
+        repairId: state.repairId,
+        turn,
+        step: 0,
+        finalRoutingDecisionId: routingDecisionId,
+        verified: false,
+        totalAttempts: state.attempts.length,
+        flashAttempts: state.flashAttempts,
+        proAttempts: state.proAttempts,
+        totalCostUsd: state.totalCostUsd,
+        elapsedMs: Date.now() - state.startedAt,
+      }, { ignorable: true })
+      break
+    }
+  }
+
+  const eventsBefore = session.events.length
+  const newEvents = session.events.slice(eventsBefore)
+
+  return {
+    action: decision.action,
+    reason: decision.action === 'pro-escalate' || decision.action === 'stop'
+      ? decision.reason
+      : undefined,
+    followupContent,
+    events: newEvents,
+    repairId: state.repairId,
+    attemptNumber,
+  }
+}
+
 /** Plugin entry point. */
 export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: false }): void {
   if (!config.enabled) return
@@ -289,41 +489,6 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     return state
   }
 
-  /** Build a RepairAttempt from the latest verification and session data. */
-  function buildAttempt(
-    session: Session,
-    turn: number,
-    verified: boolean,
-    failure: FailurePackage | undefined,
-    model: ModelRef,
-    attemptNumber: number,
-  ): RepairAttempt {
-    const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? `unknown-${attemptNumber}`
-    const priorFailure = stateForAttempts(session, turn)
-    const progress = failure !== undefined && !verified
-      ? classifyProgress(priorFailure, failure)
-      : undefined
-    const fingerprint = failure !== undefined && !verified
-      ? computeFailureFingerprint(failure)
-      : undefined
-    return {
-      attempt: attemptNumber,
-      model,
-      routingDecisionId,
-      verified,
-      verificationStatus: verified ? 'verified-pass' : 'verified-fail',
-      ...(fingerprint !== undefined ? { failureFingerprint: fingerprint } : {}),
-      ...(progress !== undefined ? { progress } : {}),
-      ...(failure !== undefined && !verified ? { failurePackage: failure } : {}),
-      costUsd: 0,
-      latencyMs: 0,
-    }
-  }
-
-  /** Find the prior failure package from repair attempts. */
-  function stateForAttempts(_session: Session, _turn: number): FailurePackage | undefined {
-    return undefined
-  }
 
   ctx.effect(function* () {
     ctx.on('session/event', (session: Session, event: SessionEvent) => {
@@ -345,38 +510,8 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
         (max, e) => e.type === 'turn/start' ? Math.max(max, (e.data as { turn: number }).turn) : max, 0,
       )
 
-      const changedFiles = changedFilesInTurn(session.events, turn)
-      const failure = buildFailurePackage(data.checks, changedFiles)
       const state = stateFor(agent, goal)
 
-      const routingDecisionId = latestRoutingDecisionId(session.events, turn)
-      const model = routingDecisionId !== undefined
-        ? modelFromRoutingDecision(session.events, routingDecisionId) ?? flashModel
-        : flashModel
-
-      const attemptNumber = state.attempts.length + 1
-      const attempt = buildAttempt(session, turn, false, failure, model, attemptNumber)
-      state.attempts.push(attempt)
-
-      const fingerprint = attempt.failureFingerprint ?? computeFailureFingerprint(failure)
-
-      // Emit repair/evidence
-      session.append('repair/evidence', {
-        repairId: state.repairId,
-        turn,
-        step: 0,
-        attempt: attemptNumber,
-        routingDecisionId: attempt.routingDecisionId,
-        failureFingerprint: fingerprint,
-        progress: attempt.progress ?? 'none',
-        failedCriteria: failure.failedCriteria,
-        failingTests: failure.failingTests,
-        typeErrors: failure.typeErrors,
-        buildErrors: failure.buildErrors,
-        changedFiles: failure.changedFiles,
-      }, { ignorable: true })
-
-      // Call the repair controller
       const repairController = ctx.get('repairController') as { decide: (input: object) => RepairDecision } | undefined
       if (repairController === undefined) {
         ctx.logger.warn(`repair-runtime: RepairController service not available; blocking goal "${goal.id}"`)
@@ -387,100 +522,41 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
         return
       }
 
-      const decision = repairController.decide({
-        sessionId: session.id,
-        turn,
-        step: 0,
-        initialModel: flashModel,
-        currentModel: model,
-        attempts: state.attempts,
-        latestFailure: failure,
-        budget: {
-          totalCostUsd: state.totalCostUsd,
-          elapsedMs: Date.now() - state.startedAt,
+      const deps: RepairHandlerDeps = {
+        flashModel,
+        proModel,
+        limits: {
+          maxFlashAttempts: config.maxFlashAttempts ?? 3,
+          maxProAttempts: config.maxProAttempts ?? 2,
+          maxTotalAttempts: config.maxTotalAttempts ?? 5,
         },
-      })
+        decide: repairController.decide as typeof decideRepair,
+        proModelAvailable: true,
+        manualModelSelection: false,
+      }
 
-      // Emit repair/decision
-      session.append('repair/decision', {
-        repairId: state.repairId,
-        turn,
-        step: 0,
-        attempt: attemptNumber,
-        action: decision.action,
-        ...(decision.action === 'pro-escalate' ? { reason: decision.reason } : {}),
-        ...(decision.action === 'stop' ? { reason: decision.reason } : {}),
-        failureFingerprint: fingerprint,
-      }, { ignorable: true })
+      const result = handleVerificationFailure(session, state, deps, turn, data.checks)
 
-      switch (decision.action) {
+      switch (result.action) {
         case 'complete': {
-          session.append('repair/completed', {
-            repairId: state.repairId,
-            turn,
-            step: 0,
-            finalRoutingDecisionId: attempt.routingDecisionId,
-            verified: true,
-            totalAttempts: state.attempts.length,
-            flashAttempts: state.flashAttempts,
-            proAttempts: state.proAttempts,
-            totalCostUsd: state.totalCostUsd,
-            elapsedMs: Date.now() - state.startedAt,
-          }, { ignorable: true })
           repairStates.delete(`${agent.id}:${goal.id}`)
           return
         }
-        case 'flash-repair': {
-          state.flashAttempts += 1
-          const prompt = renderRepairPrompt(decision.evidence, state.attempts.length + 1)
-          const message = createUserMessage({
-            content: prompt,
-            source: { kind: 'goal', goalId: goal.id, revision: goal.revision, round: goal.roundsStarted + 1 },
-          })
-          agent.followup(message)
-          return
-        }
+        case 'flash-repair':
         case 'pro-escalate': {
-          state.proAttempts += 1
-          // Emit model/escalation
-          session.append('model/escalation', {
-            repairId: state.repairId,
-            turn,
-            step: 0,
-            fromRoutingDecisionId: attempt.routingDecisionId,
-            toRoutingDecisionId: `pro-${state.repairId}-${state.proAttempts}`,
-            repairOf: attempt.routingDecisionId,
-            fromModel: model.model,
-            toModel: proModel.model,
-            reason: decision.reason,
-            failureFingerprint: fingerprint,
-            flashAttempts: state.flashAttempts,
-          }, { ignorable: true })
-
-          const prompt = renderProEscalationPrompt(decision.evidence, state.flashAttempts)
-          const message = createUserMessage({
-            content: prompt,
-            source: { kind: 'goal', goalId: goal.id, revision: goal.revision, round: goal.roundsStarted + 1 },
-          })
-          agent.followup(message)
+          if (result.followupContent !== undefined) {
+            const message = createUserMessage({
+              content: result.followupContent,
+              source: { kind: 'goal', goalId: goal.id, revision: goal.revision, round: goal.roundsStarted + 1 },
+            })
+            agent.followup(message)
+          }
           return
         }
         case 'stop': {
-          session.append('repair/completed', {
-            repairId: state.repairId,
-            turn,
-            step: 0,
-            finalRoutingDecisionId: attempt.routingDecisionId,
-            verified: false,
-            totalAttempts: state.attempts.length,
-            flashAttempts: state.flashAttempts,
-            proAttempts: state.proAttempts,
-            totalCostUsd: state.totalCostUsd,
-            elapsedMs: Date.now() - state.startedAt,
-          }, { ignorable: true })
           ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
             code: 'repair-exhausted',
-            message: `Repair exhausted: ${decision.reason}`,
+            message: `Repair exhausted: ${result.reason ?? 'unknown'}`,
           })
           repairStates.delete(`${agent.id}:${goal.id}`)
           return
