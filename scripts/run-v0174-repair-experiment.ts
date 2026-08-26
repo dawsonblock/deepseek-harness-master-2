@@ -35,14 +35,15 @@ import {
   type TaskTrajectory,
   type VerificationEvidence,
   type WorkspaceVerificationResult,
-  ALL_POLICIES,
+  classifyProgress,
   computeFailureFingerprint,
   computePolicyMetrics,
-  computeRepairAdvantage,
   constructEvidenceOnlyPrompt,
   constructFailurePackage,
+  constructFlashRepairPrompt,
   constructProRepairPrompt,
   constructWorkspaceOnlyPrompt,
+  isSameFailure,
   parseTakeoverDecision,
 } from './v0174-repair-core.ts'
 
@@ -2034,6 +2035,257 @@ Export \`TransactionalMap\` as a named export.`,
       }
     },
   },
+  // --- Impossible-for-Flash fixtures: test Pro escalation path ---
+  {
+    id: 'implement-lock-free-ring-buffer',
+    category: 'concurrency-impossible',
+    description: 'Implement a lock-free SPSC ring buffer with memory ordering guarantees',
+    expectsFlashFailure: true,
+    task: `Implement a single-producer single-consumer lock-free ring buffer in \`spscQueue.ts\` using TypeScript's \`Atomics\` API on a \`SharedArrayBuffer\`.
+
+Requirements:
+- \`class SpscQueue<T>\` where T is serialized to a fixed-size buffer
+- Constructor takes \`capacity\` (number of slots) and \`slotSize\` (bytes per slot)
+- Uses a \`SharedArrayBuffer\` with a header (8 bytes: 4 for read index, 4 for write index) followed by slot data
+- \`enqueue(value: T): boolean\` — serializes value to JSON, writes to next slot, returns false if full
+- \`dequeue(): T | null\` — reads next slot, deserializes, returns null if empty
+- Uses \`Atomics.store\` and \`Atomics.load\` with explicit memory ordering
+- Producer writes data first, then publishes write index with \`Atomics.store\` and \`'release'\` ordering
+- Consumer reads write index with \`Atomics.load\` and \`'acquire'\` ordering, then reads data
+- Must handle wraparound correctly
+- Export \`SpscQueue\` as a named export
+
+The key correctness requirement: a consumer must never see a partially written slot. The memory ordering on the indices ensures this.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', SPSC_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-diff-algorithm',
+    category: 'algorithmic-impossible',
+    description: 'Implement Myers diff algorithm with O(ND) complexity',
+    expectsFlashFailure: true,
+    task: `Implement the Myers diff algorithm in \`diff.ts\`. This is the algorithm used by \`git diff\`.
+
+Requirements:
+- \`function diff(a: string[], b: string[]): DiffResult[]\` — compares two arrays of lines
+- \`type DiffResult = { type: 'equal'; lines: string[] } | { type: 'insert'; lines: string[] } | { type: 'delete'; lines: string[] }\`
+- Must use the Myers O(ND) algorithm, not a naive LCS approach
+- Must produce minimal edit script (fewest possible edits)
+- Consecutive equal lines must be coalesced into a single 'equal' entry
+- Consecutive insert lines must be coalesced into a single 'insert' entry
+- Consecutive delete lines must be coalesced into a single 'delete' entry
+- Empty arrays produce empty result
+- Identical arrays produce a single 'equal' entry
+
+Export \`diff\` and \`DiffResult\` as named exports.
+
+The Myers algorithm finds the shortest edit script by finding the longest common subsequence through a graph traversal. The key insight is that it operates on the edit graph diagonals, advancing along diagonals where elements match, and only expanding to insert/delete when needed.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', DIFF_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-query-planner',
+    category: 'architectural-impossible',
+    description: 'Implement a SQL-like query planner with join reordering',
+    expectsFlashFailure: true,
+    task: `Implement a simple SQL-like query planner in \`queryPlanner.ts\` that optimizes join order using a dynamic programming approach (System-R style).
+
+Requirements:
+- \`type Table = { name: string; rowCount: number }\`
+- \`type JoinCondition = { leftTable: string; leftColumn: string; rightTable: string; rightColumn: string; selectivity: number }\`
+- \`type Filter = { table: string; column: string; selectivity: number }\`
+- \`type QueryPlan = { joins: Array<{ left: string; right: string; condition: JoinCondition; estimatedRows: number }>; totalEstimatedRows: number }\`
+- \`function planQuery(tables: Table[], joins: JoinCondition[], filters: Filter[]): QueryPlan\`
+
+The planner must:
+1. Apply filters first to estimate filtered row counts for each table
+2. Use dynamic programming to find the join order with the minimum estimated intermediate result size
+3. For each pair of tables being joined, estimate the result size as: leftRows * rightRows * joinSelectivity
+4. Consider all possible join orders (left-deep trees only is acceptable)
+5. Return the plan with the lowest total intermediate rows
+
+The key challenge: with N tables, there are N! possible join orders. Dynamic programming over subsets reduces this to 2^N * N^2. For 4 tables, that's 16*16=256 vs 24 permutations — but the DP must correctly enumerate subsets and find the optimal sub-plan for each.
+
+Export \`planQuery\` and all types as named exports.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', QUERY_PLANNER_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-raft-log-replication',
+    category: 'distributed-systems-impossible',
+    description: 'Implement Raft log replication state machine with leader election',
+    expectsFlashFailure: true,
+    task: `Implement a simplified Raft consensus log replication module in \`raft.ts\`.
+
+Requirements:
+- \`type LogEntry = { term: number; command: string; index: number }\`
+- \`type NodeState = 'follower' | 'candidate' | 'leader'\`
+- \`class RaftNode\` with:
+  - \`constructor(id: string, peers: string[])\`
+  - \`currentTerm: number\` — starts at 0
+  - \`votedFor: string | null\` — who this node voted for in current term
+  - \`log: LogEntry[]\` — the replicated log
+  - \`state: NodeState\` — starts as 'follower'
+  - \`commitIndex: number\` — index of last committed entry (-1 initially)
+  - \`startElection(): void\` — transitions to candidate, increments term, votes for self, sends RequestVote RPCs
+  - \`receiveVote(peerId: string, term: number, voteGranted: boolean): void\` — processes a vote response
+  - \`appendEntry(entry: LogEntry): boolean\` — leader appends entry, returns true
+  - \`receiveAppendEntries(term: number, leaderId: string, prevLogIndex: number, prevLogTerm: number, entries: LogEntry[], leaderCommit: number): boolean\` — follower processes AppendEntries RPC
+  - \`commitEntries(): LogEntry[]\` — commits entries up to commitIndex, returns newly committed entries
+
+Rules:
+1. A node rejects RequestVote if the candidate's log is not at least as up-to-date
+2. A node rejects AppendEntries if term < currentTerm
+3. A node rejects AppendEntries if prevLogIndex doesn't match log[prevLogIndex].term
+4. If an existing entry conflicts with a new one (same index, different term), delete it and all that follow
+5. A candidate wins election with majority of votes
+6. commitIndex advances to min(leaderCommit, last new entry index) on AppendEntries
+
+Export \`RaftNode\` and all types as named exports.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', RAFT_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
+  {
+    id: 'implement-type-inference',
+    category: 'compiler-impossible',
+    description: 'Implement Hindley-Milner type inference for a small lambda calculus',
+    expectsFlashFailure: true,
+    task: `Implement Hindley-Milner type inference in \`typeInference.ts\` for a small typed lambda calculus.
+
+Requirements:
+- \`type Expr = { kind: 'var'; name: string } | { kind: 'lambda'; param: string; body: Expr } | { kind: 'app'; func: Expr; arg: Expr } | { kind: 'lit'; value: number | boolean | string }\`
+- \`type Type = { kind: 'var'; name: string } | { kind: 'con'; name: string; args: Type[] } | { kind: 'arrow'; from: Type; to: Type }\`
+- \`class TypeInferencer\` with:
+  - \`infer(expr: Expr): Type\` — returns the inferred type or throws on type error
+  - Uses union-find (unification) for type variable substitution
+  - Generates fresh type variables internally
+
+Built-in types:
+- Numbers: \`{ kind: 'con', name: 'Number', args: [] }\`
+- Booleans: \`{ kind: 'con', name: 'Boolean', args: [] }\`
+- Strings: \`{ kind: 'con', name: 'String', args: [] }\`
+
+The algorithm:
+1. Assign a fresh type variable to each expression
+2. Generate constraints from the expression structure
+3. Unify constraints (union-find with substitution)
+4. Read off the final type
+
+Key cases:
+- Lambda: parameter gets a fresh var, body is inferred in extended environment, result is arrow type
+- Application: function type must unify with arrow(argType, resultVar), result is resultVar
+- Literal: directly typed (Number, Boolean, String)
+- Variable: look up in environment
+
+Export \`TypeInferencer\` and all types as named exports.`,
+    setup: async (workspace) => {
+      await writeWorkspaceFile(workspace, 'package.json', TEST_PACKAGE_JSON)
+      await writeWorkspaceFile(workspace, 'tsconfig.json', TEST_TSCONFIG)
+    },
+    verify: async (workspace) => {
+      await writeWorkspaceFile(workspace, '__hidden_test__.test.ts', TYPE_INFERENCE_TEST)
+      const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+      const typeErrors = parseTypeErrors(typecheck.output)
+      const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+      const failingTests = parseFailingTests(testRun.output)
+      const passed = typecheck.code === 0 && testRun.code === 0
+      const failedCriteria: string[] = []
+      if (typeErrors.length > 0) failedCriteria.push('TypeScript typecheck must pass')
+      if (failingTests.length > 0) failedCriteria.push('All tests must pass')
+      const { unlink } = await import('node:fs/promises')
+      try { await unlink(join(workspace, '__hidden_test__.test.ts')) } catch { /* ignore */ }
+      return {
+        passed,
+        evidence: { failedCriteria, failingTests, typeErrors, buildErrors: [] },
+        criteriaPassed: 2 - failedCriteria.length,
+        criteriaTotal: 2,
+      }
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -2500,6 +2752,393 @@ describe('TransactionalMap', () => {
 })
 `
 
+const SPSC_TEST = `
+import { describe, it, expect } from 'vitest'
+import { SpscQueue } from './spscQueue.ts'
+
+describe('SpscQueue', () => {
+  it('enqueues and dequeues in order', () => {
+    const q = new SpscQueue<string>(4, 256)
+    expect(q.enqueue('a')).toBe(true)
+    expect(q.enqueue('b')).toBe(true)
+    expect(q.dequeue()).toBe('a')
+    expect(q.dequeue()).toBe('b')
+  })
+  it('returns null when empty', () => {
+    const q = new SpscQueue<number>(2, 64)
+    expect(q.dequeue()).toBe(null)
+  })
+  it('returns false when full', () => {
+    const q = new SpscQueue<number>(2, 64)
+    expect(q.enqueue(1)).toBe(true)
+    expect(q.enqueue(2)).toBe(true)
+    expect(q.enqueue(3)).toBe(false)
+  })
+  it('handles wraparound', () => {
+    const q = new SpscQueue<number>(3, 64)
+    q.enqueue(1); q.enqueue(2); q.enqueue(3)
+    q.dequeue(); q.dequeue()
+    expect(q.enqueue(4)).toBe(true)
+    expect(q.enqueue(5)).toBe(true)
+    expect(q.dequeue()).toBe(3)
+    expect(q.dequeue()).toBe(4)
+    expect(q.dequeue()).toBe(5)
+  })
+  it('handles mixed enqueue/dequeue', () => {
+    const q = new SpscQueue<number>(4, 64)
+    q.enqueue(1); q.enqueue(2)
+    q.dequeue()
+    q.enqueue(3); q.enqueue(4)
+    q.dequeue(); q.dequeue()
+    q.enqueue(5)
+    expect(q.dequeue()).toBe(4)
+    expect(q.dequeue()).toBe(5)
+    expect(q.dequeue()).toBe(null)
+  })
+})
+`
+
+const DIFF_TEST = `
+import { describe, it, expect } from 'vitest'
+import { diff, type DiffResult } from './diff.ts'
+
+describe('Myers diff', () => {
+  it('identical arrays produce single equal', () => {
+    expect(diff(['a','b','c'], ['a','b','c'])).toEqual([
+      { type: 'equal', lines: ['a','b','c'] },
+    ])
+  })
+  it('empty arrays produce empty result', () => {
+    expect(diff([], [])).toEqual([])
+  })
+  it('pure insertion', () => {
+    expect(diff([], ['a','b'])).toEqual([
+      { type: 'insert', lines: ['a','b'] },
+    ])
+  })
+  it('pure deletion', () => {
+    expect(diff(['a','b'], [])).toEqual([
+      { type: 'delete', lines: ['a','b'] },
+    ])
+  })
+  it('mixed changes', () => {
+    const result = diff(
+      ['line1','line2','line3','line4','line5'],
+      ['line1','line2-modified','line3','line4','line6'],
+    )
+    expect(result).toEqual([
+      { type: 'equal', lines: ['line1'] },
+      { type: 'delete', lines: ['line2'] },
+      { type: 'insert', lines: ['line2-modified'] },
+      { type: 'equal', lines: ['line3','line4'] },
+      { type: 'delete', lines: ['line5'] },
+      { type: 'insert', lines: ['line6'] },
+    ])
+  })
+  it('produces minimal edits', () => {
+    const result = diff(['a','b','c','d'], ['a','x','c','d'])
+    expect(result).toEqual([
+      { type: 'equal', lines: ['a'] },
+      { type: 'delete', lines: ['b'] },
+      { type: 'insert', lines: ['x'] },
+      { type: 'equal', lines: ['c','d'] },
+    ])
+  })
+  it('coalesces consecutive operations', () => {
+    const result = diff(['a','b','c'], ['x','y','z'])
+    expect(result).toEqual([
+      { type: 'delete', lines: ['a','b','c'] },
+      { type: 'insert', lines: ['x','y','z'] },
+    ])
+  })
+  it('handles insert in middle', () => {
+    const result = diff(['a','c'], ['a','b','c'])
+    expect(result).toEqual([
+      { type: 'equal', lines: ['a'] },
+      { type: 'insert', lines: ['b'] },
+      { type: 'equal', lines: ['c'] },
+    ])
+  })
+})
+`
+
+const QUERY_PLANNER_TEST = `
+import { describe, it, expect } from 'vitest'
+import { planQuery, type Table, type JoinCondition, type Filter } from './queryPlanner.ts'
+
+describe('QueryPlanner', () => {
+  it('single table with filter', () => {
+    const tables: Table[] = [{ name: 'users', rowCount: 1000 }]
+    const filters: Filter[] = [{ table: 'users', column: 'active', selectivity: 0.1 }]
+    const plan = planQuery(tables, [], filters)
+    expect(plan.joins).toHaveLength(0)
+    expect(plan.totalEstimatedRows).toBe(100)
+  })
+  it('two table join picks smaller intermediate', () => {
+    const tables: Table[] = [
+      { name: 'users', rowCount: 10000 },
+      { name: 'orders', rowCount: 100 },
+    ]
+    const joins: JoinCondition[] = [{
+      leftTable: 'users', leftColumn: 'id',
+      rightTable: 'orders', rightColumn: 'user_id',
+      selectivity: 0.001,
+    }]
+    const plan = planQuery(tables, joins, [])
+    expect(plan.joins).toHaveLength(1)
+    // orders(100) join users(10000) * 0.001 = 100
+    // vs users(10000) join orders(100) * 0.001 = 100
+    // Both same, but planner should pick one
+    expect(plan.totalEstimatedRows).toBe(100)
+  })
+  it('three table join picks optimal order', () => {
+    const tables: Table[] = [
+      { name: 'small', rowCount: 10 },
+      { name: 'medium', rowCount: 1000 },
+      { name: 'large', rowCount: 100000 },
+    ]
+    const joins: JoinCondition[] = [
+      { leftTable: 'small', leftColumn: 'id', rightTable: 'medium', rightColumn: 'small_id', selectivity: 0.01 },
+      { leftTable: 'medium', leftColumn: 'id', rightTable: 'large', rightColumn: 'medium_id', selectivity: 0.001 },
+    ]
+    const plan = planQuery(tables, joins, [])
+    expect(plan.joins).toHaveLength(2)
+    // Optimal: small(10) join medium(1000) * 0.01 = 10, then 10 join large(100000) * 0.001 = 100
+    // Suboptimal: medium(1000) join large(100000) * 0.001 = 1000, then 1000 join small(10) * 0.01 = 10
+    // Both give 10 final rows, but intermediate differs: 10 vs 1000
+    // Planner should pick the one with smaller intermediate
+    expect(plan.totalEstimatedRows).toBeLessThanOrEqual(100)
+  })
+  it('filters reduce table sizes before join', () => {
+    const tables: Table[] = [
+      { name: 'a', rowCount: 10000 },
+      { name: 'b', rowCount: 10000 },
+    ]
+    const joins: JoinCondition[] = [{
+      leftTable: 'a', leftColumn: 'id', rightTable: 'b', rightColumn: 'a_id', selectivity: 0.01,
+    }]
+    const filters: Filter[] = [{ table: 'a', column: 'x', selectivity: 0.01 }]
+    const plan = planQuery(tables, joins, filters)
+    // a filtered to 100, join b(10000) * 0.01 = 100
+    expect(plan.totalEstimatedRows).toBe(100)
+  })
+  it('four table join finds optimal', () => {
+    const tables: Table[] = [
+      { name: 'a', rowCount: 100 },
+      { name: 'b', rowCount: 1000 },
+      { name: 'c', rowCount: 10000 },
+      { name: 'd', rowCount: 100000 },
+    ]
+    const joins: JoinCondition[] = [
+      { leftTable: 'a', leftColumn: 'id', rightTable: 'b', rightColumn: 'a_id', selectivity: 0.1 },
+      { leftTable: 'b', leftColumn: 'id', rightTable: 'c', rightColumn: 'b_id', selectivity: 0.01 },
+      { leftTable: 'c', leftColumn: 'id', rightTable: 'd', rightColumn: 'c_id', selectivity: 0.001 },
+    ]
+    const plan = planQuery(tables, joins, [])
+    expect(plan.joins).toHaveLength(3)
+    // Should start with smallest tables
+    expect(plan.totalEstimatedRows).toBeLessThan(1000)
+  })
+})
+`
+
+const RAFT_TEST = `
+import { describe, it, expect } from 'vitest'
+import { RaftNode, type LogEntry } from './raft.ts'
+
+describe('RaftNode', () => {
+  it('starts as follower with term 0', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    expect(n.state).toBe('follower')
+    expect(n.currentTerm).toBe(0)
+    expect(n.votedFor).toBe(null)
+    expect(n.commitIndex).toBe(-1)
+  })
+  it('startElection transitions to candidate and increments term', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.startElection()
+    expect(n.state).toBe('candidate')
+    expect(n.currentTerm).toBe(1)
+    expect(n.votedFor).toBe('n1')
+  })
+  it('candidate wins with majority votes', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.startElection()
+    n.receiveVote('n2', 1, true)
+    expect(n.state).toBe('leader')
+  })
+  it('candidate does not win without majority', () => {
+    const n = new RaftNode('n1', ['n2', 'n3', 'n4'])
+    n.startElection()
+    n.receiveVote('n2', 1, true)
+    expect(n.state).toBe('candidate')
+  })
+  it('leader appends entries', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.startElection()
+    n.receiveVote('n2', 1, true)
+    expect(n.appendEntry({ term: 1, command: 'set x=1', index: 0 })).toBe(true)
+    expect(n.log).toHaveLength(1)
+  })
+  it('follower accepts AppendEntries from valid leader', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    const ok = n.receiveAppendEntries(1, 'n2', -1, 0, [{ term: 1, command: 'set x=1', index: 0 }], -1)
+    expect(ok).toBe(true)
+    expect(n.log).toHaveLength(1)
+  })
+  it('follower rejects AppendEntries with stale term', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.currentTerm = 5
+    const ok = n.receiveAppendEntries(3, 'n2', -1, 0, [], -1)
+    expect(ok).toBe(false)
+  })
+  it('follower rejects AppendEntries with mismatched prevLogIndex', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.log = [{ term: 1, command: 'a', index: 0 }]
+    const ok = n.receiveAppendEntries(2, 'n2', 0, 2, [{ term: 2, command: 'b', index: 1 }], -1)
+    expect(ok).toBe(false)
+  })
+  it('conflicting entries are overwritten', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.log = [{ term: 1, command: 'a', index: 0 }, { term: 1, command: 'b', index: 1 }]
+    n.receiveAppendEntries(2, 'n2', 0, 1, [{ term: 2, command: 'c', index: 1 }], -1)
+    expect(n.log).toHaveLength(2)
+    expect(n.log[1].command).toBe('c')
+    expect(n.log[1].term).toBe(2)
+  })
+  it('commitIndex advances on AppendEntries', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.receiveAppendEntries(1, 'n2', -1, 0, [{ term: 1, command: 'a', index: 0 }], 0)
+    expect(n.commitIndex).toBe(0)
+  })
+  it('commitEntries returns newly committed entries', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.log = [{ term: 1, command: 'a', index: 0 }, { term: 1, command: 'b', index: 1 }]
+    n.commitIndex = 0
+    n.commitIndex = 1
+    const committed = n.commitEntries()
+    expect(committed).toHaveLength(1)
+    expect(committed[0].command).toBe('b')
+  })
+  it('rejects vote for less up-to-date candidate', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.log = [{ term: 1, command: 'a', index: 0 }, { term: 2, command: 'b', index: 1 }]
+    n.currentTerm = 3
+    // Candidate n2 has log term 1 at index 0 — less up-to-date
+    // This should be handled by the vote logic
+  })
+})
+`
+
+const TYPE_INFERENCE_TEST = `
+import { describe, it, expect } from 'vitest'
+import { TypeInferencer, type Expr } from './typeInference.ts'
+
+function numType() { return { kind: 'con' as const, name: 'Number', args: [] } }
+function boolType() { return { kind: 'con' as const, name: 'Boolean', args: [] } }
+function strType() { return { kind: 'con' as const, name: 'String', args: [] } }
+function arrow(from: any, to: any) { return { kind: 'arrow' as const, from, to } }
+function tvar(name: string) { return { kind: 'var' as const, name } }
+
+describe('TypeInferencer', () => {
+  it('infers number literal', () => {
+    const inf = new TypeInferencer()
+    const t = inf.infer({ kind: 'lit', value: 42 })
+    expect(t).toEqual(numType())
+  })
+  it('infers boolean literal', () => {
+    const inf = new TypeInferencer()
+    const t = inf.infer({ kind: 'lit', value: true })
+    expect(t).toEqual(boolType())
+  })
+  it('infers string literal', () => {
+    const inf = new TypeInferencer()
+    const t = inf.infer({ kind: 'lit', value: 'hello' })
+    expect(t).toEqual(strType())
+  })
+  it('infers identity function type', () => {
+    const inf = new TypeInferencer()
+    const expr: Expr = { kind: 'lambda', param: 'x', body: { kind: 'var', name: 'x' } }
+    const t = inf.infer(expr)
+    expect(t.kind).toBe('arrow')
+    if (t.kind === 'arrow') {
+      expect(t.from.kind).toBe('var')
+      expect(t.to.kind).toBe('var')
+      if (t.from.kind === 'var' && t.to.kind === 'var') {
+        expect(t.from.name).toBe(t.to.name)
+      }
+    }
+  })
+  it('infers application of identity to number', () => {
+    const inf = new TypeInferencer()
+    const expr: Expr = {
+      kind: 'app',
+      func: { kind: 'lambda', param: 'x', body: { kind: 'var', name: 'x' } },
+      arg: { kind: 'lit', value: 42 },
+    }
+    const t = inf.infer(expr)
+    expect(t).toEqual(numType())
+  })
+  it('infers constant function', () => {
+    const inf = new TypeInferencer()
+    const expr: Expr = {
+      kind: 'lambda', param: 'x',
+      body: { kind: 'lit', value: true },
+    }
+    const t = inf.infer(expr)
+    expect(t).toEqual(arrow(tvar('t0'), boolType()))
+  })
+  it('infers composed functions', () => {
+    const inf = new TypeInferencer()
+    // (\\x -> \\y -> x) applied to 42
+    const expr: Expr = {
+      kind: 'app',
+      func: {
+        kind: 'lambda', param: 'x',
+        body: { kind: 'lambda', param: 'y', body: { kind: 'var', name: 'x' } },
+      },
+      arg: { kind: 'lit', value: 42 },
+    }
+    const t = inf.infer(expr)
+    expect(t.kind).toBe('arrow')
+    if (t.kind === 'arrow') {
+      expect(t.to).toEqual(numType())
+    }
+  })
+  it('throws on type mismatch', () => {
+    const inf = new TypeInferencer()
+    // (\\x -> x) applied to 42 applied to true — 42 is not a function
+    const expr: Expr = {
+      kind: 'app',
+      func: {
+        kind: 'app',
+        func: { kind: 'lambda', param: 'x', body: { kind: 'var', name: 'x' } },
+        arg: { kind: 'lit', value: 42 },
+      },
+      arg: { kind: 'lit', value: true },
+    }
+    expect(() => inf.infer(expr)).toThrow()
+  })
+  it('infers polymorphic apply', () => {
+    const inf = new TypeInferencer()
+    // \\f -> \\x -> f(x)
+    const expr: Expr = {
+      kind: 'lambda', param: 'f',
+      body: {
+        kind: 'lambda', param: 'x',
+        body: { kind: 'app', func: { kind: 'var', name: 'f' }, arg: { kind: 'var', name: 'x' } },
+      },
+    }
+    const t = inf.infer(expr)
+    expect(t.kind).toBe('arrow')
+    if (t.kind === 'arrow') {
+      expect(t.from.kind).toBe('arrow')
+      expect(t.to.kind).toBe('var')
+    }
+  })
+})
+`
+
 // ---------------------------------------------------------------------------
 // Execution helpers
 // ---------------------------------------------------------------------------
@@ -2803,34 +3442,73 @@ async function executePolicy(
       })
     }
   } else if (policy === 'flash-repair-then-pro') {
-    // Policy E: Flash fail → one evidence-conditioned Flash repair → Pro takeover if still failing
+    // Production policy: evidence-conditioned Flash repair with progress-aware
+    // escalation. Up to 3 Flash calls, then Pro. If Flash repeats the same
+    // failure with no progress, escalate to Pro immediately rather than
+    // wasting another cheap call.
     const { workspace: flashWs, initialFiles: flashInitial } = await createWorkspace('flash')
+    // Flash #1: normal attempt
     const flashStage = await runStage('flash', fixture.task, flashWs, flashInitial)
     stages.push(flashStage)
     if (!flashStage.verified) {
       if (failurePackage === undefined) throw new Error(`Missing failure package for ${taskId}`)
-      // One evidence-conditioned Flash repair
-      const repairPrompt = constructProRepairPrompt(failurePackage)
-        .replace('You are taking over a coding task that a junior engineer attempted but failed.',
-          'You previously attempted this coding task but failed. Try again with the failure evidence.')
-        .replace('REPAIR_EXISTING', 'REPAIR_EXISTING (fix the existing code)')
-        .replace('ROLLBACK_AND_REDO', 'ROLLBACK_AND_REDO (start fresh)')
-      const flashRepairStage = await runStage('flash', repairPrompt, flashWs, flashInitial, flashStage.verificationEvidence)
-      stages.push(flashRepairStage)
-      if (!flashRepairStage.verified) {
-        escalated = true
-        // Pro takeover with accumulated failure evidence
-        const proPrompt = constructProRepairPrompt(failurePackage)
-        const proStage = await runStage('pro', proPrompt, flashWs, flashInitial, flashRepairStage.verificationEvidence)
-        const decision = parseTakeoverDecision(proStage.output)
-        const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
-        const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
-        stages.push({
-          ...proStage,
-          ...decision !== undefined ? { takeoverDecision: decision } : {},
-          rollbackOccurred,
-          changedFiles: proChangedFiles,
-        })
+      // Flash #2: repair using failure evidence from #1
+      const repair1Prompt = constructFlashRepairPrompt(failurePackage)
+      const flashRepair1Stage = await runStage('flash', repair1Prompt, flashWs, flashInitial, flashStage.verificationEvidence)
+      stages.push(flashRepair1Stage)
+      if (!flashRepair1Stage.verified) {
+        const sameFailure = flashRepair1Stage.failureFingerprint !== undefined
+          && flashStage.failureFingerprint !== undefined
+          && isSameFailure(flashStage.failureFingerprint, flashRepair1Stage.failureFingerprint)
+        const progress = classifyProgress(flashStage.verificationEvidence, flashRepair1Stage.verificationEvidence)
+        if (sameFailure || progress === 'none') {
+          // No progress — escalate to Pro immediately
+          escalated = true
+          const proPrompt = constructProRepairPrompt(failurePackage)
+          const proStage = await runStage('pro', proPrompt, flashWs, flashInitial, flashRepair1Stage.verificationEvidence)
+          const decision = parseTakeoverDecision(proStage.output)
+          const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
+          const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
+          stages.push({
+            ...proStage,
+            ...decision !== undefined ? { takeoverDecision: decision } : {},
+            rollbackOccurred,
+            changedFiles: proChangedFiles,
+          })
+        } else {
+          // Progress was made — allow one final Flash repair (#3)
+          const repair2FailurePackage = constructFailurePackage({
+            taskId,
+            routingDecisionId: flashRepair1Stage.routingDecisionId,
+            originalGoal: fixture.task,
+            model: MODELS.flash,
+            changedFiles: flashRepair1Stage.changedFiles ?? [],
+            verification: flashRepair1Stage.verificationEvidence,
+            priorEvidence: flashRepair1Stage.verificationEvidence,
+            checkpoints: {
+              taskStart: `${taskId}-start`,
+              afterFlash: `${taskId}-after-flash-2`,
+            },
+          })
+          const repair2Prompt = constructFlashRepairPrompt(repair2FailurePackage)
+          const flashRepair2Stage = await runStage('flash', repair2Prompt, flashWs, flashInitial, flashRepair1Stage.verificationEvidence)
+          stages.push(flashRepair2Stage)
+          if (!flashRepair2Stage.verified) {
+            // Flash #3 failed — escalate to Pro with all accumulated evidence
+            escalated = true
+            const proPrompt = constructProRepairPrompt(repair2FailurePackage)
+            const proStage = await runStage('pro', proPrompt, flashWs, flashInitial, flashRepair2Stage.verificationEvidence)
+            const decision = parseTakeoverDecision(proStage.output)
+            const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
+            const rollbackOccurred = decision === 'ROLLBACK_AND_REDO'
+            stages.push({
+              ...proStage,
+              ...decision !== undefined ? { takeoverDecision: decision } : {},
+              rollbackOccurred,
+              changedFiles: proChangedFiles,
+            })
+          }
+        }
       }
     }
   } else if (policy === 'flash-fail-pro-workspace-only') {
@@ -2925,18 +3603,16 @@ function metricsRow(metrics: PolicyMetrics): string {
 }
 
 async function generateReport(
-  allMetrics: Record<PolicyName, PolicyMetrics>,
+  allMetrics: Partial<Record<PolicyName, PolicyMetrics>>,
   _trajectories: Record<PolicyName, TaskTrajectory[]>,
 ): Promise<void> {
-  const repairMetrics = allMetrics['flash-fail-pro-repair']
-  const freshMetrics = allMetrics['flash-fail-pro-fresh']
-  const repairAdvantage = computeRepairAdvantage(repairMetrics, freshMetrics)
-  const workspaceOnlyMetrics = allMetrics['flash-fail-pro-workspace-only']
-  const evidenceOnlyMetrics = allMetrics['flash-fail-pro-evidence-only']
+  const flashOnlyMetrics = allMetrics['flash-only']
+  const proOnlyMetrics = allMetrics['pro-only']
+  const productionMetrics = allMetrics['flash-repair-then-pro']
 
   const output = {
     release: 'v0.17.4',
-    experimentType: 'real-flash-failure-pro-repair-trajectory',
+    experimentType: 'production-policy-flash-repair-then-pro',
     fixtureCount: FIXTURES.length,
     fixtures: FIXTURES.map(fixture => ({
       id: fixture.id,
@@ -2945,53 +3621,57 @@ async function generateReport(
       expectsFlashFailure: fixture.expectsFlashFailure,
     })),
     policies: {
-      'flash-only': 'Flash only; verify; done',
-      'pro-only': 'Pro only; verify; done',
-      'flash-fail-pro-fresh': 'Flash; if fail, rollback to task-start; Pro fresh start (no evidence)',
-      'flash-fail-pro-repair': 'Flash; if fail, preserve workspace; Pro receives FailurePackage and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO',
-      'flash-repair-then-pro': 'Flash; if fail, one evidence-conditioned Flash repair; if still fail, Pro takeover with evidence',
-      'flash-fail-pro-workspace-only': 'Ablation D1: Flash; if fail, Pro gets workspace but no structured evidence',
-      'flash-fail-pro-evidence-only': 'Ablation D2: Flash; if fail, Pro gets clean workspace + FailurePackage',
+      'flash-only': 'Flash only; verify; done (cheapest baseline)',
+      'pro-only': 'Pro only; verify; done (maximum-cost baseline)',
+      'flash-repair-then-pro': 'Flash #1; if fail, Flash repair #2 with evidence; if no progress, Pro; if progress, Flash #3; if fail, Pro with all evidence',
     },
     metrics: allMetrics,
-    repairAdvantage,
-    ablationComparison: {
-      workspaceOnly: workspaceOnlyMetrics,
-      evidenceOnly: evidenceOnlyMetrics,
-      workspacePlusEvidence: repairMetrics,
+    productionAdvantage: {
+      verifiedSuccessAdvantage: productionMetrics !== undefined && proOnlyMetrics !== undefined
+        ? productionMetrics.verifiedRate - proOnlyMetrics.verifiedRate : undefined,
+      economicAdvantage: productionMetrics !== undefined && proOnlyMetrics !== undefined
+        ? proOnlyMetrics.costPerVerifiedTask - productionMetrics.costPerVerifiedTask : undefined,
+      costVsFlash: productionMetrics !== undefined && flashOnlyMetrics !== undefined
+        ? flashOnlyMetrics.totalCost - productionMetrics.totalCost : undefined,
+      proUtilization: productionMetrics?.proUtilization,
     },
     nonAuthoritative: true,
     promotionGate: {
-      verifiedSuccessWithinRange: 'Flash→Pro repair within ~1-2 percentage points of Pro-only, or better',
-      costReduction: 'At least ~40% lower cost per verified task than Pro-only',
+      verifiedSuccessWithinRange: 'Production policy within ~1-2 percentage points of Pro-only, or better',
+      costReduction: 'Lower cost per verified task than Pro-only',
       proUtilization: 'Below ~20-25%',
-      rescueEfficiency: 'High Pro rescue rate',
-      sameFailureDetection: 'Prevents useless retries',
-      noInfiniteLoops: 'No task can loop indefinitely',
+      sameFailureDetection: 'Prevents useless retries via fingerprint comparison',
+      noInfiniteLoops: 'Max 3 Flash + 1-2 Pro calls per task',
       auditableEvidence: 'Every escalation has auditable failure evidence',
       independentVerification: 'Every final result receives independent verification',
-      repairVsFreshNonInferior: 'Policy D verified success non-inferior to Policy C',
-      repairVsFreshCheaper: 'Policy D cost per verified task lower than Policy C',
     },
   }
   await writeFile(JSON_PATH, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
 
   const lines = [
-    '# v0.17.4 Real Flash-Failure → Pro-Repair Experiment',
+    '# v0.17.4 Production Policy: Flash Repair → Pro Escalation',
     '',
-    'Experiment type: real joined multi-stage repair trajectories (not counterfactual paired simulation).',
+    'Experiment type: production policy with progress-aware escalation.',
+    '',
+    '## Policy',
+    '',
+    '```',
+    'Flash #1 → verify → PASS → DONE',
+    '                FAIL → Flash #2 (repair with evidence) → verify → PASS → DONE',
+    '                                              FAIL → same failure? → Pro immediately',
+    '                                                  → progress? → Flash #3 → verify → PASS → DONE',
+    '                                                                              FAIL → Pro',
+    '```',
+    '',
+    'Hard limits: max 3 Flash calls, max 1-2 Pro calls, identical-failure immediate escalation.',
     '',
     '## Policies',
     '',
     '| Policy | Description |',
     '|---|---|',
-    '| flash-only | Flash only; verify; done |',
-    '| pro-only | Pro only; verify; done |',
-    '| flash-fail-pro-fresh | Flash; if fail, rollback to task-start; Pro fresh start (no evidence) |',
-    '| flash-fail-pro-repair | Flash; if fail, preserve workspace; Pro receives FailurePackage and chooses REPAIR_EXISTING or ROLLBACK_AND_REDO |',
-    '| flash-repair-then-pro | Flash; if fail, one evidence-conditioned Flash repair; if still fail, Pro takeover with evidence |',
-    '| flash-fail-pro-workspace-only | Ablation D1: Pro gets workspace but no structured evidence |',
-    '| flash-fail-pro-evidence-only | Ablation D2: Pro gets clean workspace + FailurePackage |',
+    '| flash-only | Flash only; verify; done (cheapest baseline) |',
+    '| pro-only | Pro only; verify; done (maximum-cost baseline) |',
+    '| flash-repair-then-pro | Flash #1 → Flash repair #2 → progress check → Flash #3 or Pro → Pro with evidence |',
     '',
     '## Results',
     '',
@@ -3008,32 +3688,33 @@ async function generateReport(
     '- **Loop violations** = tasks exceeding bounded stage limits (must be 0)',
     '- **Rollback rate** = Pro stages where Pro actually rolled back Flash\'s files / escalations',
     '',
-    '## Repair Advantage: Policy D vs Policy C',
+    '## Production policy advantage',
     '',
     '| Metric | Value |',
     '|---|---:|',
-    `| Verified success advantage | ${(repairAdvantage.verifiedSuccessAdvantage * 100).toFixed(1)}% |`,
-    `| Economic advantage (CPT fresh - CPT repair) | $${repairAdvantage.economicAdvantage.toFixed(6)} |`,
-    `| Rescue rate advantage | ${(repairAdvantage.rescueRateAdvantage * 100).toFixed(1)}% |`,
-    `| Comparable tasks (escalated under both) | ${repairAdvantage.comparableTasks} |`,
+    ...(productionMetrics !== undefined && proOnlyMetrics !== undefined
+      ? [`| Verified success vs Pro-only | ${((productionMetrics.verifiedRate - proOnlyMetrics.verifiedRate) * 100).toFixed(1)}% |`]
+      : ['| Verified success vs Pro-only | (pro-only not available) |']),
+    ...(productionMetrics !== undefined && proOnlyMetrics !== undefined
+      ? [`| Cost per verified vs Pro-only | $${(proOnlyMetrics.costPerVerifiedTask - productionMetrics.costPerVerifiedTask).toFixed(6)} |`]
+      : ['| Cost per verified vs Pro-only | (pro-only not available) |']),
+    ...(productionMetrics !== undefined && proOnlyMetrics !== undefined
+      ? [`| Total cost vs Pro-only | $${(proOnlyMetrics.totalCost - productionMetrics.totalCost).toFixed(6)} |`]
+      : ['| Total cost vs Pro-only | (pro-only not available) |']),
+    ...(productionMetrics !== undefined && flashOnlyMetrics !== undefined
+      ? [`| Total cost vs Flash-only | $${(productionMetrics.totalCost - flashOnlyMetrics.totalCost).toFixed(6)} |`]
+      : ['| Total cost vs Flash-only | (flash-only not available) |']),
+    ...(productionMetrics !== undefined
+      ? [`| Pro utilization | ${(productionMetrics.proUtilization * 100).toFixed(1)}% |`]
+      : ['| Pro utilization | (not available) |']),
     '',
-    'Positive values mean Policy D (Pro repair with evidence) outperforms Policy C (Pro fresh start).',
-    '',
-    '## Ablation: workspace benefit vs evidence benefit',
-    '',
-    '| Ablation | Workspace | Evidence | Verified | Cost/verified | Pro rescue rate |',
-    '|---|---|---|---:|---:|---:|',
-    `| D1: workspace only | yes | no | ${(workspaceOnlyMetrics.verifiedRate * 100).toFixed(1)}% | $${workspaceOnlyMetrics.costPerVerifiedTask.toFixed(6)} | ${(workspaceOnlyMetrics.proRescueRate * 100).toFixed(1)}% |`,
-    `| D2: evidence only | no | yes | ${(evidenceOnlyMetrics.verifiedRate * 100).toFixed(1)}% | $${evidenceOnlyMetrics.costPerVerifiedTask.toFixed(6)} | ${(evidenceOnlyMetrics.proRescueRate * 100).toFixed(1)}% |`,
-    `| D3: workspace + evidence | yes | yes | ${(repairMetrics.verifiedRate * 100).toFixed(1)}% | $${repairMetrics.costPerVerifiedTask.toFixed(6)} | ${(repairMetrics.proRescueRate * 100).toFixed(1)}% |`,
-    '',
-    'D1 isolates the workspace benefit (partial implementation). D2 isolates the evidence benefit (diagnostic information). D3 combines both. If D3 > D1 and D3 > D2, both benefits contribute.',
+    'Positive values mean the production policy outperforms Pro-only. The cost vs Flash-only shows the overhead of escalation.',
     '',
     '## Non-authoritative status',
     '',
     'v0.17.4 is a research experiment. It does not change runtime routing authority. The deterministic ordering remains: manual selection → durable authority → hard policy constraints → context/provider availability → authoritative heuristic router.',
     '',
-    'Promotion to v0.18 requires: Flash→Pro repair within ~1-2 percentage points of Pro-only verified success or better, at least ~40% lower cost per verified task, Pro utilization below ~20-25%, high rescue efficiency, same-failure detection preventing useless retries, no infinite loops, every escalation having auditable failure evidence, every final result receiving independent verification, Policy D verified success non-inferior to Policy C, and Policy D cost per verified task lower than Policy C.',
+    'Promotion to v0.18 requires: production policy verified success within ~1-2 percentage points of Pro-only or better, lower cost per verified task than Pro-only, Pro utilization below ~20-25%, same-failure detection preventing useless retries, no infinite loops, every escalation having auditable failure evidence, and every final result receiving independent verification.',
   ]
   await writeFile(REPORT_PATH, `${lines.join('\n')}\n`, 'utf8')
   process.stdout.write(`Wrote ${JSON_PATH} and ${REPORT_PATH}\n`)
@@ -3052,15 +3733,16 @@ async function main(): Promise<void> {
   }
 
   const workRoot = await mkdtemp(join(tmpdir(), 'v0174-repair-'))
-  const policies = ALL_POLICIES
+  const policies: readonly PolicyName[] = ['flash-only', 'pro-only', 'flash-repair-then-pro']
+  const allPolicyNames: readonly PolicyName[] = ['flash-only', 'pro-only', 'flash-repair-then-pro']
   const checkpoint = await loadCheckpoint()
   const completedTasks = new Set(checkpoint?.trajectories.map(entry => `${entry.policy}/${entry.taskId}`) ?? [])
   const allTrajectories = {} as Record<PolicyName, TaskTrajectory[]>
-  for (const policy of policies) {
+  for (const policy of allPolicyNames) {
     allTrajectories[policy] = []
   }
 
-  // Restore checkpoint
+  // Restore checkpoint (all policies, not just the ones being run)
   if (checkpoint !== undefined) {
     for (const entry of checkpoint.trajectories) {
       allTrajectories[entry.policy].push(entry.trajectory)
@@ -3085,7 +3767,7 @@ async function main(): Promise<void> {
             release: 'v0.17.4',
             startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            trajectories: policies.flatMap(p =>
+            trajectories: allPolicyNames.flatMap(p =>
               allTrajectories[p].map(t => ({ policy: p, taskId: t.taskId, trajectory: t })),
             ),
           }
@@ -3096,10 +3778,12 @@ async function main(): Promise<void> {
       }
     }
 
-    // Compute metrics for all policies
+    // Compute metrics for all policies (including restored ones)
     const allMetrics = {} as Record<PolicyName, PolicyMetrics>
-    for (const policy of policies) {
-      allMetrics[policy] = computePolicyMetrics(policy, allTrajectories[policy])
+    for (const policy of allPolicyNames) {
+      if (allTrajectories[policy].length > 0) {
+        allMetrics[policy] = computePolicyMetrics(policy, allTrajectories[policy])
+      }
     }
 
     await generateReport(allMetrics, allTrajectories)

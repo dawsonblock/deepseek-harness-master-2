@@ -501,6 +501,61 @@ export function constructProRepairPrompt(failurePackage: FailurePackage): string
 }
 
 /**
+ * Construct the prompt for a Flash self-repair attempt. Flash previously
+ * attempted the task and failed; this prompt gives it the failure evidence
+ * and asks it to fix its own work. Unlike the Pro prompt, Flash does not
+ * declare a takeover decision — it simply repairs.
+ *
+ * @param failurePackage - the failure evidence from the prior attempt.
+ * @returns the prompt string for Flash.
+ */
+export function constructFlashRepairPrompt(failurePackage: FailurePackage): string {
+  const lines: string[] = [
+    'You previously attempted this coding task but failed. Fix your work using the failure evidence below.',
+    '',
+    `Original goal: ${failurePackage.originalGoal}`,
+    '',
+    'Your previous attempt:',
+    `- Changed files: ${failurePackage.attempt.changedFiles.length > 0
+      ? failurePackage.attempt.changedFiles.join(', ')
+      : 'none'}`,
+    '',
+    'Verification failures:',
+  ]
+  if (failurePackage.verification.failedCriteria.length > 0) {
+    lines.push('Failed acceptance criteria:')
+    for (const criterion of failurePackage.verification.failedCriteria) {
+      lines.push(`  - ${criterion}`)
+    }
+  }
+  if (failurePackage.verification.failingTests.length > 0) {
+    lines.push('Failing tests:')
+    for (const test of failurePackage.verification.failingTests) {
+      lines.push(`  - ${test}`)
+    }
+  }
+  if (failurePackage.verification.typeErrors.length > 0) {
+    lines.push('Type errors:')
+    for (const error of failurePackage.verification.typeErrors) {
+      lines.push(`  - ${error}`)
+    }
+  }
+  if (failurePackage.verification.buildErrors.length > 0) {
+    lines.push('Build errors:')
+    for (const error of failurePackage.verification.buildErrors) {
+      lines.push(`  - ${error}`)
+    }
+  }
+  lines.push('')
+  lines.push(`Failure fingerprint: ${failurePackage.failureFingerprint}`)
+  lines.push(`Progress: ${failurePackage.progress}`)
+  lines.push('')
+  lines.push('Fix the failing code in the workspace. Address each verification failure above.')
+
+  return lines.join('\n')
+}
+
+/**
  * Extract the takeover decision from Pro's first output line. Returns
  * undefined if the line does not contain a valid decision.
  *

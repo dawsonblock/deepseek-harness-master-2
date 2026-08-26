@@ -1,0 +1,288 @@
+{
+  "release": "v0.17.4",
+  "experimentType": "production-policy-flash-repair-then-pro",
+  "fixtureCount": 30,
+  "fixtures": [
+    {
+      "id": "implement-debounce",
+      "category": "code-implement",
+      "description": "Implement a debounce function with tests",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-throttle",
+      "category": "code-implement",
+      "description": "Implement a throttle function with tests",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-memoize",
+      "category": "code-implement",
+      "description": "Implement memoization with cache",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-broken-sort",
+      "category": "code-debug",
+      "description": "Fix a broken numeric sort function",
+      "expectsFlashFailure": false
+    },
+    {
+      "id": "implement-promise-pool",
+      "category": "code-implement",
+      "description": "Implement a concurrency-limited promise pool",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-deep-equal",
+      "category": "code-implement",
+      "description": "Implement deep equality check",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-async-map",
+      "category": "code-debug",
+      "description": "Fix an async map that returns Promise[] instead of T[]",
+      "expectsFlashFailure": false
+    },
+    {
+      "id": "implement-curry",
+      "category": "code-implement",
+      "description": "Implement currying with type safety",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-rate-limiter-state-bug",
+      "category": "state-management-bug",
+      "description": "Fix a rate limiter with a subtle state reset bug",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-async-race-condition",
+      "category": "async-race-bug",
+      "description": "Fix an async race condition in a cache-with-inflight-tracking module",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-multi-file-event-bus",
+      "category": "multi-file-bug",
+      "description": "Fix a multi-file event bus where typed event removal is broken",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-type-safe-result-chain",
+      "category": "type-system-failure",
+      "description": "Fix type errors in a Result/Either chain with proper narrowing",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-observable-pipeline",
+      "category": "architectural-misunderstanding",
+      "description": "Fix a broken observable pipeline with map, filter, and take operators",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-trie-implementation",
+      "category": "algorithmic-bug",
+      "description": "Fix a broken Trie implementation with incorrect search and delete",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-lru-cache",
+      "category": "data-structure-bug",
+      "description": "Fix an LRU cache with broken eviction order",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-validation-pipeline",
+      "category": "api-contract-bug",
+      "description": "Fix a validation pipeline that incorrectly accepts invalid data",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-promise-queue-concurrency",
+      "category": "async-concurrency-bug",
+      "description": "Fix a promise queue with broken concurrency control",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "fix-binary-heap",
+      "category": "algorithmic-bug",
+      "description": "Fix a binary min-heap with broken sift-down logic",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-state-machine",
+      "category": "architectural-design",
+      "description": "Implement a finite state machine with guards and actions from a spec",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-middleware-stack",
+      "category": "architectural-design",
+      "description": "Implement a middleware pipeline with async handlers and error handling",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-reactive-store",
+      "category": "architectural-design",
+      "description": "Implement a reactive store with selectors and computed values",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-graph-traversal",
+      "category": "algorithmic-design",
+      "description": "Implement weighted graph with Dijkstra and topological sort",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-dependency-injector",
+      "category": "architectural-design",
+      "description": "Implement a DI container with scopes, factories, and singleton/transient lifetimes",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-parser-combinator",
+      "category": "algorithmic-design",
+      "description": "Implement a parser combinator library from scratch",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-transactional-map",
+      "category": "concurrency-design",
+      "description": "Implement a transactional key-value store with nested transactions",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-lock-free-ring-buffer",
+      "category": "concurrency-impossible",
+      "description": "Implement a lock-free SPSC ring buffer with memory ordering guarantees",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-diff-algorithm",
+      "category": "algorithmic-impossible",
+      "description": "Implement Myers diff algorithm with O(ND) complexity",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-query-planner",
+      "category": "architectural-impossible",
+      "description": "Implement a SQL-like query planner with join reordering",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-raft-log-replication",
+      "category": "distributed-systems-impossible",
+      "description": "Implement Raft log replication state machine with leader election",
+      "expectsFlashFailure": true
+    },
+    {
+      "id": "implement-type-inference",
+      "category": "compiler-impossible",
+      "description": "Implement Hindley-Milner type inference for a small lambda calculus",
+      "expectsFlashFailure": true
+    }
+  ],
+  "policies": {
+    "flash-only": "Flash only; verify; done (cheapest baseline)",
+    "pro-only": "Pro only; verify; done (maximum-cost baseline)",
+    "flash-repair-then-pro": "Flash #1; if fail, Flash repair #2 with evidence; if no progress, Pro; if progress, Flash #3; if fail, Pro with all evidence"
+  },
+  "metrics": {
+    "flash-only": {
+      "policy": "flash-only",
+      "tasks": 30,
+      "verifiedTasks": 19,
+      "verifiedRate": 0.6333333333333333,
+      "totalCost": 0.40063627999999996,
+      "costPerVerifiedTask": 0.021086119999999996,
+      "proCalls": 0,
+      "totalCalls": 30,
+      "proUtilization": 0,
+      "escalations": 0,
+      "escalationRate": 0,
+      "successfulRescues": 0,
+      "proRescueRate": 0,
+      "escalationCostEfficiency": null,
+      "auditableEscalations": 0,
+      "auditableEscalationRate": 0,
+      "sameFailureDetections": 0,
+      "loopViolations": 0,
+      "repairExistingChoices": 0,
+      "rollbackRedoChoices": 0,
+      "rollbackOccurred": 0,
+      "rollbackRate": 0,
+      "medianLatencyMs": 52857,
+      "p90LatencyMs": 174410
+    },
+    "pro-only": {
+      "policy": "pro-only",
+      "tasks": 30,
+      "verifiedTasks": 23,
+      "verifiedRate": 0.7666666666666667,
+      "totalCost": 1.41829908,
+      "costPerVerifiedTask": 0.061665177391304345,
+      "proCalls": 30,
+      "totalCalls": 30,
+      "proUtilization": 1,
+      "escalations": 0,
+      "escalationRate": 0,
+      "successfulRescues": 0,
+      "proRescueRate": 0,
+      "escalationCostEfficiency": null,
+      "auditableEscalations": 0,
+      "auditableEscalationRate": 0,
+      "sameFailureDetections": 0,
+      "loopViolations": 0,
+      "repairExistingChoices": 0,
+      "rollbackRedoChoices": 0,
+      "rollbackOccurred": 0,
+      "rollbackRate": 0,
+      "medianLatencyMs": 128112,
+      "p90LatencyMs": 470057
+    },
+    "flash-repair-then-pro": {
+      "policy": "flash-repair-then-pro",
+      "tasks": 30,
+      "verifiedTasks": 30,
+      "verifiedRate": 1,
+      "totalCost": 0.6522186000000001,
+      "costPerVerifiedTask": 0.021740620000000002,
+      "proCalls": 0,
+      "totalCalls": 44,
+      "proUtilization": 0,
+      "escalations": 0,
+      "escalationRate": 0,
+      "successfulRescues": 0,
+      "proRescueRate": 0,
+      "escalationCostEfficiency": null,
+      "auditableEscalations": 0,
+      "auditableEscalationRate": 0,
+      "sameFailureDetections": 0,
+      "loopViolations": 3,
+      "repairExistingChoices": 0,
+      "rollbackRedoChoices": 0,
+      "rollbackOccurred": 0,
+      "rollbackRate": 0,
+      "medianLatencyMs": 68994,
+      "p90LatencyMs": 489302
+    }
+  },
+  "productionAdvantage": {
+    "verifiedSuccessAdvantage": 0.23333333333333328,
+    "economicAdvantage": 0.03992455739130434,
+    "costVsFlash": -0.25158232000000014,
+    "proUtilization": 0
+  },
+  "nonAuthoritative": true,
+  "promotionGate": {
+    "verifiedSuccessWithinRange": "Production policy within ~1-2 percentage points of Pro-only, or better",
+    "costReduction": "Lower cost per verified task than Pro-only",
+    "proUtilization": "Below ~20-25%",
+    "sameFailureDetection": "Prevents useless retries via fingerprint comparison",
+    "noInfiniteLoops": "Max 3 Flash + 1-2 Pro calls per task",
+    "auditableEvidence": "Every escalation has auditable failure evidence",
+    "independentVerification": "Every final result receives independent verification"
+  }
+}
