@@ -3460,7 +3460,9 @@ async function executePolicy(
         const sameFailure = flashRepair1Stage.failureFingerprint !== undefined
           && flashStage.failureFingerprint !== undefined
           && isSameFailure(flashStage.failureFingerprint, flashRepair1Stage.failureFingerprint)
-        const progress = classifyProgress(flashStage.verificationEvidence, flashRepair1Stage.verificationEvidence)
+        const progress = flashStage.verificationEvidence !== undefined && flashRepair1Stage.verificationEvidence !== undefined
+          ? classifyProgress(flashStage.verificationEvidence, flashRepair1Stage.verificationEvidence)
+          : 'none' as const
         if (sameFailure || progress === 'none') {
           // No progress — escalate to Pro immediately
           escalated = true
@@ -3477,14 +3479,16 @@ async function executePolicy(
           })
         } else {
           // Progress was made — allow one final Flash repair (#3)
+          const repair2Evidence = flashRepair1Stage.verificationEvidence
+            ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
           const repair2FailurePackage = constructFailurePackage({
             taskId,
             routingDecisionId: flashRepair1Stage.routingDecisionId,
             originalGoal: fixture.task,
             model: MODELS.flash,
             changedFiles: flashRepair1Stage.changedFiles ?? [],
-            verification: flashRepair1Stage.verificationEvidence,
-            priorEvidence: flashRepair1Stage.verificationEvidence,
+            verification: repair2Evidence,
+            priorEvidence: repair2Evidence,
             checkpoints: {
               taskStart: `${taskId}-start`,
               afterFlash: `${taskId}-after-flash-2`,

@@ -168,7 +168,6 @@ describe('Production escalation controller (stub models)', () => {
 
     // Controller: progress → allow Flash #3
     // Flash #3: fails again (different test, but still failing)
-    const _fp3 = computeFailureFingerprint(flash3Evidence)
     const progress2to3 = classifyProgress(flash2ProgressEvidence, flash3Evidence)
     // Flash #3 failed → escalate to Pro regardless
     const proPrompt = constructProRepairPrompt(
