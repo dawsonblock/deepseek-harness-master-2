@@ -30,6 +30,10 @@
       "types": "./lib/types/events.d.ts",
       "default": "./lib/events.js"
     },
+    "./state-machine": {
+      "types": "./lib/types/state-machine.d.ts",
+      "default": "./lib/state-machine.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -37,6 +41,7 @@
     "lib/index.js",
     "lib/invariant.js",
     "lib/events.js",
+    "lib/state-machine.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],

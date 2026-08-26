@@ -39,11 +39,14 @@ export class RepairControllerService extends Service {
   }
 }
 
-export { decideRepair, computeFailureFingerprint, classifyProgress, normalizeFailureText, countFailures, isSameFailure, classifyProviderFailure } from './decide.ts'
+export { decideRepair, computeFailureFingerprint, classifyProgress, normalizeFailureText, countFailures, isSameFailure, classifyProviderFailure, computeFailurePackageId, computeProgressMetrics } from './decide.ts'
+export { isLegalTransition, assertLegalTransition, stateFromDecision } from './state-machine.ts'
+export type { RepairState } from './state-machine.ts'
 export { DEFAULT_REPAIR_LIMITS } from './types.ts'
 export type {
   ModelRef,
   ProgressClass,
+  ProgressMetrics,
   VerificationStatus,
   FailurePackage,
   RepairAttempt,

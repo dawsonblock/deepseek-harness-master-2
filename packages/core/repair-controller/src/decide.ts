@@ -30,6 +30,7 @@ import { createHash } from 'node:crypto'
 import type {
   FailurePackage,
   ProgressClass,
+  ProgressMetrics,
   ProviderFailure,
   ProviderFailureKind,
   RepairDecision,
@@ -102,6 +103,58 @@ export function isSameFailure(priorFingerprint: string, currentFingerprint: stri
 }
 
 /**
+ * Compute a deterministic failure-package ID from the session, turn, and
+ * originating routing decision. This ID is stable across crashes and
+ * restarts, enabling idempotent event emission.
+ */
+export function computeFailurePackageId(
+  sessionId: string,
+  turn: number,
+  routingDecisionId: string,
+): string {
+  return createHash('sha256')
+    .update(`${sessionId}:${turn}:${routingDecisionId}`)
+    .digest('hex')
+    .slice(0, 16)
+}
+
+/**
+ * Compute quantitative progress metrics between two failure packages.
+ * Stores the underlying numbers so repair decisions can be debugged
+ * later without re-running the model.
+ */
+export function computeProgressMetrics(
+  prior: FailurePackage,
+  current: FailurePackage,
+): ProgressMetrics {
+  const priorItems = new Set([
+    ...prior.failedCriteria.map(normalizeFailureText),
+    ...prior.failingTests.map(normalizeFailureText),
+    ...prior.typeErrors.map(normalizeFailureText),
+    ...prior.buildErrors.map(normalizeFailureText),
+  ])
+  const currentItems = new Set([
+    ...current.failedCriteria.map(normalizeFailureText),
+    ...current.failingTests.map(normalizeFailureText),
+    ...current.typeErrors.map(normalizeFailureText),
+    ...current.buildErrors.map(normalizeFailureText),
+  ])
+  const intersection = [...priorItems].filter(x => currentItems.has(x)).length
+  const union = new Set([...priorItems, ...currentItems]).size
+  const resolvedFailureCount = [...priorItems].filter(x => !currentItems.has(x)).length
+  const newFailureCount = [...currentItems].filter(x => !priorItems.has(x)).length
+  return {
+    priorFailureCount: priorItems.size,
+    currentFailureCount: currentItems.size,
+    intersectionCount: intersection,
+    unionCount: union,
+    jaccard: union > 0 ? intersection / union : 1,
+    newFailureCount,
+    resolvedFailureCount,
+  }
+}
+
+/**
  * Classify a raw provider error into a canonical {@link ProviderFailure}.
  * Maps HTTP status codes and common error patterns to failure kinds and
  * retryability. Abort-worthy failures (authentication, authorization,
@@ -132,11 +185,8 @@ export function classifyProviderFailure(
   } else if (httpStatus === 403) {
     kind = 'authorization'
     retryable = false
-  } else if (httpStatus === 400) {
-    kind = 'invalid-request'
-    retryable = false
-  } else if (httpStatus === 402) {
-    kind = 'billing'
+  } else if (httpStatus === 400 || httpStatus === 402) {
+    kind = httpStatus === 400 ? 'invalid-request' : 'billing'
     retryable = false
   } else if (httpStatus === 429) {
     kind = 'rate-limit'
@@ -192,21 +242,29 @@ function isPro(model: ModelLike, pro: ModelLike): boolean {
  * Decide the next repair action after a verification result. Pure and
  * deterministic: same inputs always produce the same decision.
  *
+ * Decision priority: hard policy → budget → attempt limits → repair logic.
+ *
  * The policy follows the v0.18 verified-escalation rules:
  * 1. If the last attempt passed, complete.
- * 2. If the total attempt limit is reached, stop.
- * 3. If the last Flash failure repeats the prior Flash failure (same
+ * 2. If the cost budget is exceeded, stop (cost-limit).
+ * 3. If the time budget is exceeded, stop (time-limit).
+ * 4. If the total attempt limit is reached, stop.
+ * 5. If the last Flash failure repeats the prior Flash failure (same
  *    fingerprint or no progress), escalate to Pro.
- * 4. If Flash attempts remain and there is progress, allow another Flash
+ * 6. If Flash attempts remain and there is progress, allow another Flash
  *    repair.
- * 5. If Flash attempts are exhausted, escalate to Pro.
- * 6. If Pro attempts are exhausted, stop.
+ * 7. If Flash attempts are exhausted, escalate to Pro.
+ * 8. If Pro attempts are exhausted or Pro is unavailable, stop.
+ *
+ * Manual model selection is respected: if the user manually selected a
+ * model, the controller does not escalate to a different model unless
+ * the policy explicitly requires it.
  *
  * @param input - repair decision input with attempt history and limits.
  * @returns the next action: complete, flash-repair, pro-escalate, or stop.
  */
 export function decideRepair(input: RepairDecisionInput): RepairDecision {
-  const { attempts, latestFailure, limits } = input
+  const { attempts, latestFailure, limits, budget } = input
 
   if (attempts.length === 0) {
     return { action: 'stop', reason: 'verification-impossible' }
@@ -222,7 +280,17 @@ export function decideRepair(input: RepairDecisionInput): RepairDecision {
     return { action: 'complete' }
   }
 
-  // Rule 2: total attempt limit reached → stop
+  // Rule 2: cost budget exceeded → stop
+  if (limits.maxTaskCostUsd !== undefined && budget.totalCostUsd >= limits.maxTaskCostUsd) {
+    return { action: 'stop', reason: 'cost-limit' }
+  }
+
+  // Rule 3: time budget exceeded → stop
+  if (limits.maxElapsedMs !== undefined && budget.elapsedMs >= limits.maxElapsedMs) {
+    return { action: 'stop', reason: 'time-limit' }
+  }
+
+  // Rule 4: total attempt limit reached → stop
   if (attempts.length >= limits.maxTotalAttempts) {
     return { action: 'stop', reason: 'attempt-limit' }
   }
@@ -234,38 +302,42 @@ export function decideRepair(input: RepairDecisionInput): RepairDecision {
   const flashAttempts = attempts.filter(a => isFlash(a.model, input.initialModel))
   const proAttempts = attempts.filter(a => isPro(a.model, input.currentModel) && !isFlash(a.model, input.initialModel))
   const lastIsFlash = isFlash(lastAttempt.model, input.initialModel)
+  const proAvailable = input.proModelAvailable ?? true
 
   if (lastIsFlash) {
-    // Rule 3: two consecutive Flash failures with same/no progress → Pro
+    // Rule 5: two consecutive Flash failures with same/no progress → Pro
     const flashFailures = flashAttempts.filter(a => !a.verified)
     if (flashFailures.length >= 2) {
       const prior = flashFailures.at(-2)
       const current = flashFailures.at(-1)
       if (prior?.failureFingerprint !== undefined && current?.failureFingerprint !== undefined) {
         if (isSameFailure(prior.failureFingerprint, current.failureFingerprint)) {
-          if (proAttempts.length < limits.maxProAttempts) {
+          if (proAvailable && proAttempts.length < limits.maxProAttempts) {
             return { action: 'pro-escalate', evidence: latestFailure, reason: 'same-failure-no-progress' }
           }
+          if (!proAvailable) return { action: 'stop', reason: 'escalation-model-unavailable' }
           return { action: 'stop', reason: 'pro-exhausted' }
         }
       }
       if (current?.progress === 'none' || current?.progress === 'regression') {
-        if (proAttempts.length < limits.maxProAttempts) {
+        if (proAvailable && proAttempts.length < limits.maxProAttempts) {
           return { action: 'pro-escalate', evidence: latestFailure, reason: current.progress === 'regression' ? 'regression-detected' : 'same-failure-no-progress' }
         }
+        if (!proAvailable) return { action: 'stop', reason: 'escalation-model-unavailable' }
         return { action: 'stop', reason: 'pro-exhausted' }
       }
     }
 
-    // Rule 4: Flash attempts remain and there is progress → Flash repair
+    // Rule 6: Flash attempts remain and there is progress → Flash repair
     if (flashAttempts.length < limits.maxFlashAttempts) {
       return { action: 'flash-repair', evidence: latestFailure }
     }
 
-    // Rule 5: Flash exhausted → Pro
-    if (proAttempts.length < limits.maxProAttempts) {
+    // Rule 7: Flash exhausted → Pro
+    if (proAvailable && proAttempts.length < limits.maxProAttempts) {
       return { action: 'pro-escalate', evidence: latestFailure, reason: 'flash-limit-exhausted' }
     }
+    if (!proAvailable) return { action: 'stop', reason: 'escalation-model-unavailable' }
 
     return { action: 'stop', reason: 'pro-exhausted' }
   }
@@ -276,7 +348,7 @@ export function decideRepair(input: RepairDecisionInput): RepairDecision {
     return { action: 'pro-escalate', evidence: latestFailure, reason: 'flash-limit-exhausted' }
   }
 
-  // Rule 6: Pro exhausted → stop
+  // Rule 8: Pro exhausted → stop
   return { action: 'stop', reason: 'pro-exhausted' }
 }
 

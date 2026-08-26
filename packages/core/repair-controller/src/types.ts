@@ -43,6 +43,8 @@ export interface RepairAttempt {
   /** Progress relative to the prior failed attempt; absent on first or pass. */
   readonly progress?: ProgressClass
   readonly failurePackage?: FailurePackage
+  /** Deterministic ID for the failure package; absent on pass. */
+  readonly failurePackageId?: string
   readonly costUsd: number
   readonly latencyMs: number
 }
@@ -52,12 +54,32 @@ export interface RepairLimits {
   readonly maxFlashAttempts: number
   readonly maxProAttempts: number
   readonly maxTotalAttempts: number
+  /** Maximum cumulative cost per task in USD. */
+  readonly maxTaskCostUsd?: number
+  /** Maximum elapsed time per task in milliseconds. */
+  readonly maxElapsedMs?: number
+  /** Maximum output tokens per task. */
+  readonly maxOutputTokens?: number
 }
 
 export const DEFAULT_REPAIR_LIMITS: RepairLimits = {
   maxFlashAttempts: 3,
   maxProAttempts: 2,
   maxTotalAttempts: 5,
+}
+
+/**
+ * Quantitative progress metrics stored alongside a progress
+ * classification. Enables post-hoc debugging of repair decisions.
+ */
+export interface ProgressMetrics {
+  readonly priorFailureCount: number
+  readonly currentFailureCount: number
+  readonly intersectionCount: number
+  readonly unionCount: number
+  readonly jaccard: number
+  readonly newFailureCount: number
+  readonly resolvedFailureCount: number
 }
 
 /** Cost and time budget for the repair sequence. */
@@ -134,6 +156,10 @@ export interface RepairDecisionInput {
   readonly latestFailure?: FailurePackage
   readonly budget: RepairBudget
   readonly limits: RepairLimits
+  /** Whether the Pro model is available for escalation. Default: true. */
+  readonly proModelAvailable?: boolean
+  /** Whether the current model was manually selected by the user. */
+  readonly manualModelSelection?: boolean
 }
 
 /**

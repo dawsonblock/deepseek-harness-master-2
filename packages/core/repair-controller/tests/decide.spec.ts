@@ -6,7 +6,14 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decideRepair, computeFailureFingerprint, classifyProgress, classifyProviderFailure } from '../src/decide.ts'
+import {
+  decideRepair,
+  computeFailureFingerprint,
+  classifyProgress,
+  classifyProviderFailure,
+  computeFailurePackageId,
+  computeProgressMetrics,
+} from '../src/decide.ts'
 import { DEFAULT_REPAIR_LIMITS } from '../src/types.ts'
 import type { RepairAttempt, RepairDecisionInput, FailurePackage, ModelRef } from '../src/types.ts'
 
@@ -285,5 +292,113 @@ describe('classifyProviderFailure', () => {
     })
     expect(f.model).toBe('deepseek-v4-flash')
     expect(f.requestId).toBe('req-abc123')
+  })
+})
+
+describe('budget gates', () => {
+  it('cost budget exceeded → stop (cost-limit)', () => {
+    const attempts = [makeAttempt(1, FLASH, false, { failureFingerprint: FP_A, progress: 'none' })]
+    const decision = decideRepair(makeInput(attempts, FAIL_A, {
+      limits: { ...DEFAULT_REPAIR_LIMITS, maxTaskCostUsd: 0.005 },
+    }))
+    expect(decision.action).toBe('stop')
+    if (decision.action === 'stop') expect(decision.reason).toBe('cost-limit')
+  })
+
+  it('time budget exceeded → stop (time-limit)', () => {
+    const attempts = [makeAttempt(1, FLASH, false, { failureFingerprint: FP_A, progress: 'none' })]
+    const decision = decideRepair(makeInput(attempts, FAIL_A, {
+      limits: { ...DEFAULT_REPAIR_LIMITS, maxElapsedMs: 500 },
+    }))
+    expect(decision.action).toBe('stop')
+    if (decision.action === 'stop') expect(decision.reason).toBe('time-limit')
+  })
+
+  it('cost budget not exceeded → continues normally', () => {
+    const attempts = [makeAttempt(1, FLASH, false, { failureFingerprint: FP_A, progress: 'none' })]
+    const decision = decideRepair(makeInput(attempts, FAIL_A, {
+      limits: { ...DEFAULT_REPAIR_LIMITS, maxTaskCostUsd: 1.0 },
+    }))
+    expect(decision.action).toBe('flash-repair')
+  })
+})
+
+describe('Pro-unavailable handling', () => {
+  it('Pro unavailable when escalation needed → stop (escalation-model-unavailable)', () => {
+    const attempts = [
+      makeAttempt(1, FLASH, false, { failureFingerprint: FP_A, progress: 'none' }),
+      makeAttempt(2, FLASH, false, { failureFingerprint: FP_A, progress: 'none' }),
+    ]
+    const decision = decideRepair(makeInput(attempts, FAIL_A, {
+      proModelAvailable: false,
+    }))
+    expect(decision.action).toBe('stop')
+    if (decision.action === 'stop') {
+      expect(decision.reason).toBe('escalation-model-unavailable')
+    }
+  })
+
+  it('Pro unavailable when Flash exhausted → stop (escalation-model-unavailable)', () => {
+    const attempts = [
+      makeAttempt(1, FLASH, false, { failureFingerprint: FP_B, progress: 'none' }),
+      makeAttempt(2, FLASH, false, { failureFingerprint: FP_A, progress: 'partial' }),
+      makeAttempt(3, FLASH, false, { failureFingerprint: FP_A, progress: 'none' }),
+    ]
+    const decision = decideRepair(makeInput(attempts, FAIL_A, {
+      proModelAvailable: false,
+    }))
+    expect(decision.action).toBe('stop')
+    if (decision.action === 'stop') {
+      expect(decision.reason).toBe('escalation-model-unavailable')
+    }
+  })
+})
+
+describe('computeFailurePackageId', () => {
+  it('produces a deterministic 16-hex-char ID', () => {
+    const id = computeFailurePackageId('session-1', 1, 'rd-1')
+    expect(id).toHaveLength(16)
+    expect(id).toMatch(/^[0-9a-f]{16}$/)
+  })
+
+  it('same inputs produce same ID', () => {
+    const id1 = computeFailurePackageId('session-1', 1, 'rd-1')
+    const id2 = computeFailurePackageId('session-1', 1, 'rd-1')
+    expect(id1).toBe(id2)
+  })
+
+  it('different routing decision produces different ID', () => {
+    const id1 = computeFailurePackageId('session-1', 1, 'rd-1')
+    const id2 = computeFailurePackageId('session-1', 1, 'rd-2')
+    expect(id1).not.toBe(id2)
+  })
+})
+
+describe('computeProgressMetrics', () => {
+  it('same failure → jaccard 1, no new/resolved', () => {
+    const m = computeProgressMetrics(FAIL_A, FAIL_A)
+    expect(m.jaccard).toBe(1)
+    expect(m.newFailureCount).toBe(0)
+    expect(m.resolvedFailureCount).toBe(0)
+  })
+
+  it('fewer failures → resolved > 0, new = 0', () => {
+    const m = computeProgressMetrics(FAIL_B, FAIL_A)
+    expect(m.resolvedFailureCount).toBeGreaterThan(0)
+    expect(m.newFailureCount).toBe(0)
+    expect(m.currentFailureCount).toBeLessThan(m.priorFailureCount)
+  })
+
+  it('more failures → new > 0, resolved = 0', () => {
+    const m = computeProgressMetrics(FAIL_A, FAIL_B)
+    expect(m.newFailureCount).toBeGreaterThan(0)
+    expect(m.resolvedFailureCount).toBe(0)
+    expect(m.currentFailureCount).toBeGreaterThan(m.priorFailureCount)
+  })
+
+  it('stores prior and current counts', () => {
+    const m = computeProgressMetrics(FAIL_A, FAIL_B)
+    expect(m.priorFailureCount).toBe(2)
+    expect(m.currentFailureCount).toBe(4)
   })
 })
