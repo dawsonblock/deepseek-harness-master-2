@@ -3552,6 +3552,55 @@ async function executePolicy(
       const decision = parseTakeoverDecision(proStage.output)
       stages.push({ ...proStage, ...decision !== undefined ? { takeoverDecision: decision } : {}, rollbackOccurred: false })
     }
+  } else if (policy === 'pro-repair-loop') {
+    // Fair comparison: Pro gets the same repair loop structure as Flash.
+    // Pro #1 → verify → Pro repair #2 with evidence → verify → progress check → Pro #3 or stop
+    const { workspace: proWs, initialFiles: proInitial } = await createWorkspace('pro-repair-loop')
+    const proStage1 = await runStage('pro', fixture.task, proWs, proInitial)
+    stages.push(proStage1)
+    if (!proStage1.verified) {
+      const pro1Evidence = proStage1.verificationEvidence
+        ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
+      const pro1FailurePackage = constructFailurePackage({
+        taskId,
+        routingDecisionId: proStage1.routingDecisionId,
+        originalGoal: fixture.task,
+        model: MODELS.pro,
+        changedFiles: proStage1.changedFiles ?? [],
+        verification: pro1Evidence,
+        checkpoints: { taskStart: `${taskId}-start`, afterFlash: `${taskId}-after-pro-1` },
+      })
+      const proRepair1Prompt = constructFlashRepairPrompt(pro1FailurePackage)
+      const proRepair1Stage = await runStage('pro', proRepair1Prompt, proWs, proInitial, proStage1.verificationEvidence)
+      stages.push(proRepair1Stage)
+      if (!proRepair1Stage.verified) {
+        const sameFailure = proRepair1Stage.failureFingerprint !== undefined
+          && proStage1.failureFingerprint !== undefined
+          && isSameFailure(proStage1.failureFingerprint, proRepair1Stage.failureFingerprint)
+        const progress = proStage1.verificationEvidence !== undefined && proRepair1Stage.verificationEvidence !== undefined
+          ? classifyProgress(proStage1.verificationEvidence, proRepair1Stage.verificationEvidence)
+          : 'none' as const
+        if (!sameFailure && progress !== 'none' && progress !== 'regression') {
+          // Progress made — allow Pro #3
+          const repair2Evidence = proRepair1Stage.verificationEvidence
+            ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
+          const repair2FailurePackage = constructFailurePackage({
+            taskId,
+            routingDecisionId: proRepair1Stage.routingDecisionId,
+            originalGoal: fixture.task,
+            model: MODELS.pro,
+            changedFiles: proRepair1Stage.changedFiles ?? [],
+            verification: repair2Evidence,
+            priorEvidence: repair2Evidence,
+            checkpoints: { taskStart: `${taskId}-start`, afterFlash: `${taskId}-after-pro-2` },
+          })
+          const proRepair2Prompt = constructFlashRepairPrompt(repair2FailurePackage)
+          const proRepair2Stage = await runStage('pro', proRepair2Prompt, proWs, proInitial, proRepair1Stage.verificationEvidence)
+          stages.push(proRepair2Stage)
+        }
+        // If same failure or no progress, stop — Pro had 2 attempts
+      }
+    }
   }
 
   const lastStage = stages.at(-1)
@@ -3738,8 +3787,7 @@ async function main(): Promise<void> {
   }
 
   const workRoot = await mkdtemp(join(tmpdir(), 'v0174-repair-'))
-  const policies: readonly PolicyName[] = ['flash-only', 'pro-only', 'flash-repair-then-pro']
-  const allPolicyNames: readonly PolicyName[] = ['flash-only', 'pro-only', 'flash-repair-then-pro']
+  const allPolicyNames: readonly PolicyName[] = ['flash-only', 'pro-only', 'flash-repair-then-pro', 'pro-repair-loop']
   const checkpoint = await loadCheckpoint()
   const completedTasks = new Set(checkpoint?.trajectories.map(entry => `${entry.policy}/${entry.taskId}`) ?? [])
   const allTrajectories = {} as Record<PolicyName, TaskTrajectory[]>
@@ -3755,31 +3803,60 @@ async function main(): Promise<void> {
   }
 
   try {
-    for (const policy of policies) {
-      for (const fixture of FIXTURES) {
-        const taskKey = `${policy}/${fixture.id}`
-        if (completedTasks.has(taskKey)) {
-          process.stderr.write(`Skipping completed: ${taskKey}\n`)
-          continue
+    // Phase 1: Run flash-only on all tasks to identify failures
+    for (const fixture of FIXTURES) {
+      const taskKey = `flash-only/${fixture.id}`
+      if (completedTasks.has(taskKey)) {
+        process.stderr.write(`Skipping completed: ${taskKey}\n`)
+        continue
+      }
+      process.stderr.write(`Running: ${taskKey}\n`)
+      try {
+        const result = await executePolicy('flash-only', fixture, workRoot)
+        allTrajectories['flash-only'].push(result.trajectory)
+        completedTasks.add(taskKey)
+        const updatedCheckpoint: Checkpoint = {
+          release: 'v0.17.4',
+          startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          trajectories: allPolicyNames.flatMap(p =>
+            allTrajectories[p].map(t => ({ policy: p, taskId: t.taskId, trajectory: t })),
+          ),
         }
-        process.stderr.write(`Running: ${taskKey}\n`)
-        try {
-          const result = await executePolicy(policy, fixture, workRoot)
-          allTrajectories[policy].push(result.trajectory)
-          completedTasks.add(taskKey)
-          // Checkpoint after each task
-          const updatedCheckpoint: Checkpoint = {
-            release: 'v0.17.4',
-            startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            trajectories: allPolicyNames.flatMap(p =>
-              allTrajectories[p].map(t => ({ policy: p, taskId: t.taskId, trajectory: t })),
-            ),
-          }
-          await saveCheckpoint(updatedCheckpoint)
-        } catch (error) {
-          process.stderr.write(`Error in ${taskKey}: ${String(error)}\n`)
+        await saveCheckpoint(updatedCheckpoint)
+      } catch (error) {
+        process.stderr.write(`Error in ${taskKey}: ${String(error)}\n`)
+      }
+    }
+
+    // Phase 2: Run pro-repair-loop only on tasks where flash-only failed
+    const flashFailedTasks = allTrajectories['flash-only']
+      .filter(t => !t.verified)
+      .map(t => t.taskId)
+    process.stderr.write(`\nFlash failed ${flashFailedTasks.length} tasks. Running pro-repair-loop on those only.\n\n`)
+    for (const fixture of FIXTURES) {
+      if (!flashFailedTasks.includes(fixture.id)) continue
+      const taskKey = `pro-repair-loop/${fixture.id}`
+      if (completedTasks.has(taskKey)) {
+        process.stderr.write(`Skipping completed: ${taskKey}\n`)
+        continue
+      }
+      process.stderr.write(`Running: ${taskKey}\n`)
+      try {
+        const result = await executePolicy('pro-repair-loop', fixture, workRoot)
+        allTrajectories['pro-repair-loop'].push(result.trajectory)
+        completedTasks.add(taskKey)
+        const updatedCheckpoint: Checkpoint = {
+          release: 'v0.17.4',
+          startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          trajectories: allPolicyNames.flatMap(p =>
+            allTrajectories[p].map(t => ({ policy: p, taskId: t.taskId, trajectory: t })),
+          ),
         }
+        await saveCheckpoint(updatedCheckpoint)
+      } catch (error) {
+        process.stderr.write(`Error in ${taskKey}: ${String(error)}\n`)
       }
     }
 

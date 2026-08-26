@@ -86,7 +86,7 @@ export interface TaskTrajectory {
   readonly failurePackage?: FailurePackage
 }
 
-/** The policies evaluated in v0.17.4: five primary plus three ablation. */
+/** The policies evaluated in v0.17.4. */
 export type PolicyName =
   | 'flash-only'
   | 'pro-only'
@@ -95,6 +95,7 @@ export type PolicyName =
   | 'flash-repair-then-pro'
   | 'flash-fail-pro-workspace-only'
   | 'flash-fail-pro-evidence-only'
+  | 'pro-repair-loop'
 
 /** The primary five policies (excluding ablation). */
 export const PRIMARY_POLICIES: readonly PolicyName[] = [
