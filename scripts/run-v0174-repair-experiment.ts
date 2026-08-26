@@ -2035,10 +2035,10 @@ Export \`TransactionalMap\` as a named export.`,
       }
     },
   },
-  // --- Impossible-for-Flash fixtures: test Pro escalation path ---
+  // --- Escalation-target fixtures: designed to stress Flash and exercise Pro fallback ---
   {
     id: 'implement-lock-free-ring-buffer',
-    category: 'concurrency-impossible',
+    category: 'escalation-target-concurrency',
     description: 'Implement a lock-free SPSC ring buffer with memory ordering guarantees',
     expectsFlashFailure: true,
     task: `Implement a single-producer single-consumer lock-free ring buffer in \`spscQueue.ts\` using TypeScript's \`Atomics\` API on a \`SharedArrayBuffer\`.
@@ -2082,7 +2082,7 @@ The key correctness requirement: a consumer must never see a partially written s
   },
   {
     id: 'implement-diff-algorithm',
-    category: 'algorithmic-impossible',
+    category: 'escalation-target-algorithmic',
     description: 'Implement Myers diff algorithm with O(ND) complexity',
     expectsFlashFailure: true,
     task: `Implement the Myers diff algorithm in \`diff.ts\`. This is the algorithm used by \`git diff\`.
@@ -2127,7 +2127,7 @@ The Myers algorithm finds the shortest edit script by finding the longest common
   },
   {
     id: 'implement-query-planner',
-    category: 'architectural-impossible',
+    category: 'escalation-target-architectural',
     description: 'Implement a SQL-like query planner with join reordering',
     expectsFlashFailure: true,
     task: `Implement a simple SQL-like query planner in \`queryPlanner.ts\` that optimizes join order using a dynamic programming approach (System-R style).
@@ -2175,7 +2175,7 @@ Export \`planQuery\` and all types as named exports.`,
   },
   {
     id: 'implement-raft-log-replication',
-    category: 'distributed-systems-impossible',
+    category: 'escalation-target-distributed',
     description: 'Implement Raft log replication state machine with leader election',
     expectsFlashFailure: true,
     task: `Implement a simplified Raft consensus log replication module in \`raft.ts\`.
@@ -2231,7 +2231,7 @@ Export \`RaftNode\` and all types as named exports.`,
   },
   {
     id: 'implement-type-inference',
-    category: 'compiler-impossible',
+    category: 'escalation-target-compiler',
     description: 'Implement Hindley-Milner type inference for a small lambda calculus',
     expectsFlashFailure: true,
     task: `Implement Hindley-Milner type inference in \`typeInference.ts\` for a small typed lambda calculus.
@@ -3603,7 +3603,7 @@ async function saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function metricsRow(metrics: PolicyMetrics): string {
-  return `| ${metrics.policy} | ${(metrics.verifiedRate * 100).toFixed(1)}% | $${metrics.costPerVerifiedTask.toFixed(6)} | $${metrics.totalCost.toFixed(6)} | ${(metrics.escalationRate * 100).toFixed(1)}% | ${(metrics.proUtilization * 100).toFixed(1)}% | ${(metrics.proRescueRate * 100).toFixed(1)}% | $${metrics.escalationCostEfficiency.toFixed(6)} | ${metrics.auditableEscalations}/${metrics.escalations} | ${metrics.sameFailureDetections} | ${metrics.loopViolations} | ${metrics.repairExistingChoices} | ${metrics.rollbackRedoChoices} | ${(metrics.rollbackRate * 100).toFixed(1)}% | ${metrics.medianLatencyMs.toFixed(0)}ms | ${metrics.p90LatencyMs.toFixed(0)}ms |`
+  return `| ${metrics.policy} | ${(metrics.verifiedRate * 100).toFixed(1)}% | $${metrics.costPerVerifiedTask.toFixed(6)} | $${metrics.totalCost.toFixed(6)} | ${(metrics.escalationRate * 100).toFixed(1)}% | ${(metrics.proUtilization * 100).toFixed(1)}% | ${(metrics.proRescueRate * 100).toFixed(1)}% | $${metrics.escalationCostEfficiency.toFixed(6)} | ${metrics.auditableEscalations}/${metrics.escalations} | ${metrics.sameFailureDetections} | ${metrics.flashLimitReached} | ${metrics.loopViolations} | ${metrics.repairExistingChoices} | ${metrics.rollbackRedoChoices} | ${(metrics.rollbackRate * 100).toFixed(1)}% | ${metrics.medianLatencyMs.toFixed(0)}ms | ${metrics.p90LatencyMs.toFixed(0)}ms |`
 }
 
 async function generateReport(
@@ -3679,8 +3679,8 @@ async function generateReport(
     '',
     '## Results',
     '',
-    '| Policy | Verified | Cost/verified | Total cost | Escalation | Pro util | Pro rescue rate | Escalation cost/rescue | Auditable | Same-fail detect | Loop violations | REPAIR choices | ROLLBACK choices | Rollback rate | Median latency | p90 latency |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    '| Policy | Verified | Cost/verified | Total cost | Escalation | Pro util | Pro rescue rate | Escalation cost/rescue | Auditable | Same-fail detect | Flash limit reached | Loop violations | REPAIR choices | ROLLBACK choices | Rollback rate | Median latency | p90 latency |',
+    '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
     ...(Object.values(allMetrics).map(metricsRow)),
     '',
     '## Key metrics',
@@ -3689,7 +3689,8 @@ async function generateReport(
     '- **Escalation Cost Efficiency** = total escalation cost / successful Pro rescues',
     '- **Auditable** = escalations with a constructed FailurePackage / total escalations',
     '- **Same-failure detection** = tasks where repeated Flash failures shared the same fingerprint or high semantic overlap',
-    '- **Loop violations** = tasks exceeding bounded stage limits (must be 0)',
+    '- **Flash limit reached** = tasks that used all permitted Flash stages without exceeding the limit (valid behavior)',
+    '- **Loop violations** = tasks exceeding bounded stage limits (actual policy violation, must be 0)',
     '- **Rollback rate** = Pro stages where Pro actually rolled back Flash\'s files / escalations',
     '',
     '## Production policy advantage',

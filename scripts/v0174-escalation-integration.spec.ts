@@ -211,4 +211,27 @@ describe('Production escalation controller (stub models)', () => {
     const mustStop = proCalls >= maxPro
     expect(mustStop).toBe(true)
   })
+
+  it('distinguishes flashLimitReached from loopViolation', () => {
+    // 3 Flash stages (the max) without exceeding → flashLimitReached, not a violation
+    const maxFlashStages = 3
+    const stages3Flash = [
+      { model: 'flash' as const, verified: false },
+      { model: 'flash' as const, verified: false },
+      { model: 'flash' as const, verified: true },
+    ]
+    const flashCount = stages3Flash.filter(s => s.model === 'flash').length
+    expect(flashCount).toBe(maxFlashStages)
+    expect(flashCount > maxFlashStages).toBe(false) // not a violation
+
+    // 4 Flash stages → actual violation
+    const stages4Flash = [
+      { model: 'flash' as const, verified: false },
+      { model: 'flash' as const, verified: false },
+      { model: 'flash' as const, verified: false },
+      { model: 'flash' as const, verified: false },
+    ]
+    const flashCount4 = stages4Flash.filter(s => s.model === 'flash').length
+    expect(flashCount4 > maxFlashStages).toBe(true) // violation
+  })
 })

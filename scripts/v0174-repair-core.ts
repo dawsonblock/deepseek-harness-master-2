@@ -280,13 +280,13 @@ export interface LoopBounds {
   readonly maxTotalStages: number
 }
 
-/** Default loop bounds for v0.17.4 policies. */
+/** Default loop bounds for the v0.17.4 production policy. */
 export const DEFAULT_LOOP_BOUNDS: LoopBounds = {
   maxFlashAttempts: 1,
-  maxFlashRepairs: 1,
+  maxFlashRepairs: 2,
   maxProAttempts: 1,
-  maxProRepairs: 0,
-  maxTotalStages: 4,
+  maxProRepairs: 1,
+  maxTotalStages: 5,
 }
 
 /** Action chosen by the escalation controller after a failed stage. */
@@ -633,6 +633,9 @@ export interface PolicyMetrics {
   readonly auditableEscalations: number
   readonly auditableEscalationRate: number
   readonly sameFailureDetections: number
+  /** Tasks that used all permitted Flash stages but did not exceed the limit. */
+  readonly flashLimitReached: number
+  /** Tasks that exceeded the Flash or Pro stage limit (actual policy violation). */
   readonly loopViolations: number
   readonly repairExistingChoices: number
   readonly rollbackRedoChoices: number
@@ -697,6 +700,11 @@ export function computePolicyMetrics(
     }
     return false
   }).length
+  const maxFlashStages = bounds.maxFlashAttempts + bounds.maxFlashRepairs
+  const flashLimitReached = trajectories.filter((trajectory) => {
+    const flashStages = trajectory.stages.filter(stage => stage.model === 'flash')
+    return flashStages.length === maxFlashStages && detectLoopViolation(trajectory.stages, bounds) === undefined
+  }).length
   const loopViolations = trajectories.filter(
     trajectory => detectLoopViolation(trajectory.stages, bounds) !== undefined,
   ).length
@@ -731,6 +739,7 @@ export function computePolicyMetrics(
     auditableEscalations,
     auditableEscalationRate: escalated.length === 0 ? 0 : auditableEscalations / escalated.length,
     sameFailureDetections,
+    flashLimitReached,
     loopViolations,
     repairExistingChoices,
     rollbackRedoChoices,

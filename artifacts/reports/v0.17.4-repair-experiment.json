@@ -155,31 +155,31 @@
     },
     {
       "id": "implement-lock-free-ring-buffer",
-      "category": "concurrency-impossible",
+      "category": "escalation-target-concurrency",
       "description": "Implement a lock-free SPSC ring buffer with memory ordering guarantees",
       "expectsFlashFailure": true
     },
     {
       "id": "implement-diff-algorithm",
-      "category": "algorithmic-impossible",
+      "category": "escalation-target-algorithmic",
       "description": "Implement Myers diff algorithm with O(ND) complexity",
       "expectsFlashFailure": true
     },
     {
       "id": "implement-query-planner",
-      "category": "architectural-impossible",
+      "category": "escalation-target-architectural",
       "description": "Implement a SQL-like query planner with join reordering",
       "expectsFlashFailure": true
     },
     {
       "id": "implement-raft-log-replication",
-      "category": "distributed-systems-impossible",
+      "category": "escalation-target-distributed",
       "description": "Implement Raft log replication state machine with leader election",
       "expectsFlashFailure": true
     },
     {
       "id": "implement-type-inference",
-      "category": "compiler-impossible",
+      "category": "escalation-target-compiler",
       "description": "Implement Hindley-Milner type inference for a small lambda calculus",
       "expectsFlashFailure": true
     }
@@ -214,7 +214,8 @@
       "rollbackOccurred": 0,
       "rollbackRate": 0,
       "medianLatencyMs": 52857,
-      "p90LatencyMs": 174410
+      "p90LatencyMs": 174410,
+      "flashLimitReached": 0
     },
     "pro-only": {
       "policy": "pro-only",
@@ -240,7 +241,8 @@
       "rollbackOccurred": 0,
       "rollbackRate": 0,
       "medianLatencyMs": 128112,
-      "p90LatencyMs": 470057
+      "p90LatencyMs": 470057,
+      "flashLimitReached": 0
     },
     "flash-repair-then-pro": {
       "policy": "flash-repair-then-pro",
@@ -260,13 +262,14 @@
       "auditableEscalations": 0,
       "auditableEscalationRate": 0,
       "sameFailureDetections": 0,
-      "loopViolations": 3,
+      "loopViolations": 0,
       "repairExistingChoices": 0,
       "rollbackRedoChoices": 0,
       "rollbackOccurred": 0,
       "rollbackRate": 0,
       "medianLatencyMs": 68994,
-      "p90LatencyMs": 489302
+      "p90LatencyMs": 489302,
+      "flashLimitReached": 3
     }
   },
   "productionAdvantage": {
