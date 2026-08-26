@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decideRepair, computeFailureFingerprint, classifyProgress } from '../src/decide.ts'
+import { decideRepair, computeFailureFingerprint, classifyProgress, classifyProviderFailure } from '../src/decide.ts'
 import { DEFAULT_REPAIR_LIMITS } from '../src/types.ts'
 import type { RepairAttempt, RepairDecisionInput, FailurePackage, ModelRef } from '../src/types.ts'
 
@@ -212,5 +212,78 @@ describe('classifyProgress', () => {
 
   it('more failures → regression', () => {
     expect(classifyProgress(FAIL_A, FAIL_B)).toBe('regression')
+  })
+})
+
+describe('classifyProviderFailure', () => {
+  it('401 → authentication, not retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 401, message: 'Authentication Fails' })
+    expect(f.kind).toBe('authentication')
+    expect(f.retryable).toBe(false)
+  })
+
+  it('403 → authorization, not retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 403, message: 'Forbidden' })
+    expect(f.kind).toBe('authorization')
+    expect(f.retryable).toBe(false)
+  })
+
+  it('400 → invalid-request, not retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 400, message: 'Bad request' })
+    expect(f.kind).toBe('invalid-request')
+    expect(f.retryable).toBe(false)
+  })
+
+  it('402 → billing, not retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 402, message: 'Payment required' })
+    expect(f.kind).toBe('billing')
+    expect(f.retryable).toBe(false)
+  })
+
+  it('429 → rate-limit, retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 429, message: 'Too many requests' })
+    expect(f.kind).toBe('rate-limit')
+    expect(f.retryable).toBe(true)
+  })
+
+  it('503 → server, retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 503, message: 'Service unavailable' })
+    expect(f.kind).toBe('server')
+    expect(f.retryable).toBe(true)
+  })
+
+  it('500 → server, retryable', () => {
+    const f = classifyProviderFailure('deepseek', { httpStatus: 500, message: 'Internal server error' })
+    expect(f.kind).toBe('server')
+    expect(f.retryable).toBe(true)
+  })
+
+  it('timeout message → timeout, retryable', () => {
+    const f = classifyProviderFailure('deepseek', { message: 'Request timed out after 30000ms' })
+    expect(f.kind).toBe('timeout')
+    expect(f.retryable).toBe(true)
+  })
+
+  it('network message → network, retryable', () => {
+    const f = classifyProviderFailure('deepseek', { message: 'fetch failed: ECONNRESET' })
+    expect(f.kind).toBe('network')
+    expect(f.retryable).toBe(true)
+  })
+
+  it('empty response message → empty-response, not retryable', () => {
+    const f = classifyProviderFailure('deepseek', { message: 'Provider returned no assistant output' })
+    expect(f.kind).toBe('empty-response')
+    expect(f.retryable).toBe(false)
+  })
+
+  it('preserves model and requestId', () => {
+    const f = classifyProviderFailure('deepseek', {
+      httpStatus: 401,
+      message: 'Auth fails',
+      model: 'deepseek-v4-flash',
+      requestId: 'req-abc123',
+    })
+    expect(f.model).toBe('deepseek-v4-flash')
+    expect(f.requestId).toBe('req-abc123')
   })
 })

@@ -79,6 +79,42 @@ export type StopReason =
   | 'time-limit'
   | 'verification-impossible'
   | 'pro-exhausted'
+  | 'escalation-model-unavailable'
+
+/**
+ * Canonical provider failure kind. Classifies HTTP and transport errors
+ * so the repair loop can distinguish abort-worthy failures from
+ * retryable ones without parsing raw error text.
+ */
+export type ProviderFailureKind =
+  | 'authentication'
+  | 'authorization'
+  | 'rate-limit'
+  | 'billing'
+  | 'timeout'
+  | 'network'
+  | 'server'
+  | 'invalid-request'
+  | 'empty-response'
+  | 'protocol'
+  | 'unknown'
+
+/**
+ * Canonical provider failure record. Produced by classifying raw
+ * provider errors before the repair loop sees them. The repair loop
+ * uses {@link ProviderFailure.retryable} to decide whether to
+ * checkpoint-and-resume or abort.
+ */
+export interface ProviderFailure {
+  readonly provider: string
+  readonly model?: string
+  readonly kind: ProviderFailureKind
+  readonly httpStatus?: number
+  readonly providerCode?: string
+  readonly retryable: boolean
+  readonly requestId?: string
+  readonly message: string
+}
 
 /** The decision returned by {@link RepairController.decide}. */
 export type RepairDecision =

@@ -34,14 +34,15 @@ import { calculateCost, DEFAULT_PRICING_REGISTRY, lookupPricingAt } from '@deeps
 
 import {
   type ModelRef,
-  type RepairAttempt,
   type RepairDecision,
-  type RepairLimits,
   DEFAULT_REPAIR_LIMITS,
-  classifyProgress,
-  computeFailureFingerprint,
-  decideRepair,
 } from '@deepseek-ai/dsh-repair-controller'
+
+import {
+  type TurnResult,
+  type VerifyResult,
+  runRepairLoop,
+} from './v018-repair-loop.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const REPORT_DIR = join(REPO_ROOT, 'artifacts', 'reports')
@@ -749,262 +750,77 @@ async function runAgentTurn(task: string, model: string, workspace: string): Pro
 }
 
 // ---------------------------------------------------------------------------
-// Repair prompt construction
+// Repair loop: delegates to the shared v018-repair-loop module which
+// calls the production RepairController.decide() through an injectable
+// decide function. The fake-provider qualification test proves the
+// runner consumes the production controller.
 // ---------------------------------------------------------------------------
 
-function constructRepairPrompt(
-  failedCriteria: readonly string[],
-  failingTests: readonly string[],
-  typeErrors: readonly string[],
-  buildErrors: readonly string[],
-  attempt: number,
-): string {
-  const lines: string[] = [
-    `Repair attempt ${attempt}: the previous attempt failed verification.`,
-    '',
-    'Failed criteria:',
-    ...failedCriteria.map(c => `- ${c}`),
-    '',
-    'Failing tests:',
-    ...failingTests.map(t => `- ${t}`),
-    '',
-    'Type errors:',
-    ...typeErrors.map(e => `- ${e}`),
-    '',
-    'Build errors:',
-    ...buildErrors.map(e => `- ${e}`),
-    '',
-    'Fix the issues above. The workspace state from the previous attempt is preserved.',
-  ]
-  return lines.join('\n')
+/** Adapter: run one model turn via the real provider. */
+async function realTurnRunner(task: string, model: ModelRef, workspace: string): Promise<TurnResult> {
+  process.stderr.write(`  Attempt: ${model.model}\n`)
+  const result = await runAgentTurn(task, model.model, workspace)
+  return result
 }
 
-function constructProEscalationPrompt(
-  failedCriteria: readonly string[],
-  failingTests: readonly string[],
-  typeErrors: readonly string[],
-  buildErrors: readonly string[],
-  flashAttempts: number,
-): string {
-  const lines: string[] = [
-    `Escalation from Flash after ${flashAttempts} failed attempt(s).`,
-    'You are taking over a task that Flash could not complete.',
-    'The workspace state from the previous attempts is preserved.',
-    '',
-    'Failed criteria:',
-    ...failedCriteria.map(c => `- ${c}`),
-    '',
-    'Failing tests:',
-    ...failingTests.map(t => `- ${t}`),
-    '',
-    'Type errors:',
-    ...typeErrors.map(e => `- ${e}`),
-    '',
-    'Build errors:',
-    ...buildErrors.map(e => `- ${e}`),
-    '',
-    'Repair the work. You may rewrite the previous attempts\' changes or start fresh.',
-  ]
-  return lines.join('\n')
+/** Adapter: verify one attempt with diagnostic and holdout tests. */
+async function realVerifier(workspace: string, _model: ModelRef, fixture: Fixture): Promise<VerifyResult> {
+  const diagnostic = await verifyWorkspace(workspace, fixture.diagnosticTest)
+  const diagnosticPass = diagnostic.passed
+  let holdoutPass: boolean | undefined
+  if (diagnosticPass) {
+    const holdout = await holdoutVerify(workspace, fixture.holdoutTest)
+    holdoutPass = holdout.passed
+  }
+  return {
+    passed: diagnosticPass && (holdoutPass ?? true),
+    diagnosticPass,
+    holdoutPass,
+    evidence: {
+      failedCriteria: diagnostic.evidence.failedCriteria,
+      failingTests: diagnostic.evidence.failingTests,
+      typeErrors: diagnostic.evidence.typeErrors,
+      buildErrors: diagnostic.evidence.buildErrors,
+      changedFiles: [],
+    },
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Repair loop using RepairController.decide()
-// ---------------------------------------------------------------------------
-
-async function runRepairLoop(fixture: Fixture, workRoot: string): Promise<QualificationResult> {
+/** Run the repair loop for one fixture using the shared module. */
+async function runFixtureRepairLoop(fixture: Fixture, workRoot: string): Promise<QualificationResult> {
   const taskId = fixture.id
   const workspace = join(workRoot, `${taskId}-v018`)
   await mkdir(workspace, { recursive: true })
   await fixture.setup(workspace)
 
-  const attempts: QualificationAttempt[] = []
-  const repairAttempts: RepairAttempt[] = []
-  const limits: RepairLimits = DEFAULT_REPAIR_LIMITS
-  let flashAttempts = 0
-  let proAttempts = 0
-  let totalCostUsd = 0
-  let totalLatencyMs = 0
-  const failureFingerprints: string[] = []
-  const progressHistory: string[] = []
-  let priorFailureEvidence: VerificationEvidence | undefined
+  const loopResult = await runRepairLoop({
+    taskId,
+    workspace,
+    initialTask: fixture.task,
+    flashModel: MODELS.flash,
+    proModel: MODELS.pro,
+    runTurn: realTurnRunner,
+    verify: (ws, model) => realVerifier(ws, model, fixture),
+  })
 
-  let currentModel: ModelRef = MODELS.flash
-  let currentTask = fixture.task
-  let attemptNumber = 0
-
-  while (true) {
-    attemptNumber += 1
-    const modelId = currentModel.model
-    process.stderr.write(`  Attempt ${attemptNumber}: ${modelId}\n`)
-
-    const result = await runAgentTurn(currentTask, modelId, workspace)
-    totalCostUsd += result.costUsd
-    totalLatencyMs += result.latencyMs
-
-    const diagnostic = await verifyWorkspace(workspace, fixture.diagnosticTest)
-    const diagnosticPass = diagnostic.passed
-
-    let holdoutPass: boolean | undefined
-    if (diagnosticPass) {
-      const holdout = await holdoutVerify(workspace, fixture.holdoutTest)
-      holdoutPass = holdout.passed
-    }
-
-    const verified = diagnosticPass && (holdoutPass ?? true)
-
-    let fingerprint: string | undefined
-    let progress: RepairAttempt['progress']
-    if (!verified) {
-      const evidence = diagnostic.evidence
-      fingerprint = computeFailureFingerprint({
-        failedCriteria: evidence.failedCriteria,
-        failingTests: evidence.failingTests,
-        typeErrors: evidence.typeErrors,
-        buildErrors: evidence.buildErrors,
-        changedFiles: [],
-      })
-      failureFingerprints.push(fingerprint)
-      if (priorFailureEvidence !== undefined) {
-        progress = classifyProgress(
-          {
-            failedCriteria: priorFailureEvidence.failedCriteria,
-            failingTests: priorFailureEvidence.failingTests,
-            typeErrors: priorFailureEvidence.typeErrors,
-            buildErrors: priorFailureEvidence.buildErrors,
-            changedFiles: [],
-          },
-          {
-            failedCriteria: evidence.failedCriteria,
-            failingTests: evidence.failingTests,
-            typeErrors: evidence.typeErrors,
-            buildErrors: evidence.buildErrors,
-            changedFiles: [],
-          },
-        )
-      } else {
-        progress = 'none'
-      }
-      progressHistory.push(progress)
-      priorFailureEvidence = evidence
-    }
-
-    const repairAttempt: RepairAttempt = {
-      attempt: attemptNumber,
-      model: currentModel,
-      routingDecisionId: result.routingDecisionId,
-      verified,
-      verificationStatus: verified ? 'verified-pass' : 'verified-fail',
-      ...(fingerprint !== undefined ? { failureFingerprint: fingerprint } : {}),
-      ...(progress !== undefined ? { progress } : {}),
-      costUsd: result.costUsd,
-      latencyMs: result.latencyMs,
-    }
-    repairAttempts.push(repairAttempt)
-
-    if (currentModel.model === MODELS.flash.model) {
-      flashAttempts += 1
-    } else {
-      proAttempts += 1
-    }
-
-    // Build failure evidence for the controller
-    const latestFailure = !verified && priorFailureEvidence !== undefined
-      ? {
-        failedCriteria: priorFailureEvidence.failedCriteria,
-        failingTests: priorFailureEvidence.failingTests,
-        typeErrors: priorFailureEvidence.typeErrors,
-        buildErrors: priorFailureEvidence.buildErrors,
-        changedFiles: [],
-      }
-      : undefined
-
-    // Call the RepairController
-    const decision = decideRepair({
-      sessionId: `v018-${taskId}`,
-      turn: 1,
-      step: 0,
-      initialModel: MODELS.flash,
-      currentModel,
-      attempts: repairAttempts,
-      ...(latestFailure !== undefined ? { latestFailure } : {}),
-      budget: {
-        totalCostUsd,
-        elapsedMs: totalLatencyMs,
-      },
-      limits,
-    })
-
-    const attemptRecord: QualificationAttempt = {
-      attempt: attemptNumber,
-      model: modelId,
-      routingDecisionId: result.routingDecisionId,
-      verified,
-      diagnosticPass,
-      holdoutPass,
-      failureFingerprint: fingerprint,
-      ...(progress !== undefined ? { progress } : {}),
-      costUsd: result.costUsd,
-      latencyMs: result.latencyMs,
-      cacheReadTokens: result.cacheReadTokens,
-      cacheMissTokens: result.cacheMissTokens,
-      outputTokens: result.outputTokens,
-      inputTokens: result.inputTokens,
-      reasoningTokens: result.reasoningTokens,
-      totalTokens: result.totalTokens,
-      repairAction: decision.action,
-      ...(decision.action === 'pro-escalate' || decision.action === 'stop' ? { repairReason: decision.reason } : {}),
-    }
-    attempts.push(attemptRecord)
-
-    process.stderr.write(`  → ${decision.action}${'reason' in decision ? ` (${decision.reason})` : ''}\n`)
-
-    if (decision.action === 'complete' || decision.action === 'stop') {
-      break
-    }
-    if (decision.action === 'flash-repair') {
-      currentModel = MODELS.flash
-      currentTask = constructRepairPrompt(
-        decision.evidence.failedCriteria,
-        decision.evidence.failingTests,
-        decision.evidence.typeErrors,
-        decision.evidence.buildErrors,
-        attemptNumber + 1,
-      )
-      continue
-    }
-    if (decision.action === 'pro-escalate') {
-      currentModel = MODELS.pro
-      currentTask = constructProEscalationPrompt(
-        decision.evidence.failedCriteria,
-        decision.evidence.failingTests,
-        decision.evidence.typeErrors,
-        decision.evidence.buildErrors,
-        flashAttempts,
-      )
-      continue
-    }
-    break
+  for (const attempt of loopResult.attempts) {
+    process.stderr.write(`  → ${attempt.repairAction}${attempt.repairReason !== undefined ? ` (${attempt.repairReason})` : ''}\n`)
   }
-
-  const lastAttempt = attempts.at(-1)
-  const finalVerified = lastAttempt?.verified ?? false
-  const holdoutPass = lastAttempt?.holdoutPass ?? false
 
   return {
     taskId,
     category: fixture.category,
     description: fixture.description,
-    attempts,
-    finalVerified,
-    holdoutPass: finalVerified && holdoutPass,
-    flashAttempts,
-    proAttempts,
-    totalCostUsd,
-    totalLatencyMs,
-    failureFingerprints,
-    progressHistory,
-    escalatedToPro: proAttempts > 0,
+    attempts: loopResult.attempts,
+    finalVerified: loopResult.finalVerified,
+    holdoutPass: loopResult.holdoutPass,
+    flashAttempts: loopResult.flashAttempts,
+    proAttempts: loopResult.proAttempts,
+    totalCostUsd: loopResult.totalCostUsd,
+    totalLatencyMs: loopResult.totalLatencyMs,
+    failureFingerprints: loopResult.failureFingerprints,
+    progressHistory: loopResult.progressHistory,
+    escalatedToPro: loopResult.escalatedToPro,
   }
 }
 
@@ -1146,7 +962,7 @@ async function main(): Promise<void> {
       }
       process.stderr.write(`\nRunning: ${fixture.id} (${fixture.description})\n`)
       try {
-        const result = await runRepairLoop(fixture, workRoot)
+        const result = await runFixtureRepairLoop(fixture, workRoot)
         results.push(result)
         completedTasks.add(fixture.id)
         await saveCheckpoint({

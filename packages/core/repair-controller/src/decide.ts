@@ -30,6 +30,8 @@ import { createHash } from 'node:crypto'
 import type {
   FailurePackage,
   ProgressClass,
+  ProviderFailure,
+  ProviderFailureKind,
   RepairDecision,
   RepairDecisionInput,
   RepairLimits,
@@ -97,6 +99,81 @@ export function classifyProgress(
 /** Whether two fingerprints represent the same substantive failure. */
 export function isSameFailure(priorFingerprint: string, currentFingerprint: string): boolean {
   return priorFingerprint === currentFingerprint
+}
+
+/**
+ * Classify a raw provider error into a canonical {@link ProviderFailure}.
+ * Maps HTTP status codes and common error patterns to failure kinds and
+ * retryability. Abort-worthy failures (authentication, authorization,
+ * billing, invalid-request) are never retryable. Server errors, rate
+ * limits, timeouts, and network errors are retryable.
+ *
+ * @param provider - the provider name (e.g. `'deepseek'`).
+ * @param error - the raw error: HTTP status, code, message, and optional model/request ID.
+ * @returns a canonical provider failure with `retryable` set.
+ */
+export function classifyProviderFailure(
+  provider: string,
+  error: {
+    httpStatus?: number
+    providerCode?: string
+    message: string
+    model?: string
+    requestId?: string
+  },
+): ProviderFailure {
+  const { httpStatus, message } = error
+  let kind: ProviderFailureKind
+  let retryable: boolean
+
+  if (httpStatus === 401) {
+    kind = 'authentication'
+    retryable = false
+  } else if (httpStatus === 403) {
+    kind = 'authorization'
+    retryable = false
+  } else if (httpStatus === 400) {
+    kind = 'invalid-request'
+    retryable = false
+  } else if (httpStatus === 402) {
+    kind = 'billing'
+    retryable = false
+  } else if (httpStatus === 429) {
+    kind = 'rate-limit'
+    retryable = true
+  } else if (httpStatus !== undefined && httpStatus >= 500) {
+    kind = 'server'
+    retryable = true
+  } else if (httpStatus !== undefined && httpStatus >= 404) {
+    kind = 'invalid-request'
+    retryable = false
+  } else if (/timeout|timed out|etimedout/i.test(message)) {
+    kind = 'timeout'
+    retryable = true
+  } else if (/econnreset|econnrefused|enotfound|eai_again|network|fetch failed/i.test(message)) {
+    kind = 'network'
+    retryable = true
+  } else if (/empty|no content|no output|no assistant/i.test(message)) {
+    kind = 'empty-response'
+    retryable = false
+  } else if (/protocol|invalid response|parse error|json/i.test(message)) {
+    kind = 'protocol'
+    retryable = false
+  } else {
+    kind = 'unknown'
+    retryable = false
+  }
+
+  return {
+    provider,
+    ...(error.model !== undefined ? { model: error.model } : {}),
+    kind,
+    ...(httpStatus !== undefined ? { httpStatus } : {}),
+    ...(error.providerCode !== undefined ? { providerCode: error.providerCode } : {}),
+    retryable,
+    ...(error.requestId !== undefined ? { requestId: error.requestId } : {}),
+    message,
+  }
 }
 
 type ModelLike = { readonly provider: string; readonly model: string }
