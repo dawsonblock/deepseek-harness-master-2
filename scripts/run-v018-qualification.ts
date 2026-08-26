@@ -44,6 +44,18 @@ import {
   runRepairLoop,
 } from './v018-repair-loop.ts'
 
+import {
+  type PrerequisiteCheck,
+  type SmokeResult,
+  buildManifest,
+  checkRepoClean,
+  checkRepairTests,
+  checkTypecheck,
+  formatPrerequisiteSummary,
+  prerequisiteGate,
+} from './v018-qualification-manifest.ts'
+import { classifyProviderFailure } from '@deepseek-ai/dsh-repair-controller'
+
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const REPORT_DIR = join(REPO_ROOT, 'artifacts', 'reports')
 const CHECKPOINT_PATH = join(REPORT_DIR, 'v018-repair-controller-qualification.checkpoint.json')
@@ -933,6 +945,37 @@ async function generateReport(results: QualificationResult[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// API preflight smoke: one cheap Flash call to verify authentication,
+// model availability, and usage reporting before running five fixtures.
+// ---------------------------------------------------------------------------
+
+async function runPreflightSmoke(): Promise<SmokeResult> {
+  try {
+    const result = await runAgentTurn('Reply with exactly: OK', 'deepseek-v4-flash', '/tmp')
+    return {
+      model: 'deepseek-v4-flash',
+      httpOk: true,
+      hasAssistantOutput: result.output.length > 0,
+      hasUsage: result.totalTokens > 0,
+      modelIdentity: 'deepseek-v4-flash',
+      requestId: result.routingDecisionId,
+      detail: `output=${result.output.length}c, tokens=${result.totalTokens}`,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      model: 'deepseek-v4-flash',
+      httpOk: false,
+      hasAssistantOutput: false,
+      hasUsage: false,
+      modelIdentity: undefined,
+      requestId: undefined,
+      detail: message,
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -940,15 +983,68 @@ async function main(): Promise<void> {
   if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === '') {
     process.stderr.write('DEEPSEEK_API_KEY is not set; skipping live v0.18 qualification.\n')
     process.stderr.write('The deterministic RepairController logic is validated by:\n')
-    process.stderr.write('  - packages/core/repair-controller/tests/decide.spec.ts (16 tests)\n')
-    process.stderr.write('  - packages/core/repair-runtime/tests/replay.spec.ts (8 tests)\n')
+    process.stderr.write('  - packages/core/repair-controller/tests/decide.spec.ts\n')
+    process.stderr.write('  - packages/core/repair-controller/tests/state-machine.spec.ts\n')
+    process.stderr.write('  - packages/core/repair-controller/tests/event-ordering.spec.ts\n')
+    process.stderr.write('  - packages/core/repair-runtime/tests/replay.spec.ts\n')
+    process.stderr.write('  - scripts/v018-fake-provider-qualification.spec.ts\n')
+    process.stderr.write('  - scripts/v018-verification-security.spec.ts\n')
+    process.stderr.write('  - scripts/v018-qualification-manifest.spec.ts\n')
     process.stderr.write('Provide a rotated key to run the live qualification.\n')
     return
   }
 
-  const fixtures = FIXTURES.slice(0, 5)
+  // ---------------------------------------------------------------
+  // Prerequisite gate: all checks must pass before any provider call
+  // ---------------------------------------------------------------
   process.stderr.write('\nv0.18 Repair Controller Qualification\n')
   process.stderr.write(`${'='.repeat(60)}\n`)
+
+  const manifest = await buildManifest({
+    repairControllerVersion: '0.18.0',
+    repairRuntimeVersion: '0.18.0',
+    eventSchemaVersion: 0,
+    pricingVersion: '2026-08-25',
+    sandboxPolicyVersion: 'v1',
+    fixtureVersion: 'v1',
+    holdoutVersion: 'v1',
+  })
+  process.stderr.write(`Qualification ID: ${manifest.qualificationId}\n`)
+  process.stderr.write(`Source commit: ${manifest.sourceCommit.slice(0, 12)}\n`)
+  process.stderr.write(`Manifest hash: ${manifest.manifestHash}\n\n`)
+
+  const prerequisites: PrerequisiteCheck[] = [
+    checkRepoClean(),
+    checkTypecheck(),
+    checkRepairTests(),
+  ]
+  process.stderr.write(formatPrerequisiteSummary(prerequisites) + '\n\n')
+
+  if (!prerequisiteGate(prerequisites)) {
+    process.stderr.write('Prerequisites failed. Aborting before any provider calls.\n')
+    process.exit(1)
+  }
+
+  // ---------------------------------------------------------------
+  // API preflight smoke: one cheap Flash call before five fixtures
+  // ---------------------------------------------------------------
+  process.stderr.write('Running API preflight smoke (Flash)...\n')
+  const smokeResult = await runPreflightSmoke()
+  if (!smokeResult.httpOk || !smokeResult.hasAssistantOutput || !smokeResult.hasUsage) {
+    const failure = classifyProviderFailure('deepseek', {
+      httpStatus: smokeResult.httpOk ? undefined : 401,
+      message: smokeResult.detail,
+      model: 'deepseek-v4-flash',
+      requestId: smokeResult.requestId,
+    })
+    process.stderr.write(`\nPreflight smoke FAILED: ${failure.kind} (${failure.retryable ? 'retryable' : 'not retryable'})\n`)
+    process.stderr.write(`Detail: ${smokeResult.detail}\n`)
+    process.stderr.write('\nLIVE QUALIFICATION BLOCKED\n')
+    process.exit(1)
+  }
+  process.stderr.write('Preflight smoke passed.\n\n')
+
+  const fixtures = FIXTURES.slice(0, 5)
   process.stderr.write(`Fixtures: ${fixtures.length}\n`)
   process.stderr.write('Policy: verified-escalation (Flash->repair->Pro->stop)\n')
   process.stderr.write(`Limits: maxFlash=${DEFAULT_REPAIR_LIMITS.maxFlashAttempts}, maxPro=${DEFAULT_REPAIR_LIMITS.maxProAttempts}, maxTotal=${DEFAULT_REPAIR_LIMITS.maxTotalAttempts}\n\n`)
