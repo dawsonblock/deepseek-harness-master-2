@@ -7,6 +7,7 @@
  * @module @deepseek-ai/dsh-repair-controller
  */
 
+import type { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
 import { decideRepair } from './decide.ts'
 import type { RepairDecision, RepairDecisionInput, RepairLimits } from './types.ts'
