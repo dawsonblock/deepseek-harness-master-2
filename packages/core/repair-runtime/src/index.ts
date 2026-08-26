@@ -176,6 +176,87 @@ function changedFilesInTurn(events: readonly SessionEvent[], turn: number): stri
   return [...new Set(files)]
 }
 
+/**
+ * Reconstruct repair state for one goal from the durable session log.
+ * After a crash and restart, this function rebuilds the {@link RepairState}
+ * by replaying repair/evidence, repair/decision, model/escalation, and
+ * repair/completed events. If a repair/completed event exists for the
+ * repairId, the repair is finished and undefined is returned.
+ *
+ * @param events - the full session event log.
+ * @param goalId - the goal id to reconstruct state for.
+ * @param flashModel - the Flash model ref for reconstructed attempts.
+ * @param proModel - the Pro model ref for escalated attempts.
+ * @returns the reconstructed state, or undefined if no repair or repair completed.
+ */
+export function reconstructRepairState(
+  events: readonly SessionEvent[],
+  goalId: string,
+  flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' },
+  proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' },
+): RepairState | undefined {
+  const repairEvents = events.filter(
+    e => (e.type as string).startsWith('repair/') || (e.type as string) === 'model/escalation',
+  )
+  if (repairEvents.length === 0) return undefined
+
+  let repairId: string | undefined
+  let completed = false
+  const attempts: RepairAttempt[] = []
+  let flashAttempts = 0
+  let proAttempts = 0
+
+  for (const event of repairEvents) {
+    const data = event.data as Record<string, unknown>
+    if (typeof data.repairId === 'string' && data.repairId.includes(goalId)) {
+      repairId = data.repairId
+    }
+    if (event.type === 'repair/completed' && data.repairId === repairId) {
+      completed = true
+      break
+    }
+    if (event.type === 'repair/evidence' && data.repairId === repairId) {
+      const attemptNum = data.attempt as number
+      const fingerprint = data.failureFingerprint as string
+      const progress = data.progress as RepairAttempt['progress']
+      attempts.push({
+        attempt: attemptNum,
+        model: flashModel,
+        routingDecisionId: data.routingDecisionId as string,
+        verified: false,
+        verificationStatus: 'verified-fail',
+        failureFingerprint: fingerprint,
+        ...(progress !== undefined ? { progress } : {}),
+        costUsd: 0,
+        latencyMs: 0,
+      })
+    }
+    if (event.type === 'repair/decision' && data.repairId === repairId) {
+      const action = data.action as string
+      if (action === 'flash-repair') flashAttempts += 1
+      if (action === 'pro-escalate') {
+        proAttempts += 1
+        const last = attempts.at(-1)
+        if (last !== undefined) {
+          attempts[attempts.length - 1] = { ...last, model: proModel }
+        }
+      }
+    }
+  }
+
+  if (repairId === undefined || completed) return undefined
+
+  return {
+    repairId,
+    attempts,
+    totalCostUsd: 0,
+    elapsedMs: 0,
+    startedAt: Date.now(),
+    flashAttempts,
+    proAttempts,
+  }
+}
+
 /** Plugin entry point. */
 export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: false }): void {
   if (!config.enabled) return
@@ -185,11 +266,16 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
 
   const repairStates = new Map<string, RepairState>()
 
-  /** Get or create repair state for a goal. */
+  /** Get or create repair state for a goal, reconstructing from the log on first access. */
   function stateFor(agent: Agent, goal: GoalView): RepairState {
     const key = `${agent.id}:${goal.id}`
     const existing = repairStates.get(key)
     if (existing !== undefined) return existing
+    const reconstructed = reconstructRepairState(agent.session.events, goal.id, flashModel, proModel)
+    if (reconstructed !== undefined) {
+      repairStates.set(key, reconstructed)
+      return reconstructed
+    }
     const state: RepairState = {
       repairId: `repair-${goal.id}-${Date.now()}`,
       attempts: [],
