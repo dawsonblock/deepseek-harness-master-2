@@ -127,13 +127,13 @@ export interface AntiCheatViolation {
  *
  * @param workspace - the fixture workspace path.
  * @param initialPackageJson - the original package.json content.
- * @param initialTsconfig - the original tsconfig.json content.
+ * @param _initialTsconfig - the original tsconfig.json content (reserved for future use).
  * @param requiredFiles - files that must still exist.
  */
 export async function checkAntiCheating(
   workspace: string,
   initialPackageJson: string,
-  initialTsconfig: string,
+  _initialTsconfig: string,
   requiredFiles: readonly string[],
 ): Promise<AntiCheatViolation[]> {
   const violations: AntiCheatViolation[] = []

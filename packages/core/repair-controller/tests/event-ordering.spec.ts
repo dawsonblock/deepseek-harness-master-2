@@ -19,17 +19,20 @@ import {
   verifyEventOrdering,
 } from '../src/event-ordering.ts'
 
-/** Append a goal/verification event. */
+/** Append a goal/verification event. The turn field is test-only metadata
+ *  used by event-ordering helpers that join on (e.data as { turn }).turn. */
 function appendVerification(session: Session, turn: number, passed: boolean): void {
   session.append('goal/verification', {
-    goal: { id: 'goal-1', revision: 1 },
+    kind: 'goal/verification',
+    version: 2,
+    goal: { id: 'goal-1' as never, revision: 1 },
     passed,
-    checks: [],
-    timestamp: Date.now(),
+    verifiedAt: Date.now(),
     basisSeq: 0,
-    verifierFingerprint: 'vf-1',
+    registryFingerprint: 'vf-1',
+    checks: [],
     turn,
-  }, { ignorable: true })
+  } as never, { ignorable: true })
 }
 
 /** Append a repair/evidence event. */
@@ -245,13 +248,16 @@ describe('crash boundary tests', () => {
     appendEscalation(session, 'repair-1', 1)
     appendRoutingDecision(session, 2, 'rd-pro-1')
     session.append('model/usage', {
-      inputTokens: 100,
-      outputTokens: 50,
-      reasoningTokens: 0,
-      totalTokens: 150,
-      cacheReadTokens: 0,
-      cacheMissTokens: 100,
-    }, { ignorable: true })
+      turn: 2, step: 0, attempt: 2, provider: 'deepseek', model: 'deepseek-v4-pro',
+      usage: {
+        inputTokens: 100,
+        outputTokens: 50,
+        reasoningTokens: 0,
+        totalTokens: 150,
+        cacheReadTokens: 0,
+        cacheMissTokens: 100,
+      },
+    } as never, { ignorable: true })
     // No goal/verification yet — crash happened before verification
     // Restart should verify, not make another Pro call
     appendVerification(session, 2, true)

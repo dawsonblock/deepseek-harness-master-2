@@ -610,7 +610,7 @@ interface QualificationAttempt {
   diagnosticPass: boolean
   holdoutPass: boolean | undefined
   failureFingerprint: string | undefined
-  progress: 'none' | 'partial' | 'regression' | 'resolved' | undefined
+  progress?: 'none' | 'partial' | 'regression' | 'resolved' | undefined
   costUsd: number
   latencyMs: number
   cacheReadTokens: number
@@ -620,7 +620,7 @@ interface QualificationAttempt {
   reasoningTokens: number
   totalTokens: number
   repairAction: RepairDecision['action']
-  repairReason: string | undefined
+  repairReason?: string | undefined
 }
 
 interface QualificationResult {
@@ -716,13 +716,22 @@ async function runAgentTurn(task: string, model: string, workspace: string): Pro
     let cacheMissTokens = 0
     for (const event of events) {
       if (event.type === 'model/usage') {
-        const data = event.data as Record<string, number>
-        inputTokens += data.inputTokens ?? 0
-        outputTokens += data.outputTokens ?? 0
-        reasoningTokens += data.reasoningTokens ?? 0
-        totalTokens += data.totalTokens ?? 0
-        cacheReadTokens += data.cacheReadTokens ?? 0
-        cacheMissTokens += data.cacheMissTokens ?? 0
+        type UsageData = { usage: {
+          inputTokens?: number
+          outputTokens?: number
+          reasoningTokens?: number
+          totalTokens?: number
+          cacheReadTokens?: number
+          cacheMissTokens?: number
+        } }
+        const data = event.data as unknown as UsageData
+        const u = data.usage
+        inputTokens += u.inputTokens ?? 0
+        outputTokens += u.outputTokens ?? 0
+        reasoningTokens += u.reasoningTokens ?? 0
+        totalTokens += u.totalTokens ?? 0
+        cacheReadTokens += u.cacheReadTokens ?? 0
+        cacheMissTokens += u.cacheMissTokens ?? 0
       }
     }
     const output = turnResult.output !== '' ? turnResult.output : ''
@@ -1038,12 +1047,13 @@ async function main(): Promise<void> {
   process.stderr.write('Running API preflight smoke (Flash)...\n')
   const smokeResult = await runPreflightSmoke()
   if (!smokeResult.httpOk || !smokeResult.hasAssistantOutput || !smokeResult.hasUsage) {
-    const failure = classifyProviderFailure('deepseek', {
-      httpStatus: smokeResult.httpOk ? undefined : 401,
+    const failureInput: { httpStatus?: number; message: string; model: string; requestId?: string } = {
       message: smokeResult.detail,
       model: 'deepseek-v4-flash',
-      requestId: smokeResult.requestId,
-    })
+    }
+    if (!smokeResult.httpOk) failureInput.httpStatus = 401
+    if (smokeResult.requestId !== undefined) failureInput.requestId = smokeResult.requestId
+    const failure = classifyProviderFailure('deepseek', failureInput)
     process.stderr.write(`\nPreflight smoke FAILED: ${failure.kind} (${failure.retryable ? 'retryable' : 'not retryable'})\n`)
     process.stderr.write(`Detail: ${smokeResult.detail}\n`)
     process.stderr.write('\nLIVE QUALIFICATION BLOCKED\n')

@@ -173,6 +173,8 @@ export interface RepairEvidenceEventData {
   readonly attempt: number
   readonly routingDecisionId: string
   readonly failureFingerprint: string
+  /** Deterministic ID for idempotent event emission on restart. */
+  readonly failurePackageId?: string
   readonly progress: ProgressClass
   readonly failedCriteria: readonly string[]
   readonly failingTests: readonly string[]

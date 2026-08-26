@@ -69,7 +69,7 @@ export interface LoopAttempt {
   diagnosticPass: boolean
   holdoutPass: boolean | undefined
   failureFingerprint: string | undefined
-  progress: 'none' | 'partial' | 'regression' | 'resolved' | undefined
+  progress?: 'none' | 'partial' | 'regression' | 'resolved' | undefined
   costUsd: number
   latencyMs: number
   cacheReadTokens: number
@@ -79,7 +79,7 @@ export interface LoopAttempt {
   reasoningTokens: number
   totalTokens: number
   repairAction: RepairDecision['action']
-  repairReason: string | undefined
+  repairReason?: string | undefined
   providerFailure: ProviderFailure | undefined
 }
 

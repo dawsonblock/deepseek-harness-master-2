@@ -17,15 +17,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import type { FailurePackage, ModelRef, RepairDecision, RepairDecisionInput } from '@deepseek-ai/dsh-repair-controller'
+import { decideRepair } from '@deepseek-ai/dsh-repair-controller'
 import {
-  type FailurePackage,
-  type ModelRef,
   type TurnResult,
   type VerifyResult,
   runRepairLoop,
 } from './v018-repair-loop.ts'
-import { decideRepair } from '@deepseek-ai/dsh-repair-controller'
-import type { RepairDecision, RepairDecisionInput } from '@deepseek-ai/dsh-repair-controller'
 
 const FLASH: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
 const PRO: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }

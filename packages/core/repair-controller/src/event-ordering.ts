@@ -35,7 +35,7 @@ function lastSeqOfType(events: readonly SessionEvent[], type: string): number {
  */
 export function evidenceFollowsVerification(events: readonly SessionEvent[], turn: number): boolean {
   const verificationSeq = events.findIndex(
-    e => e.type === 'goal/verification' && (e.data as { turn?: number }).turn === turn,
+    e => (e.type as string) === 'goal/verification' && (e.data as { turn?: number }).turn === turn,
   )
   const evidenceSeq = events.findIndex(
     e => (e.type as string) === 'repair/evidence' && (e.data as { turn?: number }).turn === turn,

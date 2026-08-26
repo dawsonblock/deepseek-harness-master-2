@@ -14,7 +14,8 @@
 import { describe, expect, it } from 'vitest'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { DEFAULT_REPAIR_LIMITS, decideRepair } from '@deepseek-ai/dsh-repair-controller'
-import type { GoalVerificationCheck, ModelRef } from '@deepseek-ai/dsh-goal'
+import type { GoalVerificationCheck } from '@deepseek-ai/dsh-goal'
+import type { ModelRef } from '@deepseek-ai/dsh-repair-controller'
 import {
   type RepairHandlerDeps,
   type RepairState,
@@ -32,7 +33,7 @@ function failChecks(criteria: string[], tests: string[] = []): readonly GoalVeri
     checks.push({ name: 'acceptance', role: 'acceptance', passed: false, reason: c, evidence: [] })
   }
   for (const t of tests) {
-    checks.push({ name: `test-${t}`, role: 'test', passed: false, reason: t, evidence: [] })
+    checks.push({ name: `test-${t}`, role: 'integrity', passed: false, reason: t, evidence: [] })
   }
   return checks
 }
@@ -76,6 +77,39 @@ function setupTurn(session: Session, turn: number, model: ModelRef): void {
     turn,
     selected: { provider: model.provider, model: model.model },
   } as never, { ignorable: true })
+}
+
+/** Append a model/usage event with proper shape. */
+function appendUsage(session: Session, turn: number, model: ModelRef, tokens: {
+  input: number
+  output: number
+  reasoning: number
+  total: number
+  cacheRead: number
+  cacheMiss: number
+}): void {
+  session.append('model/usage', {
+    turn, step: 0, attempt: turn, provider: model.provider, model: model.model,
+    usage: {
+      inputTokens: tokens.input,
+      outputTokens: tokens.output,
+      reasoningTokens: tokens.reasoning,
+      totalTokens: tokens.total,
+      cacheReadTokens: tokens.cacheRead,
+      cacheMissTokens: tokens.cacheMiss,
+    },
+  } as never, { ignorable: true })
+}
+
+/** Extract token usage from a model/usage event. */
+function usageFromEvent(event: { data: unknown }): {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  cacheReadTokens: number
+} {
+  const d = event.data as { usage: { inputTokens: number; outputTokens: number; totalTokens: number; cacheReadTokens: number } }
+  return d.usage
 }
 
 /** Get the type sequence from the session event log. */
@@ -486,26 +520,17 @@ describe('E2E: accounting traces to durable model/usage events', () => {
 
     // Turn 1: Flash fails
     setupTurn(session, 1, FLASH)
-    session.append('model/usage', {
-      inputTokens: 100, outputTokens: 50, reasoningTokens: 0,
-      totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100,
-    }, { ignorable: true })
+    appendUsage(session, 1, FLASH, { input: 100, output: 50, reasoning: 0, total: 150, cacheRead: 0, cacheMiss: 100 })
     handleVerificationFailure(session, state, deps, 1, failChecks(['criterion-1']))
 
     // Turn 2: Flash fails (same)
     setupTurn(session, 2, FLASH)
-    session.append('model/usage', {
-      inputTokens: 120, outputTokens: 60, reasoningTokens: 0,
-      totalTokens: 180, cacheReadTokens: 20, cacheMissTokens: 100,
-    }, { ignorable: true })
+    appendUsage(session, 2, FLASH, { input: 120, output: 60, reasoning: 0, total: 180, cacheRead: 20, cacheMiss: 100 })
     handleVerificationFailure(session, state, deps, 2, failChecks(['criterion-1']))
 
     // Turn 3: Pro passes (escalation)
     setupTurn(session, 3, PRO)
-    session.append('model/usage', {
-      inputTokens: 200, outputTokens: 100, reasoningTokens: 10,
-      totalTokens: 310, cacheReadTokens: 50, cacheMissTokens: 150,
-    }, { ignorable: true })
+    appendUsage(session, 3, PRO, { input: 200, output: 100, reasoning: 10, total: 310, cacheRead: 50, cacheMiss: 150 })
     session.append('goal/verification', {
       goal: { id: 'goal-accounting', revision: 1 },
       passed: true,
@@ -526,11 +551,11 @@ describe('E2E: accounting traces to durable model/usage events', () => {
     // canonical accounting source. No alternate usage object.
     let totalInput = 0, totalOutput = 0, totalTokens = 0, totalCacheRead = 0
     for (const event of usageEvents) {
-      const d = event.data as Record<string, number>
-      totalInput += d.inputTokens ?? 0
-      totalOutput += d.outputTokens ?? 0
-      totalTokens += d.totalTokens ?? 0
-      totalCacheRead += d.cacheReadTokens ?? 0
+      const u = usageFromEvent(event)
+      totalInput += u.inputTokens
+      totalOutput += u.outputTokens
+      totalTokens += u.totalTokens
+      totalCacheRead += u.cacheReadTokens
     }
     expect(totalInput).toBe(420)
     expect(totalOutput).toBe(210)
@@ -548,10 +573,7 @@ describe('E2E: accounting traces to durable model/usage events', () => {
 
     // Each turn has exactly one model/usage and one repair/evidence
     setupTurn(session, 1, FLASH)
-    session.append('model/usage', {
-      inputTokens: 100, outputTokens: 50, reasoningTokens: 0,
-      totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100,
-    }, { ignorable: true })
+    appendUsage(session, 1, FLASH, { input: 100, output: 50, reasoning: 0, total: 150, cacheRead: 0, cacheMiss: 100 })
     handleVerificationFailure(session, state, deps, 1, failChecks(['criterion-1']))
 
     const usageEvents = session.events.filter(e => e.type === 'model/usage')
