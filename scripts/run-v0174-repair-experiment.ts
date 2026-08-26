@@ -35,7 +35,6 @@ import {
   type TaskTrajectory,
   type VerificationEvidence,
   type WorkspaceVerificationResult,
-  classifyProgress,
   computeFailureFingerprint,
   computePolicyMetrics,
   constructEvidenceOnlyPrompt,
@@ -43,15 +42,15 @@ import {
   constructFlashRepairPrompt,
   constructProRepairPrompt,
   constructWorkspaceOnlyPrompt,
-  isSameFailure,
+  decideEscalation,
   parseTakeoverDecision,
 } from './v0174-repair-core.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const REPORT_DIR = join(REPO_ROOT, 'artifacts', 'reports')
-const CHECKPOINT_PATH = join(REPORT_DIR, 'v0.17.4-repair-experiment.checkpoint.json')
-const JSON_PATH = join(REPORT_DIR, 'v0.17.4-repair-experiment.json')
-const REPORT_PATH = join(REPORT_DIR, 'v0.17.4-repair-experiment.md')
+const CHECKPOINT_PATH = join(REPORT_DIR, 'v0174-flash-hard-pro-repair-comparison.checkpoint.json')
+const JSON_PATH = join(REPORT_DIR, 'v0174-flash-hard-pro-repair-comparison.json')
+const REPORT_PATH = join(REPORT_DIR, 'v0174-flash-hard-pro-repair-comparison.md')
 const MODELS = { flash: 'deepseek-v4-flash', pro: 'deepseek-v4-pro' } as const
 
 // ---------------------------------------------------------------------------
@@ -70,6 +69,8 @@ interface CodingTaskFixture {
   readonly verify: (workspace: string) => Promise<WorkspaceVerificationResult>
   /** Whether Flash is expected to fail this task (calibration hint). */
   readonly expectsFlashFailure: boolean
+  /** Optional holdout verification never exposed to the model during repair. */
+  readonly holdoutVerify?: (workspace: string) => Promise<WorkspaceVerificationResult>
 }
 
 /** Write a file in a workspace directory. */
@@ -2079,6 +2080,7 @@ The key correctness requirement: a consumer must never see a partially written s
         criteriaTotal: 2,
       }
     },
+    holdoutVerify: createHoldoutVerifier(() => SPSC_HOLDOUT_TEST),
   },
   {
     id: 'implement-diff-algorithm',
@@ -2124,6 +2126,7 @@ The Myers algorithm finds the shortest edit script by finding the longest common
         criteriaTotal: 2,
       }
     },
+    holdoutVerify: createHoldoutVerifier(() => DIFF_HOLDOUT_TEST),
   },
   {
     id: 'implement-query-planner',
@@ -2172,6 +2175,7 @@ Export \`planQuery\` and all types as named exports.`,
         criteriaTotal: 2,
       }
     },
+    holdoutVerify: createHoldoutVerifier(() => QUERY_PLANNER_HOLDOUT_TEST),
   },
   {
     id: 'implement-raft-log-replication',
@@ -2228,6 +2232,7 @@ Export \`RaftNode\` and all types as named exports.`,
         criteriaTotal: 2,
       }
     },
+    holdoutVerify: createHoldoutVerifier(() => RAFT_HOLDOUT_TEST),
   },
   {
     id: 'implement-type-inference',
@@ -2285,6 +2290,7 @@ Export \`TypeInferencer\` and all types as named exports.`,
         criteriaTotal: 2,
       }
     },
+    holdoutVerify: createHoldoutVerifier(() => TYPE_INFERENCE_HOLDOUT_TEST),
   },
 ]
 
@@ -2798,6 +2804,35 @@ describe('SpscQueue', () => {
 })
 `
 
+const SPSC_HOLDOUT_TEST = `
+import { describe, it, expect } from 'vitest'
+import { SpscQueue } from './spscQueue.ts'
+
+describe('SpscQueue holdout', () => {
+  it('handles capacity-1 queue', () => {
+    const q = new SpscQueue<number>(1, 64)
+    expect(q.enqueue(42)).toBe(true)
+    expect(q.enqueue(43)).toBe(false)
+    expect(q.dequeue()).toBe(42)
+    expect(q.dequeue()).toBe(null)
+  })
+  it('alternating enqueue/dequeue never loses data', () => {
+    const q = new SpscQueue<number>(2, 64)
+    for (let i = 0; i < 20; i++) {
+      expect(q.enqueue(i)).toBe(true)
+      expect(q.dequeue()).toBe(i)
+    }
+  })
+  it('wraps multiple times without corruption', () => {
+    const q = new SpscQueue<number>(3, 64)
+    for (let cycle = 0; cycle < 5; cycle++) {
+      for (let i = 0; i < 3; i++) expect(q.enqueue(cycle * 3 + i)).toBe(true)
+      for (let i = 0; i < 3; i++) expect(q.dequeue()).toBe(cycle * 3 + i)
+    }
+  })
+})
+`
+
 const DIFF_TEST = `
 import { describe, it, expect } from 'vitest'
 import { diff, type DiffResult } from './diff.ts'
@@ -2858,6 +2893,25 @@ describe('Myers diff', () => {
       { type: 'insert', lines: ['b'] },
       { type: 'equal', lines: ['c'] },
     ])
+  })
+})
+`
+
+const DIFF_HOLDOUT_TEST = `
+import { describe, it, expect } from 'vitest'
+import { diff } from './diff.ts'
+
+describe('diff holdout', () => {
+  it('handles repeated lines correctly', () => {
+    const result = diff(['a','a','a'], ['a','b','a'])
+    expect(result).toContainEqual({ type: 'insert', lines: ['b'] })
+  })
+  it('single character changes at end', () => {
+    const result = diff(['hello world'], ['hello worlD'])
+    expect(result.length).toBeGreaterThan(0)
+  })
+  it('empty to empty produces no ops', () => {
+    expect(diff([], [])).toEqual([])
   })
 })
 `
@@ -2938,6 +2992,23 @@ describe('QueryPlanner', () => {
     expect(plan.joins).toHaveLength(3)
     // Should start with smallest tables
     expect(plan.totalEstimatedRows).toBeLessThan(1000)
+  })
+})
+`
+
+const QUERY_PLANNER_HOLDOUT_TEST = `
+import { describe, it, expect } from 'vitest'
+import { planQuery } from './queryPlanner.ts'
+
+describe('queryPlanner holdout', () => {
+  it('handles SELECT * with no WHERE as full scan', () => {
+    const plan = planQuery('SELECT * FROM users')
+    expect(plan.operation).toBe('scan')
+  })
+  it('handles JOIN with ON condition', () => {
+    const plan = planQuery('SELECT * FROM a JOIN b ON a.id = b.id')
+    expect(plan.joins).toBeDefined()
+    expect(plan.joins.length).toBeGreaterThan(0)
   })
 })
 `
@@ -3026,6 +3097,28 @@ describe('RaftNode', () => {
     n.currentTerm = 3
     // Candidate n2 has log term 1 at index 0 — less up-to-date
     // This should be handled by the vote logic
+  })
+})
+`
+
+const RAFT_HOLDOUT_TEST = `
+import { describe, it, expect } from 'vitest'
+import { RaftNode } from './raft.ts'
+
+describe('RaftNode holdout', () => {
+  it('step-down when higher term received', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    n.startElection()
+    n.receiveVote('n2', 1, true)
+    expect(n.state).toBe('leader')
+    n.receiveAppendEntries(2, 'n2', -1, 0, [], -1)
+    expect(n.state).toBe('follower')
+    expect(n.currentTerm).toBe(2)
+  })
+  it('appendEntry as follower does not change state', () => {
+    const n = new RaftNode('n1', ['n2', 'n3'])
+    expect(n.appendEntry({ term: 1, command: 'x', index: 0 })).toBe(false)
+    expect(n.state).toBe('follower')
   })
 })
 `
@@ -3139,6 +3232,46 @@ describe('TypeInferencer', () => {
 })
 `
 
+const TYPE_INFERENCE_HOLDOUT_TEST = `
+import { describe, it, expect } from 'vitest'
+import { inferTypes } from './typeInference.ts'
+
+describe('typeInference holdout', () => {
+  it('infers number from arithmetic', () => {
+    const result = inferTypes(['x = 1 + 2'])
+    expect(result.get('x')).toBe('number')
+  })
+  it('infers string from concatenation', () => {
+    const result = inferTypes(['x = "a" + "b"'])
+    expect(result.get('x')).toBe('string')
+  })
+  it('infers boolean from comparison', () => {
+    const result = inferTypes(['x = 1 < 2'])
+    expect(result.get('x')).toBe('boolean')
+  })
+})
+`
+
+/** Create a holdout verifier that runs a separate test suite never exposed to the model. */
+function createHoldoutVerifier(getTestContent: () => string): (workspace: string) => Promise<WorkspaceVerificationResult> {
+  return async (workspace: string) => {
+    await writeWorkspaceFile(workspace, '__holdout_test__.test.ts', getTestContent())
+    const typecheck = await runInWorkspace(workspace, ['tsc', '--noEmit'])
+    const typeErrors = parseTypeErrors(typecheck.output)
+    const testRun = await runInWorkspace(workspace, ['vitest', 'run', '--reporter=verbose'])
+    const failingTests = parseFailingTests(testRun.output)
+    const passed = typecheck.code === 0 && testRun.code === 0
+    const { unlink } = await import('node:fs/promises')
+    try { await unlink(join(workspace, '__holdout_test__.test.ts')) } catch { /* ignore */ }
+    return {
+      passed,
+      evidence: { failedCriteria: [], failingTests, typeErrors, buildErrors: [] },
+      criteriaPassed: 2 - (typeErrors.length > 0 ? 1 : 0) - (failingTests.length > 0 ? 1 : 0),
+      criteriaTotal: 2,
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Execution helpers
 // ---------------------------------------------------------------------------
@@ -3148,6 +3281,8 @@ interface ExtractedEvents {
   outputTokens: number
   reasoningTokens: number
   totalTokens: number
+  cacheReadTokens: number
+  cacheMissTokens: number
   output: string
   toolCalls: number
   toolFailures: number
@@ -3158,6 +3293,8 @@ function extractEvents(events: SessionEvent[]): ExtractedEvents {
   let outputTokens = 0
   let reasoningTokens = 0
   let totalTokens = 0
+  let cacheReadTokens = 0
+  let cacheMissTokens = 0
   let output = ''
   let toolCalls = 0
   let toolFailures = 0
@@ -3169,6 +3306,8 @@ function extractEvents(events: SessionEvent[]): ExtractedEvents {
       outputTokens += usage.outputTokens
       reasoningTokens += usage.reasoningTokens ?? 0
       totalTokens += usage.totalTokens ?? 0
+      cacheReadTokens += usage.cacheReadTokens ?? 0
+      cacheMissTokens += usage.cacheMissTokens ?? usage.inputTokens
     } else if (event.type === 'assistant/message') {
       const message = event.data as { message: { content: Array<{ type: string; text?: string }> } }
       const text = message.message.content
@@ -3184,7 +3323,7 @@ function extractEvents(events: SessionEvent[]): ExtractedEvents {
     }
   }
 
-  return { inputTokens, outputTokens, reasoningTokens, totalTokens, output, toolCalls, toolFailures }
+  return { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens, output, toolCalls, toolFailures }
 }
 
 async function generateConfig(model: string, workDir: string, workspace: string): Promise<string> {
@@ -3229,13 +3368,16 @@ async function runAgentTurn(
     const turnResult = await runFixtureTurn(ctx, { task, onEvent: (_sessionId, event) => events.push(event) })
     const latencyMs = Date.now() - started
     const extracted = extractEvents(events)
-    // Prefer the return value from runFixtureTurn for output and usage,
-    // fall back to event extraction if the return value is empty.
+    // Use canonical model/usage events for all token accounting, including
+    // cache read/miss decomposition. Never derive cost from turnResult.usage
+    // alone — it may collapse multiple provider attempts within one step.
     const output = turnResult.output !== '' ? turnResult.output : extracted.output
-    const inputTokens = turnResult.usage?.inputTokens ?? extracted.inputTokens
-    const outputTokens = turnResult.usage?.outputTokens ?? extracted.outputTokens
-    const reasoningTokens = turnResult.usage?.reasoningTokens ?? extracted.reasoningTokens
-    const totalTokens = turnResult.usage?.totalTokens ?? extracted.totalTokens
+    const inputTokens = extracted.inputTokens
+    const outputTokens = extracted.outputTokens
+    const reasoningTokens = extracted.reasoningTokens
+    const totalTokens = extracted.totalTokens
+    const cacheReadTokens = extracted.cacheReadTokens
+    const cacheMissTokens = extracted.cacheMissTokens
     if (output === '' && totalTokens === 0) {
       throw new Error('Provider returned no assistant output or usage')
     }
@@ -3245,8 +3387,8 @@ async function runAgentTurn(
       : calculateCost({
         inputTokens,
         outputTokens,
-        cacheReadTokens: 0,
-        cacheMissTokens: inputTokens,
+        cacheReadTokens,
+        cacheMissTokens,
         reasoningTokens,
         totalTokens,
         source: 'provider',
@@ -3262,6 +3404,8 @@ async function runAgentTurn(
         outputTokens,
         reasoningTokens,
         totalTokens,
+        cacheReadTokens,
+        cacheMissTokens,
         output,
         toolCalls: extracted.toolCalls,
         toolFailures: extracted.toolFailures,
@@ -3275,29 +3419,38 @@ async function runAgentTurn(
 }
 
 /** Detect which files the agent changed in the workspace. */
-async function detectChangedFiles(workspace: string, initialFiles: Set<string>): Promise<string[]> {
-  const { readdir } = await import('node:fs/promises')
-  const changed: string[] = []
-  async function scan(dir: string, prefix: string): Promise<void> {
-    const entries = await readdir(dir, { withFileTypes: true })
-    for (const entry of entries) {
-      if (entry.name === 'node_modules' || entry.name === '.sessions' || entry.name === 'cordis.yml') continue
-      const relativePath = prefix === '' ? entry.name : `${prefix}/${entry.name}`
-      if (entry.isDirectory()) {
-        await scan(join(dir, entry.name), relativePath)
-      } else if (!initialFiles.has(relativePath)) {
-        changed.push(relativePath)
-      }
-    }
-  }
-  await scan(workspace, '')
-  return changed.sort()
+/** Map of workspace-relative file paths to SHA-256 content hashes. */
+type FileHashSnapshot = Map<string, string>
+
+async function hashFile(filePath: string): Promise<string> {
+  const { readFile } = await import('node:fs/promises')
+  const { createHash } = await import('node:crypto')
+  const content = await readFile(filePath)
+  return createHash('sha256').update(content).digest('hex')
 }
 
-/** Snapshot the initial workspace files for change detection. */
-async function snapshotWorkspace(workspace: string): Promise<Set<string>> {
+/** Detect files that were added, modified, or deleted relative to the initial snapshot. */
+async function detectChangedFiles(workspace: string, initialFiles: FileHashSnapshot): Promise<string[]> {
+  const current = await snapshotWorkspace(workspace)
+  const changed = new Set<string>()
+  for (const [path, hash] of current) {
+    const initialHash = initialFiles.get(path)
+    if (initialHash === undefined || initialHash !== hash) {
+      changed.add(path)
+    }
+  }
+  for (const path of initialFiles.keys()) {
+    if (!current.has(path)) {
+      changed.add(path)
+    }
+  }
+  return [...changed].sort()
+}
+
+/** Snapshot workspace files as a map of path → SHA-256 content hash. */
+async function snapshotWorkspace(workspace: string): Promise<FileHashSnapshot> {
   const { readdir } = await import('node:fs/promises')
-  const files = new Set<string>()
+  const files = new Map<string, string>()
   async function scan(dir: string, prefix: string): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true })
     for (const entry of entries) {
@@ -3306,7 +3459,7 @@ async function snapshotWorkspace(workspace: string): Promise<Set<string>> {
       if (entry.isDirectory()) {
         await scan(join(dir, entry.name), relativePath)
       } else {
-        files.add(relativePath)
+        files.set(relativePath, await hashFile(join(dir, entry.name)))
       }
     }
   }
@@ -3334,7 +3487,7 @@ async function executePolicy(
   let escalated = false
 
   // Helper to create a fresh workspace for one task
-  async function createWorkspace(suffix: string): Promise<{ workspace: string; initialFiles: Set<string> }> {
+  async function createWorkspace(suffix: string): Promise<{ workspace: string; initialFiles: FileHashSnapshot }> {
     const workspace = join(workRoot, `${taskId}-${suffix}`)
     await mkdir(workspace, { recursive: true })
     await fixture.setup(workspace)
@@ -3347,17 +3500,26 @@ async function executePolicy(
     model: 'flash' | 'pro',
     task: string,
     workspace: string,
-    initialFiles: Set<string>,
+    initialFiles: FileHashSnapshot,
     priorEvidence?: VerificationEvidence,
   ): Promise<StageAttempt & { output: string; verification: WorkspaceVerificationResult }> {
     const modelId = model === 'flash' ? MODELS.flash : MODELS.pro
     const result = await runAgentTurn(task, modelId, workspace)
     const verification = await fixture.verify(workspace)
     const changedFiles = await detectChangedFiles(workspace, initialFiles)
+    // If diagnostic tests pass and a holdout suite exists, run the holdout
+    // suite for final qualification. The holdout tests are never exposed to
+    // the model during repair — they only run after the model's solution
+    // passes the diagnostic suite.
+    let finalVerified = verification.passed
+    if (verification.passed && fixture.holdoutVerify !== undefined) {
+      const holdoutResult = await fixture.holdoutVerify(workspace)
+      finalVerified = holdoutResult.passed
+    }
     const stage: StageAttempt = {
       model,
       routingDecisionId: result.routingDecisionId,
-      verified: verification.passed,
+      verified: finalVerified,
       costUsd: result.costUsd,
       latencyMs: result.latencyMs,
       changedFiles,
@@ -3366,6 +3528,8 @@ async function executePolicy(
         outputTokens: result.usage.outputTokens,
         reasoningTokens: result.usage.reasoningTokens,
         totalTokens: result.usage.totalTokens,
+        cacheReadTokens: result.usage.cacheReadTokens,
+        cacheMissTokens: result.usage.cacheMissTokens,
       },
       ...!verification.passed ? {
         failureFingerprint: requireFingerprint(verification.evidence),
@@ -3457,16 +3621,27 @@ async function executePolicy(
       const flashRepair1Stage = await runStage('flash', repair1Prompt, flashWs, flashInitial, flashStage.verificationEvidence)
       stages.push(flashRepair1Stage)
       if (!flashRepair1Stage.verified) {
-        const sameFailure = flashRepair1Stage.failureFingerprint !== undefined
-          && flashStage.failureFingerprint !== undefined
-          && isSameFailure(flashStage.failureFingerprint, flashRepair1Stage.failureFingerprint)
-        const progress = flashStage.verificationEvidence !== undefined && flashRepair1Stage.verificationEvidence !== undefined
-          ? classifyProgress(flashStage.verificationEvidence, flashRepair1Stage.verificationEvidence)
-          : 'none' as const
-        if (sameFailure || progress === 'none') {
-          // No progress — escalate to Pro immediately
+        // Use the unified escalation controller instead of manual checks.
+        const action = decideEscalation(stages)
+        if (action.kind === 'escalate-to-pro') {
+          // No progress — escalate to Pro immediately with the LATEST failure evidence
           escalated = true
-          const proPrompt = constructProRepairPrompt(failurePackage)
+          const latestEvidence = flashRepair1Stage.verificationEvidence
+            ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
+          const proFailurePackage = constructFailurePackage({
+            taskId,
+            routingDecisionId: flashRepair1Stage.routingDecisionId,
+            originalGoal: fixture.task,
+            model: MODELS.flash,
+            changedFiles: flashRepair1Stage.changedFiles ?? [],
+            verification: latestEvidence,
+            ...flashStage.verificationEvidence !== undefined ? { priorEvidence: flashStage.verificationEvidence } : {},
+            checkpoints: {
+              taskStart: `${taskId}-start`,
+              afterFlash: `${taskId}-after-flash-2`,
+            },
+          })
+          const proPrompt = constructProRepairPrompt(proFailurePackage)
           const proStage = await runStage('pro', proPrompt, flashWs, flashInitial, flashRepair1Stage.verificationEvidence)
           const decision = parseTakeoverDecision(proStage.output)
           const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
@@ -3477,7 +3652,7 @@ async function executePolicy(
             rollbackOccurred,
             changedFiles: proChangedFiles,
           })
-        } else {
+        } else if (action.kind === 'flash-repair') {
           // Progress was made — allow one final Flash repair (#3)
           const repair2Evidence = flashRepair1Stage.verificationEvidence
             ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
@@ -3488,7 +3663,7 @@ async function executePolicy(
             model: MODELS.flash,
             changedFiles: flashRepair1Stage.changedFiles ?? [],
             verification: repair2Evidence,
-            priorEvidence: repair2Evidence,
+            ...flashStage.verificationEvidence !== undefined ? { priorEvidence: flashStage.verificationEvidence } : {},
             checkpoints: {
               taskStart: `${taskId}-start`,
               afterFlash: `${taskId}-after-flash-2`,
@@ -3498,9 +3673,24 @@ async function executePolicy(
           const flashRepair2Stage = await runStage('flash', repair2Prompt, flashWs, flashInitial, flashRepair1Stage.verificationEvidence)
           stages.push(flashRepair2Stage)
           if (!flashRepair2Stage.verified) {
-            // Flash #3 failed — escalate to Pro with all accumulated evidence
+            // Flash #3 failed — escalate to Pro with the LATEST failure evidence
             escalated = true
-            const proPrompt = constructProRepairPrompt(repair2FailurePackage)
+            const flash3Evidence = flashRepair2Stage.verificationEvidence
+              ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
+            const proFailurePackage = constructFailurePackage({
+              taskId,
+              routingDecisionId: flashRepair2Stage.routingDecisionId,
+              originalGoal: fixture.task,
+              model: MODELS.flash,
+              changedFiles: flashRepair2Stage.changedFiles ?? [],
+              verification: flash3Evidence,
+              ...flashRepair1Stage.verificationEvidence !== undefined ? { priorEvidence: flashRepair1Stage.verificationEvidence } : {},
+              checkpoints: {
+                taskStart: `${taskId}-start`,
+                afterFlash: `${taskId}-after-flash-3`,
+              },
+            })
+            const proPrompt = constructProRepairPrompt(proFailurePackage)
             const proStage = await runStage('pro', proPrompt, flashWs, flashInitial, flashRepair2Stage.verificationEvidence)
             const decision = parseTakeoverDecision(proStage.output)
             const proChangedFiles = await detectChangedFiles(flashWs, flashInitial)
@@ -3574,13 +3764,9 @@ async function executePolicy(
       const proRepair1Stage = await runStage('pro', proRepair1Prompt, proWs, proInitial, proStage1.verificationEvidence)
       stages.push(proRepair1Stage)
       if (!proRepair1Stage.verified) {
-        const sameFailure = proRepair1Stage.failureFingerprint !== undefined
-          && proStage1.failureFingerprint !== undefined
-          && isSameFailure(proStage1.failureFingerprint, proRepair1Stage.failureFingerprint)
-        const progress = proStage1.verificationEvidence !== undefined && proRepair1Stage.verificationEvidence !== undefined
-          ? classifyProgress(proStage1.verificationEvidence, proRepair1Stage.verificationEvidence)
-          : 'none' as const
-        if (!sameFailure && progress !== 'none' && progress !== 'regression') {
+        // Use the unified escalation controller for the Pro repair loop.
+        const action = decideEscalation(stages)
+        if (action.kind === 'pro-repair') {
           // Progress made — allow Pro #3
           const repair2Evidence = proRepair1Stage.verificationEvidence
             ?? { failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [] }
@@ -3591,7 +3777,7 @@ async function executePolicy(
             model: MODELS.pro,
             changedFiles: proRepair1Stage.changedFiles ?? [],
             verification: repair2Evidence,
-            priorEvidence: repair2Evidence,
+            ...proStage1.verificationEvidence !== undefined ? { priorEvidence: proStage1.verificationEvidence } : {},
             checkpoints: { taskStart: `${taskId}-start`, afterFlash: `${taskId}-after-pro-2` },
           })
           const proRepair2Prompt = constructFlashRepairPrompt(repair2FailurePackage)
@@ -3657,15 +3843,38 @@ function metricsRow(metrics: PolicyMetrics): string {
 
 async function generateReport(
   allMetrics: Partial<Record<PolicyName, PolicyMetrics>>,
-  _trajectories: Record<PolicyName, TaskTrajectory[]>,
+  trajectories: Record<PolicyName, TaskTrajectory[]>,
 ): Promise<void> {
   const flashOnlyMetrics = allMetrics['flash-only']
   const proOnlyMetrics = allMetrics['pro-only']
   const productionMetrics = allMetrics['flash-repair-then-pro']
 
+  // Build sanitized per-task trajectory records for reproducibility.
+  // No API keys or sensitive environment material — only task IDs, models,
+  // costs, verification results, and failure fingerprints.
+  const perTaskTrajectories = Object.entries(trajectories)
+    .flatMap(([policy, tasks]) =>
+      tasks.map(t => ({
+        taskId: t.taskId,
+        policy,
+        finalVerified: t.verified,
+        escalated: t.escalated,
+        stages: t.stages.map(s => ({
+          model: s.model,
+          verified: s.verified,
+          costUsd: s.costUsd,
+          latencyMs: s.latencyMs,
+          ...s.failureFingerprint !== undefined ? { failureFingerprint: s.failureFingerprint } : {},
+          ...s.takeoverDecision !== undefined ? { takeoverDecision: s.takeoverDecision } : {},
+          ...s.rollbackOccurred !== undefined ? { rollbackOccurred: s.rollbackOccurred } : {},
+          usage: s.usage,
+        })),
+      })),
+    )
+
   const output = {
     release: 'v0.17.4',
-    experimentType: 'production-policy-flash-repair-then-pro',
+    experimentType: 'flash-hard-pro-repair-comparison',
     fixtureCount: FIXTURES.length,
     fixtures: FIXTURES.map(fixture => ({
       id: fixture.id,
@@ -3679,6 +3888,7 @@ async function generateReport(
       'flash-repair-then-pro': 'Flash #1; if fail, Flash repair #2 with evidence; if no progress, Pro; if progress, Flash #3; if fail, Pro with all evidence',
     },
     metrics: allMetrics,
+    trajectories: perTaskTrajectories,
     productionAdvantage: {
       verifiedSuccessAdvantage: productionMetrics !== undefined && proOnlyMetrics !== undefined
         ? productionMetrics.verifiedRate - proOnlyMetrics.verifiedRate : undefined,
@@ -3860,6 +4070,24 @@ async function main(): Promise<void> {
       }
     }
 
+    // Completeness gate: refuse to publish a final report if any task
+    // failed due to provider errors. The benchmark is only valid when
+    // every expected task completed successfully.
+    const expectedFlashOnly = FIXTURES.length
+    const completedFlashOnly = allTrajectories['flash-only'].length
+    const expectedProRepairLoop = allTrajectories['flash-only'].filter(t => !t.verified).length
+    const completedProRepairLoop = allTrajectories['pro-repair-loop'].length
+    const providerErrors = (expectedFlashOnly - completedFlashOnly) + (expectedProRepairLoop - completedProRepairLoop)
+    if (providerErrors > 0) {
+      process.stderr.write(
+        `\nBenchmark incomplete: ${providerErrors} provider errors. ` +
+        `flash-only ${completedFlashOnly}/${expectedFlashOnly}, ` +
+        `pro-repair-loop ${completedProRepairLoop}/${expectedProRepairLoop}. ` +
+        'Report not generated. Re-run when the provider is available.\n',
+      )
+      return
+    }
+
     // Compute metrics for all policies (including restored ones)
     const allMetrics = {} as Record<PolicyName, PolicyMetrics>
     for (const policy of allPolicyNames) {
@@ -3870,8 +4098,9 @@ async function main(): Promise<void> {
 
     await generateReport(allMetrics, allTrajectories)
 
-    // Clean up checkpoint after successful completion
-    try { await rm(CHECKPOINT_PATH, { force: true }) } catch { /* checkpoint may not exist */ }
+    // Preserve the checkpoint — do not delete it. The final report contains
+    // aggregate metrics, but the checkpoint retains per-task stage history
+    // needed for reproducibility and forensic analysis.
   } finally {
     await rm(workRoot, { recursive: true, force: true })
   }

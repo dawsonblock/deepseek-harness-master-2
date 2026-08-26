@@ -43,7 +43,7 @@ function makeStage(overrides: Partial<StageAttempt> & { model: 'flash' | 'pro' }
     verified: false,
     costUsd: 0.001,
     latencyMs: 1000,
-    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100 },
     ...overrides,
   }
 }
@@ -270,12 +270,27 @@ describe('decideEscalation', () => {
     expect(decideEscalation(stages, bounds)).toEqual({ kind: 'escalate-to-pro' })
   })
 
-  it('stops after pro failure', () => {
+  it('stops after pro failure when pro repairs are not allowed', () => {
+    const bounds: LoopBounds = {
+      maxFlashAttempts: 1,
+      maxFlashRepairs: 2,
+      maxProAttempts: 1,
+      maxProRepairs: 0,
+      maxTotalStages: 5,
+    }
     const stages = [
       makeStage({ model: 'flash', verified: false, failureFingerprint: 'aaa' }),
       makeStage({ model: 'pro', verified: false, failureFingerprint: 'bbb' }),
     ]
-    expect(decideEscalation(stages)).toEqual({ kind: 'stop' })
+    expect(decideEscalation(stages, bounds)).toEqual({ kind: 'stop' })
+  })
+
+  it('allows pro repair after first pro failure when bounds permit', () => {
+    const stages = [
+      makeStage({ model: 'flash', verified: false, failureFingerprint: 'aaa' }),
+      makeStage({ model: 'pro', verified: false, failureFingerprint: 'bbb' }),
+    ]
+    expect(decideEscalation(stages)).toEqual({ kind: 'pro-repair' })
   })
 
   it('stops at hard stage limit', () => {
@@ -684,10 +699,10 @@ describe('semanticFailureOverlap', () => {
     expect(semanticFailureOverlap(prior, current)).toBe(0)
   })
 
-  it('returns 0.5 when half of current failures are prior failures', () => {
+  it('returns 1/3 for Jaccard overlap when 1 of 3 union items intersect', () => {
     const prior = makeEvidence({ failedCriteria: ['a', 'b'] })
     const current = makeEvidence({ failedCriteria: ['a', 'c'] })
-    expect(semanticFailureOverlap(prior, current)).toBe(0.5)
+    expect(semanticFailureOverlap(prior, current)).toBe(1 / 3)
   })
 
   it('returns 0 for empty current evidence', () => {
@@ -712,15 +727,24 @@ describe('isSemanticSameFailure', () => {
     expect(isSemanticSameFailure(evidence, evidence)).toBe(true)
   })
 
-  it('returns true when overlap exceeds threshold', () => {
+  it('returns true when Jaccard overlap exceeds threshold', () => {
     const prior = makeEvidence({ failedCriteria: ['a', 'b', 'c', 'd'] })
     const current = makeEvidence({ failedCriteria: ['a', 'b', 'c', 'e'] })
-    expect(isSemanticSameFailure(prior, current, 0.7)).toBe(true)
+    // Jaccard: intersection=3, union=5, overlap=0.6
+    expect(isSemanticSameFailure(prior, current, 0.5)).toBe(true)
   })
 
   it('returns false when overlap is below threshold', () => {
     const prior = makeEvidence({ failedCriteria: ['a', 'b', 'c', 'd'] })
     const current = makeEvidence({ failedCriteria: ['e', 'f', 'g', 'h'] })
+    expect(isSemanticSameFailure(prior, current, 0.8)).toBe(false)
+  })
+
+  it('does not classify subset failures as same when failure count decreased', () => {
+    // Prior had 3 failures, current has 1 of those 3. This is progress,
+    // not the same failure. Jaccard: intersection=1, union=3, overlap=0.33.
+    const prior = makeEvidence({ failedCriteria: ['a', 'b', 'c'] })
+    const current = makeEvidence({ failedCriteria: ['a'] })
     expect(isSemanticSameFailure(prior, current, 0.8)).toBe(false)
   })
 })

@@ -73,6 +73,8 @@ export interface StageAttempt {
     readonly outputTokens: number
     readonly reasoningTokens: number
     readonly totalTokens: number
+    readonly cacheReadTokens: number
+    readonly cacheMissTokens: number
   }
 }
 
@@ -231,15 +233,25 @@ export function semanticFailureOverlap(
     ...priorEvidence.typeErrors.map(normalizeFailureText),
     ...priorEvidence.buildErrors.map(normalizeFailureText),
   ])
-  const currentItems = [
+  const currentSet = new Set([
     ...currentEvidence.failedCriteria.map(normalizeFailureText),
     ...currentEvidence.failingTests.map(normalizeFailureText),
     ...currentEvidence.typeErrors.map(normalizeFailureText),
     ...currentEvidence.buildErrors.map(normalizeFailureText),
-  ]
-  if (currentItems.length === 0) return 0
-  const overlap = currentItems.filter(item => priorSet.has(item)).length
-  return overlap / currentItems.length
+  ])
+  if (currentSet.size === 0) return 0
+  // Use Jaccard similarity instead of raw overlap fraction.
+  // This correctly handles the case where current failures are a subset
+  // of prior failures — raw overlap would report 100% even when progress
+  // was made (failure count decreased). Jaccard penalizes the prior set
+  // size, so fewer prior failures relative to current produces a lower
+  // similarity score.
+  const union = new Set([...priorSet, ...currentSet])
+  let intersection = 0
+  for (const item of currentSet) {
+    if (priorSet.has(item)) intersection++
+  }
+  return intersection / union.size
 }
 
 /**
@@ -293,6 +305,7 @@ export const DEFAULT_LOOP_BOUNDS: LoopBounds = {
 /** Action chosen by the escalation controller after a failed stage. */
 export type EscalationAction =
   | { readonly kind: 'flash-repair' }
+  | { readonly kind: 'pro-repair' }
   | { readonly kind: 'escalate-to-pro' }
   | { readonly kind: 'stop' }
 
@@ -360,6 +373,31 @@ export function decideEscalation(
   }
 
   if (lastStage.model === 'pro') {
+    const proStages = stages.filter(stage => stage.model === 'pro')
+    const proFailures = proStages.filter(stage => !stage.verified)
+
+    if (proFailures.length >= 2) {
+      const priorFailure = proFailures.at(-2)
+      const currentFailure = proFailures.at(-1)
+      if (priorFailure !== undefined && currentFailure !== undefined) {
+        const priorFp = priorFailure.failureFingerprint
+        const currentFp = currentFailure.failureFingerprint
+        if (priorFp !== undefined && currentFp !== undefined && isSameFailure(priorFp, currentFp)) {
+          return { kind: 'stop' }
+        }
+        if (priorFailure.verificationEvidence !== undefined && currentFailure.verificationEvidence !== undefined) {
+          if (isSemanticSameFailure(priorFailure.verificationEvidence, currentFailure.verificationEvidence)) {
+            return { kind: 'stop' }
+          }
+        }
+      }
+    }
+
+    const maxProStages = bounds.maxProAttempts + bounds.maxProRepairs
+    if (proStages.length < maxProStages) {
+      return { kind: 'pro-repair' }
+    }
+
     return { kind: 'stop' }
   }
 
