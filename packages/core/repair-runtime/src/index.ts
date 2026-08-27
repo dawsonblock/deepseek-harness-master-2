@@ -9,19 +9,26 @@
  * `repair/decision`, and either queues a repair followup message (with
  * failure evidence for the model) or blocks the goal.
  *
- * On Flash→Pro escalation, the plugin emits `model/escalation` with explicit
- * repair provenance. On completion or stop, it emits `repair/completed` with
- * task-level accounting.
+ * Repair model selection goes through the durable routing authority: before
+ * calling `agent.followup()`, the plugin claims a `policy`-authority model
+ * selection so the router creates a real `model/routing-decision` event. The
+ * `model/escalation` event is emitted after that real routing decision
+ * arrives, referencing its actual `routingDecisionId` as
+ * `toRoutingDecisionId`. On completion or stop, the plugin emits
+ * `repair/completed` with task-level accounting and releases the model
+ * selection back to automatic routing.
  *
  * @module @deepseek-ai/dsh-repair-runtime
  */
 
+import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { claimModelSelection, releaseToAuto } from '@deepseek-ai/dsh-agent'
 import type { GoalRef, GoalVerificationCheck, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits } from '@deepseek-ai/dsh-repair-controller'
+import type { EscalationReason, FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits } from '@deepseek-ai/dsh-repair-controller'
 import { classifyProgress, computeFailureFingerprint, computeFailurePackageId, decideRepair } from '@deepseek-ai/dsh-repair-controller'
 // Import the events module to trigger declaration merging for repair/* and model/escalation events.
 import '@deepseek-ai/dsh-repair-controller/events'
@@ -52,6 +59,41 @@ export interface RepairState {
   startedAt: number
   flashAttempts: number
   proAttempts: number
+}
+
+/**
+ * Deterministic repair identity, stable across crash/restart. Derived from
+ * the stable execution identity of the originating routing decision, not from
+ * wall-clock time. The `repair:v1:` prefix prevents future identifier schemes
+ * from colliding with this one.
+ * @param sessionId - the session id.
+ * @param goalId - the goal id.
+ * @param goalRevision - the goal revision.
+ * @param originatingRoutingDecisionId - the routing decision that started this goal's turn.
+ * @returns a deterministic repair id of the form `repair:v1:<hex>`.
+ */
+export function computeRepairId(
+  sessionId: string,
+  goalId: string,
+  goalRevision: number,
+  originatingRoutingDecisionId: string,
+): string {
+  return `repair:v1:${createHash('sha256')
+    .update(`${sessionId}:${goalId}:${goalRevision}:${originatingRoutingDecisionId}`)
+    .digest('hex')
+    .slice(0, 24)}`
+}
+
+/** Pending Pro escalation awaiting a real routing decision to reference. */
+export interface PendingEscalation {
+  repairId: string
+  fromRoutingDecisionId: string
+  fromModel: string
+  toModel: string
+  reason: EscalationReason
+  failureFingerprint: string
+  flashAttempts: number
+  turn: number
 }
 
 /** Build a FailurePackage from verification checks. */
@@ -178,73 +220,152 @@ function changedFilesInTurn(events: readonly SessionEvent[], turn: number): stri
 
 /**
  * Reconstruct repair state for one goal from the durable session log.
- * After a crash and restart, this function rebuilds the {@link RepairState}
- * by replaying repair/evidence, repair/decision, model/escalation, and
- * repair/completed events. If a repair/completed event exists for the
- * repairId, the repair is finished and undefined is returned.
+ *
+ * Attempts are reconstructed from real execution events
+ * (`model/routing-decision` → `model/request` → `goal/verification`),
+ * not from repair decisions. Repair events (`repair/evidence`,
+ * `repair/decision`, `model/escalation`) overlay as annotations: they
+ * supply the `FailurePackage`, progress, and repair-attribution metadata
+ * that the controller needs, but they never change an attempt's model or
+ * routing identity. A later `pro-escalate` decision does not retroactively
+ * convert a Flash attempt into Pro.
+ *
+ * Each reconstructed failed attempt carries its full `FailurePackage`,
+ * restored from the `repair/evidence` event, so `classifyProgress` and
+ * `computeProgressMetrics` produce identical results before and after
+ * restart.
  *
  * @param events - the full session event log.
  * @param goalId - the goal id to reconstruct state for.
- * @param flashModel - the Flash model ref for reconstructed attempts.
- * @param proModel - the Pro model ref for escalated attempts.
  * @returns the reconstructed state, or undefined if no repair or repair completed.
  */
 export function reconstructRepairState(
   events: readonly SessionEvent[],
   goalId: string,
-  flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' },
-  proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' },
 ): RepairState | undefined {
-  const repairEvents = events.filter(
-    e => (e.type as string).startsWith('repair/') || (e.type as string) === 'model/escalation',
-  )
-  if (repairEvents.length === 0) return undefined
-
+  // Find the repairId for this goal from repair events.
   let repairId: string | undefined
   let completed = false
+  for (const event of events) {
+    if ((event.type as string) === 'repair/completed') {
+      const data = event.data as Record<string, unknown>
+      if (typeof data.repairId === 'string' && data.repairId.includes(goalId)) {
+        completed = true
+        break
+      }
+    }
+    if (repairId === undefined && (event.type as string).startsWith('repair/')) {
+      const data = event.data as Record<string, unknown>
+      if (typeof data.repairId === 'string' && data.repairId.includes(goalId)) {
+        repairId = data.repairId
+      }
+    }
+  }
+  if (repairId === undefined || completed) return undefined
+
+  // Index repair/evidence events by routingDecisionId for full FailurePackage
+  // reconstruction. Each evidence event carries the complete failure data.
+  const evidenceByRouting = new Map<string, {
+    attempt: number
+    fingerprint: string
+    progress: RepairAttempt['progress']
+    failurePackage: FailurePackage
+    failurePackageId: string
+  }>()
+  for (const event of events) {
+    if ((event.type as string) !== 'repair/evidence') continue
+    const data = event.data as Record<string, unknown>
+    if (data.repairId !== repairId) continue
+    const routingDecisionId = data.routingDecisionId as string
+    const failurePackage: FailurePackage = {
+      failedCriteria: data.failedCriteria as string[],
+      failingTests: data.failingTests as string[],
+      typeErrors: data.typeErrors as string[],
+      buildErrors: data.buildErrors as string[],
+      changedFiles: data.changedFiles as string[],
+    }
+    evidenceByRouting.set(routingDecisionId, {
+      attempt: data.attempt as number,
+      fingerprint: data.failureFingerprint as string,
+      progress: data.progress as RepairAttempt['progress'],
+      failurePackage,
+      failurePackageId: data.failurePackageId as string,
+    })
+  }
+
+  // Reconstruct attempts from real execution events. Each
+  // model/routing-decision followed by a goal/verification FAIL is one
+  // attempt. The model comes from the routing decision's `selected` field,
+  // not from a later repair decision.
   const attempts: RepairAttempt[] = []
   let flashAttempts = 0
   let proAttempts = 0
 
-  for (const event of repairEvents) {
+  // Track repair/decision events to count flash/pro attempts.
+  for (const event of events) {
+    if ((event.type as string) !== 'repair/decision') continue
     const data = event.data as Record<string, unknown>
-    if (typeof data.repairId === 'string' && data.repairId.includes(goalId)) {
-      repairId = data.repairId
-    }
-    if (event.type === 'repair/completed' && data.repairId === repairId) {
-      completed = true
-      break
-    }
-    if (event.type === 'repair/evidence' && data.repairId === repairId) {
-      const attemptNum = data.attempt as number
-      const fingerprint = data.failureFingerprint as string
-      const progress = data.progress as RepairAttempt['progress']
-      attempts.push({
-        attempt: attemptNum,
-        model: flashModel,
-        routingDecisionId: data.routingDecisionId as string,
-        verified: false,
-        verificationStatus: 'verified-fail',
-        failureFingerprint: fingerprint,
-        ...(progress !== undefined ? { progress } : {}),
-        costUsd: 0,
-        latencyMs: 0,
-      })
-    }
-    if (event.type === 'repair/decision' && data.repairId === repairId) {
-      const action = data.action as string
-      if (action === 'flash-repair') flashAttempts += 1
-      if (action === 'pro-escalate') {
-        proAttempts += 1
-        const last = attempts.at(-1)
-        if (last !== undefined) {
-          attempts[attempts.length - 1] = { ...last, model: proModel }
-        }
-      }
-    }
+    if (data.repairId !== repairId) continue
+    const action = data.action as string
+    if (action === 'flash-repair') flashAttempts += 1
+    if (action === 'pro-escalate') proAttempts += 1
   }
 
-  if (repairId === undefined || completed) return undefined
+  // Build attempts from routing-decision + verification pairs.
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]
+    if (event === undefined) continue
+    if ((event.type as string) !== 'model/routing-decision') continue
+    const rdData = event.data as unknown as {
+      routingDecisionId?: string
+      selected: { provider: string; model: string }
+    }
+    const routingDecisionId = rdData.routingDecisionId
+    if (routingDecisionId === undefined) continue
+
+    // Find the goal/verification event that follows this routing decision.
+    // It must be for the same goal and must be a FAIL to count as a repair
+    // attempt.
+    let verificationEvent: SessionEvent | undefined
+    for (let j = i + 1; j < events.length; j++) {
+      const next = events[j]
+      if (next === undefined) break
+      if ((next.type as string) === 'model/routing-decision') break
+      if (next.type !== 'goal/verification') continue
+      const vData = next.data as { goal: { id: string }; passed: boolean }
+      if (vData.goal.id !== goalId) continue
+      verificationEvent = next
+      break
+    }
+    if (verificationEvent === undefined) continue
+    const vData = verificationEvent.data as { passed: boolean }
+    if (vData.passed) continue
+
+    // This routing decision led to a failed verification for this goal.
+    const model: ModelRef = {
+      provider: rdData.selected.provider,
+      model: rdData.selected.model,
+    }
+    const evidence = evidenceByRouting.get(routingDecisionId)
+    if (evidence === undefined) continue
+
+    attempts.push({
+      attempt: evidence.attempt,
+      model,
+      routingDecisionId,
+      verified: false,
+      verificationStatus: 'verified-fail',
+      failureFingerprint: evidence.fingerprint,
+      ...(evidence.progress !== undefined ? { progress: evidence.progress } : {}),
+      failurePackage: evidence.failurePackage,
+      failurePackageId: evidence.failurePackageId,
+      costUsd: 0,
+      latencyMs: 0,
+    })
+  }
+
+  // Sort attempts by attempt number for stable reconstruction.
+  attempts.sort((a, b) => a.attempt - b.attempt)
 
   return {
     repairId,
@@ -281,6 +402,10 @@ export interface RepairHandlerResult {
   readonly events: SessionEvent[]
   readonly repairId: string
   readonly attemptNumber: number
+  /** On pro-escalate, the pending escalation awaiting a real routing decision. */
+  readonly pendingEscalation: PendingEscalation | undefined
+  /** On flash-repair or pro-escalate, the model to claim via routing authority. */
+  readonly claimModel: ModelRef | undefined
 }
 
 /**
@@ -367,7 +492,7 @@ export function handleVerificationFailure(
       elapsedMs: Date.now() - state.startedAt,
     },
     limits: deps.limits,
-    ...(deps.proModelAvailable !== true ? { proModelAvailable: false } : {}),
+    ...(!deps.proModelAvailable ? { proModelAvailable: false } : {}),
     ...(deps.manualModelSelection ? { manualModelSelection: true } : {}),
   }
   const decision = deps.decide(decisionInput)
@@ -385,6 +510,8 @@ export function handleVerificationFailure(
   }, { ignorable: true })
 
   let followupContent: ContentBlock[] | undefined
+  let pendingEscalation: PendingEscalation | undefined
+  let claimModel: ModelRef | undefined
 
   switch (decision.action) {
     case 'complete': {
@@ -404,24 +531,28 @@ export function handleVerificationFailure(
     }
     case 'flash-repair': {
       state.flashAttempts += 1
+      claimModel = deps.flashModel
       followupContent = renderRepairPrompt(decision.evidence, state.attempts.length + 1)
       break
     }
     case 'pro-escalate': {
       state.proAttempts += 1
-      session.append('model/escalation', {
+      // The model/escalation event is emitted after the real routing
+      // decision arrives, not here. The plugin claims the Pro model via
+      // the routing authority, calls agent.followup(), and when the next
+      // model/routing-decision event fires, it emits model/escalation
+      // with the real toRoutingDecisionId.
+      pendingEscalation = {
         repairId: state.repairId,
-        turn,
-        step: 0,
         fromRoutingDecisionId: routingDecisionId,
-        toRoutingDecisionId: `pro-${state.repairId}-${state.proAttempts}`,
-        repairOf: routingDecisionId,
         fromModel: model.model,
         toModel: deps.proModel.model,
         reason: decision.reason,
         failureFingerprint: fingerprint,
         flashAttempts: state.flashAttempts,
-      }, { ignorable: true })
+        turn,
+      }
+      claimModel = deps.proModel
       followupContent = renderProEscalationPrompt(decision.evidence, state.flashAttempts)
       break
     }
@@ -454,7 +585,43 @@ export function handleVerificationFailure(
     events: newEvents,
     repairId: state.repairId,
     attemptNumber,
+    pendingEscalation,
+    claimModel,
   }
+}
+
+/**
+ * Emit `repair/completed` for an active repair that passes verification.
+ * Called when `goal/verification` PASS arrives while a repair is active.
+ * Clears the repair state after recording the completion event.
+ *
+ * @param session - the session to append the completion event to.
+ * @param state - the mutable repair state for this goal.
+ * @param turn - the current turn number.
+ * @param routingDecisionId - the routing decision that produced the passing verification.
+ * @returns the completion event, or undefined if no active repair.
+ */
+export function handleVerificationPass(
+  session: Session,
+  state: RepairState,
+  turn: number,
+  routingDecisionId: string,
+): SessionEvent | undefined {
+  const eventsBefore = session.events.length
+  session.append('repair/completed', {
+    repairId: state.repairId,
+    turn,
+    step: 0,
+    finalRoutingDecisionId: routingDecisionId,
+    verified: true,
+    totalAttempts: state.attempts.length,
+    flashAttempts: state.flashAttempts,
+    proAttempts: state.proAttempts,
+    totalCostUsd: state.totalCostUsd,
+    elapsedMs: Date.now() - state.startedAt,
+  }, { ignorable: true })
+  const newEvents = session.events.slice(eventsBefore)
+  return newEvents[0]
 }
 
 /** Plugin entry point. */
@@ -465,19 +632,27 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
   const proModel: ModelRef = config.proModel ?? { provider: 'deepseek', model: 'deepseek-v4-pro' }
 
   const repairStates = new Map<string, RepairState>()
+  /** Pending Pro escalations keyed by session id, awaiting a real routing decision. */
+  const pendingEscalations = new Map<string, PendingEscalation>()
 
   /** Get or create repair state for a goal, reconstructing from the log on first access. */
   function stateFor(agent: Agent, goal: GoalView): RepairState {
     const key = `${agent.id}:${goal.id}`
     const existing = repairStates.get(key)
     if (existing !== undefined) return existing
-    const reconstructed = reconstructRepairState(agent.session.events, goal.id, flashModel, proModel)
+    const reconstructed = reconstructRepairState(agent.session.events, goal.id)
     if (reconstructed !== undefined) {
       repairStates.set(key, reconstructed)
       return reconstructed
     }
+    // Derive a deterministic repairId from stable execution identity. The
+    // originating routing decision is the latest one for the current turn.
+    const turn = agent.session.events.reduce(
+      (max, e) => e.type === 'turn/start' ? Math.max(max, e.data.turn) : max, 0,
+    )
+    const originatingRoutingDecisionId = latestRoutingDecisionId(agent.session.events, turn) ?? 'unknown'
     const state: RepairState = {
-      repairId: `repair-${goal.id}-${Date.now()}`,
+      repairId: computeRepairId(agent.session.id, goal.id, goal.revision, originatingRoutingDecisionId),
       attempts: [],
       totalCostUsd: 0,
       elapsedMs: 0,
@@ -489,8 +664,8 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     return state
   }
 
-
   ctx.effect(function* () {
+    // Watch goal/verification for both PASS and FAIL.
     ctx.on('session/event', (session: Session, event: SessionEvent) => {
       if (event.type !== 'goal/verification') return
       const data = event.data as {
@@ -498,7 +673,6 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
         passed: boolean
         checks: readonly GoalVerificationCheck[]
       }
-      if (data.passed) return
 
       const agent = ctx.agents.get(session.id)
       if (agent === undefined || agent.session !== session) return
@@ -507,11 +681,24 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
       if (goal === undefined || goal.id !== data.goal.id) return
 
       const turn = session.events.reduce(
-        (max, e) => e.type === 'turn/start' ? Math.max(max, (e.data as { turn: number }).turn) : max, 0,
+        (max, e) => e.type === 'turn/start' ? Math.max(max, e.data.turn) : max, 0,
       )
 
-      const state = stateFor(agent, goal)
+      const key = `${agent.id}:${goal.id}`
+      const state = repairStates.get(key)
 
+      // PASS with an active repair: emit repair/completed and clear state.
+      if (data.passed) {
+        if (state === undefined) return
+        const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
+        handleVerificationPass(session, state, turn, routingDecisionId)
+        // Release the model selection back to automatic routing.
+        releaseToAuto(session, 'system')
+        repairStates.delete(key)
+        return
+      }
+
+      // FAIL: proceed with repair logic.
       const repairController = ctx.get('repairController') as { decide: (input: object) => RepairDecision } | undefined
       if (repairController === undefined) {
         ctx.logger.warn(`repair-runtime: RepairController service not available; blocking goal "${goal.id}"`)
@@ -522,6 +709,8 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
         return
       }
 
+      const repairState = stateFor(agent, goal)
+
       const deps: RepairHandlerDeps = {
         flashModel,
         proModel,
@@ -530,20 +719,41 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           maxProAttempts: config.maxProAttempts ?? 2,
           maxTotalAttempts: config.maxTotalAttempts ?? 5,
         },
-        decide: repairController.decide as typeof decideRepair,
+        decide: repairController.decide,
         proModelAvailable: true,
         manualModelSelection: false,
       }
 
-      const result = handleVerificationFailure(session, state, deps, turn, data.checks)
+      const result = handleVerificationFailure(session, repairState, deps, turn, data.checks)
 
       switch (result.action) {
         case 'complete': {
-          repairStates.delete(`${agent.id}:${goal.id}`)
+          releaseToAuto(session, 'system')
+          repairStates.delete(key)
           return
         }
         case 'flash-repair':
         case 'pro-escalate': {
+          // Claim the model selection through the durable routing authority
+          // so the router creates a real model/routing-decision event. The
+          // repair runtime uses 'policy' authority because repair escalation
+          // is a deployment policy decision, not a user or SDK choice.
+          if (result.claimModel !== undefined) {
+            claimModelSelection(session, {
+              authority: 'policy',
+              source: 'system',
+              selection: {
+                provider: result.claimModel.provider,
+                model: result.claimModel.model,
+              },
+              reason: `repair escalation: ${result.action}`,
+            })
+          }
+          // Store pending escalation so the model/routing-decision handler
+          // can emit model/escalation with the real toRoutingDecisionId.
+          if (result.pendingEscalation !== undefined) {
+            pendingEscalations.set(session.id, result.pendingEscalation)
+          }
           if (result.followupContent !== undefined) {
             const message = createUserMessage({
               content: result.followupContent,
@@ -554,20 +764,49 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           return
         }
         case 'stop': {
+          releaseToAuto(session, 'system')
           ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
             code: 'repair-exhausted',
             message: `Repair exhausted: ${result.reason ?? 'unknown'}`,
           })
-          repairStates.delete(`${agent.id}:${goal.id}`)
+          repairStates.delete(key)
           return
         }
       }
+    })
+
+    // Watch model/routing-decision to resolve pending escalations with the
+    // real toRoutingDecisionId.
+    ctx.on('session/event', (session: Session, event: SessionEvent) => {
+      if ((event.type as string) !== 'model/routing-decision') return
+      const pending = pendingEscalations.get(session.id)
+      if (pending === undefined) return
+      const rdData = event.data as { routingDecisionId?: string }
+      const realRoutingDecisionId = rdData.routingDecisionId
+      if (realRoutingDecisionId === undefined) return
+      // Emit the model/escalation event with the real destination routing
+      // decision id, now that the router has created it.
+      session.append('model/escalation', {
+        repairId: pending.repairId,
+        turn: pending.turn,
+        step: 0,
+        fromRoutingDecisionId: pending.fromRoutingDecisionId,
+        toRoutingDecisionId: realRoutingDecisionId,
+        repairOf: pending.fromRoutingDecisionId,
+        fromModel: pending.fromModel,
+        toModel: pending.toModel,
+        reason: pending.reason,
+        failureFingerprint: pending.failureFingerprint,
+        flashAttempts: pending.flashAttempts,
+      }, { ignorable: true })
+      pendingEscalations.delete(session.id)
     })
 
     ctx.on('agent/disposed', ({ agent }) => {
       for (const key of repairStates.keys()) {
         if (key.startsWith(`${agent.id}:`)) repairStates.delete(key)
       }
+      pendingEscalations.delete(agent.session.id)
     })
   })
 }

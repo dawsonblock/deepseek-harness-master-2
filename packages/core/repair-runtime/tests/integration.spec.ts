@@ -19,7 +19,9 @@ import type { ModelRef } from '@deepseek-ai/dsh-repair-controller'
 import {
   type RepairHandlerDeps,
   type RepairState,
+  computeRepairId,
   handleVerificationFailure,
+  handleVerificationPass,
   reconstructRepairState,
 } from '../src/index.ts'
 
@@ -71,7 +73,7 @@ function freshState(repairId: string): RepairState {
 
 /** Append a turn/start and model/routing-decision event. */
 function setupTurn(session: Session, turn: number, model: ModelRef): void {
-  session.append('turn/start', { turn } as never, { ignorable: true })
+  session.append('turn/start', { turn }, { ignorable: true })
   session.append('model/routing-decision', {
     routingDecisionId: `rd-${turn}`,
     turn,
@@ -98,7 +100,7 @@ function appendUsage(session: Session, turn: number, model: ModelRef, tokens: {
       cacheReadTokens: tokens.cacheRead,
       cacheMissTokens: tokens.cacheMiss,
     },
-  } as never, { ignorable: true })
+  }, { ignorable: true })
 }
 
 /** Extract token usage from a model/usage event. */
@@ -185,7 +187,7 @@ describe('E2E: repair runtime event chain — Flash repair → pass', () => {
 })
 
 describe('E2E: repair runtime event chain — Flash ×2 same fail → Pro escalation', () => {
-  it('emits evidence → decision(flash-repair) → evidence → decision(pro-escalate) → model/escalation', () => {
+  it('emits evidence → decision(flash-repair) → evidence → decision(pro-escalate) with pending escalation', () => {
     const session = Session.create(SessionId('e2e-escalate'))
     const state = freshState('repair-goal-3')
     const deps = defaultDeps()
@@ -202,29 +204,27 @@ describe('E2E: repair runtime event chain — Flash ×2 same fail → Pro escala
     expect(result2.action).toBe('pro-escalate')
     expect(result2.reason).toBe('same-failure-no-progress')
 
-    // Verify exact event chain
+    // The model/escalation event is NOT emitted inside handleVerificationFailure.
+    // Instead, a pendingEscalation is returned for the plugin to resolve
+    // after the real routing decision arrives.
+    expect(result2.pendingEscalation).toBeDefined()
+    expect(result2.pendingEscalation!.fromModel).toBe('deepseek-v4-flash')
+    expect(result2.pendingEscalation!.toModel).toBe('deepseek-v4-pro')
+    expect(result2.pendingEscalation!.reason).toBe('same-failure-no-progress')
+    expect(result2.pendingEscalation!.fromRoutingDecisionId).toBe('rd-2')
+
+    // The claimModel is the Pro model — the plugin claims it via routing authority
+    expect(result2.claimModel).toBeDefined()
+    expect(result2.claimModel!.model).toBe('deepseek-v4-pro')
+
+    // Verify exact event chain (no model/escalation yet — it's pending)
     const repairEvents = session.events.filter(
       e => (e.type as string).startsWith('repair/') || (e.type as string) === 'model/escalation',
     )
     expect(eventTypes(repairEvents)).toEqual([
       'repair/evidence', 'repair/decision',       // turn 1: fail → flash-repair
       'repair/evidence', 'repair/decision',       // turn 2: same fail → pro-escalate
-      'model/escalation',                          // escalation event
     ])
-
-    // Verify escalation event provenance
-    const escalation = repairEvents.find(e => e.type === 'model/escalation')
-    expect(escalation).toBeDefined()
-    const escData = escalation?.data as {
-      fromModel: string
-      toModel: string
-      reason: string
-      repairOf: string
-    }
-    expect(escData.fromModel).toBe('deepseek-v4-flash')
-    expect(escData.toModel).toBe('deepseek-v4-pro')
-    expect(escData.reason).toBe('same-failure-no-progress')
-    expect(escData.repairOf).toBe('rd-2') // latest Flash routing decision
 
     // Verify followup content was produced for Pro
     expect(result2.followupContent).toBeDefined()
@@ -267,8 +267,10 @@ describe('E2E: repair runtime event chain — Flash ×3 fail → Pro ×2 fail �
     const types = eventTypes(repairEvents)
     expect(types.filter(t => t === 'repair/evidence')).toHaveLength(5)
     expect(types.filter(t => t === 'repair/decision')).toHaveLength(5)
-    // Two pro-escalate decisions → two model/escalation events
-    expect(types.filter(t => t === 'model/escalation')).toHaveLength(2)
+    // model/escalation events are emitted by the plugin after real routing
+    // decisions, not inside handleVerificationFailure. The two pro-escalate
+    // decisions produce pendingEscalation results instead.
+    expect(types.filter(t => t === 'model/escalation')).toHaveLength(0)
     expect(types.filter(t => t === 'repair/completed')).toHaveLength(1)
 
     // Final completed event should be verified=false
@@ -324,8 +326,13 @@ describe('E2E: true idempotency — restart after persisted escalation', () => {
     const goalId = 'goal-idem-1'
     const repairId = `repair-${goalId}-1700000000000`
 
-    // Build the log up to the escalation point
+    // Build the log up to the escalation point with real execution events
     setupTurn(session, 1, FLASH)
+    session.append('goal/verification', {
+      goal: { id: goalId, revision: 1 },
+      passed: false,
+      checks: failChecks(['criterion-1']),
+    } as never, { ignorable: true })
     session.append('repair/evidence', {
       repairId, turn: 1, step: 0, attempt: 1,
       routingDecisionId: 'rd-1', failureFingerprint: 'fp-aaaa',
@@ -338,6 +345,11 @@ describe('E2E: true idempotency — restart after persisted escalation', () => {
     }, { ignorable: true })
 
     setupTurn(session, 2, FLASH)
+    session.append('goal/verification', {
+      goal: { id: goalId, revision: 1 },
+      passed: false,
+      checks: failChecks(['criterion-1']),
+    } as never, { ignorable: true })
     session.append('repair/evidence', {
       repairId, turn: 2, step: 0, attempt: 2,
       routingDecisionId: 'rd-2', failureFingerprint: 'fp-aaaa',
@@ -348,9 +360,10 @@ describe('E2E: true idempotency — restart after persisted escalation', () => {
       repairId, turn: 2, step: 0, attempt: 2,
       action: 'pro-escalate', reason: 'same-failure-no-progress', failureFingerprint: 'fp-aaaa',
     }, { ignorable: true })
+    // The model/escalation event with a real toRoutingDecisionId
     session.append('model/escalation', {
       repairId, turn: 2, step: 0,
-      fromRoutingDecisionId: 'rd-2', toRoutingDecisionId: 'pro-1',
+      fromRoutingDecisionId: 'rd-2', toRoutingDecisionId: 'rd-pro-1',
       repairOf: 'rd-2', fromModel: 'deepseek-v4-flash', toModel: 'deepseek-v4-pro',
       reason: 'same-failure-no-progress', failureFingerprint: 'fp-aaaa', flashAttempts: 2,
     }, { ignorable: true })
@@ -363,13 +376,14 @@ describe('E2E: true idempotency — restart after persisted escalation', () => {
     expect(reconstructed!.proAttempts).toBe(1)
     expect(reconstructed!.attempts).toHaveLength(2)
 
-    // The key assertion: if we now receive a Pro verification failure,
-    // the controller sees proAttempts=1 and attempts=2, so it will
-    // allow one more Pro attempt (proAttempts < maxProAttempts=2).
-    // But it will NOT re-escalate from Flash — the last attempt is
-    // already Pro. The controller sees the current model as Pro and
-    // allows one more Pro repair.
-    //
+    // The key assertion: the escalation already happened. The
+    // reconstructed state shows proAttempts=1, so the controller will
+    // not re-escalate from Flash. The attempts remain Flash because
+    // reconstruction uses the routing-decision's selected model, not
+    // the later pro-escalate decision.
+    expect(reconstructed!.attempts[0]!.model.model).toBe('deepseek-v4-flash')
+    expect(reconstructed!.attempts[1]!.model.model).toBe('deepseek-v4-flash')
+
     // The critical idempotency check: the runtime does NOT issue
     // another model/escalation event. The escalation already happened.
     const proInvocationCount = session.events.filter(
@@ -582,5 +596,265 @@ describe('E2E: accounting traces to durable model/usage events', () => {
     // One usage event per attempt, one evidence event per attempt
     expect(usageEvents.length).toBe(evidenceEvents.length)
     expect(usageEvents).toHaveLength(1)
+  })
+})
+
+describe('P0: deterministic repairId', () => {
+  it('same session/goal/revision/origin produces same repairId', () => {
+    const id1 = computeRepairId('session-1', 'goal-1', 1, 'rd-origin-1')
+    const id2 = computeRepairId('session-1', 'goal-1', 1, 'rd-origin-1')
+    expect(id1).toBe(id2)
+    expect(id1).toMatch(/^repair:v1:[0-9a-f]{24}$/)
+  })
+
+  it('different originating routing decision produces different repairId', () => {
+    const id1 = computeRepairId('session-1', 'goal-1', 1, 'rd-origin-1')
+    const id2 = computeRepairId('session-1', 'goal-1', 1, 'rd-origin-2')
+    expect(id1).not.toBe(id2)
+  })
+
+  it('different goal produces different repairId', () => {
+    const id1 = computeRepairId('session-1', 'goal-1', 1, 'rd-origin-1')
+    const id2 = computeRepairId('session-1', 'goal-2', 1, 'rd-origin-1')
+    expect(id1).not.toBe(id2)
+  })
+})
+
+describe('P0: repair completion on verification PASS', () => {
+  it('active repair + goal/verification PASS → repair/completed exactly once', () => {
+    const session = Session.create(SessionId('p0-complete'))
+    const state = freshState('repair-goal-p0-complete')
+    const deps = defaultDeps()
+
+    // Turn 1: Flash fails
+    setupTurn(session, 1, FLASH)
+    handleVerificationFailure(session, state, deps, 1, failChecks(['criterion-1']))
+
+    // Turn 2: Flash repair passes
+    setupTurn(session, 2, FLASH)
+    const completedEvent = handleVerificationPass(session, state, 2, 'rd-2')
+
+    expect(completedEvent).toBeDefined()
+    expect(completedEvent!.type).toBe('repair/completed')
+    const data = completedEvent!.data as { verified: boolean; repairId: string }
+    expect(data.verified).toBe(true)
+    expect(data.repairId).toBe(state.repairId)
+
+    // Exactly one repair/completed event
+    const completedCount = session.events.filter(e => e.type === 'repair/completed').length
+    expect(completedCount).toBe(1)
+  })
+})
+
+describe('P0: pro-escalate produces pending escalation for real routing', () => {
+  it('pro-escalate returns pendingEscalation and claimModel, no fabricated toRoutingDecisionId', () => {
+    const session = Session.create(SessionId('p0-escalate'))
+    const state = freshState('repair-goal-p0-escalate')
+    const deps = defaultDeps()
+
+    // Turn 1: Flash fails
+    setupTurn(session, 1, FLASH)
+    handleVerificationFailure(session, state, deps, 1, failChecks(['criterion-1']))
+
+    // Turn 2: Flash fails again (same failure)
+    setupTurn(session, 2, FLASH)
+    const result = handleVerificationFailure(session, state, deps, 2, failChecks(['criterion-1']))
+
+    expect(result.action).toBe('pro-escalate')
+    expect(result.pendingEscalation).toBeDefined()
+    expect(result.pendingEscalation!.toModel).toBe('deepseek-v4-pro')
+    expect(result.claimModel).toBeDefined()
+    expect(result.claimModel!.model).toBe('deepseek-v4-pro')
+
+    // No model/escalation event emitted yet — it's pending
+    const escalationEvents = session.events.filter(e => e.type === 'model/escalation')
+    expect(escalationEvents).toHaveLength(0)
+
+    // No fabricated toRoutingDecisionId in any event
+    const allData = session.events.map(e => JSON.stringify(e.data))
+    expect(allData.some(d => d.includes('pro-repair-goal'))).toBe(false)
+  })
+})
+
+describe('P0: flash-repair returns claimModel for routing authority', () => {
+  it('flash-repair returns claimModel pointing to Flash', () => {
+    const session = Session.create(SessionId('p0-flash-claim'))
+    const state = freshState('repair-goal-p0-flash')
+    const deps = defaultDeps()
+
+    setupTurn(session, 1, FLASH)
+    const result = handleVerificationFailure(session, state, deps, 1, failChecks(['criterion-1']))
+
+    expect(result.action).toBe('flash-repair')
+    expect(result.claimModel).toBeDefined()
+    expect(result.claimModel!.model).toBe('deepseek-v4-flash')
+    expect(result.pendingEscalation).toBeUndefined()
+  })
+})
+
+describe('P0: replay preserves Flash attempts as Flash', () => {
+  it('Flash ×2 same fail → Pro escalate → replay → attempts remain Flash', () => {
+    const session = Session.create(SessionId('p0-replay'))
+    const goalId = 'goal-p0-replay'
+    const repairId = `repair-${goalId}-1700000000000`
+
+    // Flash #1 fail
+    setupTurn(session, 1, FLASH)
+    session.append('goal/verification', {
+      goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['c1']),
+    } as never, { ignorable: true })
+    session.append('repair/evidence', {
+      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      failureFingerprint: 'fp-1', failurePackageId: 'fpid-1', progress: 'none',
+      failedCriteria: ['c1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+    }, { ignorable: true })
+    session.append('repair/decision', {
+      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-1',
+    }, { ignorable: true })
+
+    // Flash #2 fail (same)
+    setupTurn(session, 2, FLASH)
+    session.append('goal/verification', {
+      goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['c1']),
+    } as never, { ignorable: true })
+    session.append('repair/evidence', {
+      repairId, turn: 2, step: 0, attempt: 2, routingDecisionId: 'rd-2',
+      failureFingerprint: 'fp-1', failurePackageId: 'fpid-2', progress: 'none',
+      failedCriteria: ['c1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+    }, { ignorable: true })
+    session.append('repair/decision', {
+      repairId, turn: 2, step: 0, attempt: 2, action: 'pro-escalate',
+      reason: 'same-failure-no-progress', failureFingerprint: 'fp-1',
+    }, { ignorable: true })
+
+    // Reconstruct
+    const state = reconstructRepairState(session.events, goalId)
+    expect(state).toBeDefined()
+    expect(state!.attempts).toHaveLength(2)
+    // Both attempts remain Flash — the pro-escalate decision does not
+    // retroactively change the model of a prior attempt.
+    expect(state!.attempts[0]!.model.model).toBe('deepseek-v4-flash')
+    expect(state!.attempts[1]!.model.model).toBe('deepseek-v4-flash')
+  })
+})
+
+describe('P0: progress-aware decision survives restart', () => {
+  it('Flash #1 ABCD fail → Flash #2 AB partial progress → crash → restart → reconstructed FailurePackage enables progress', () => {
+    // This is the critical P0 regression test:
+    // 1. Flash #1 fails with {A, B, C, D}
+    // 2. Flash #2 fails with {A, B} — partial progress → flash-repair
+    // 3. CRASH
+    // 4. Restart → reconstruct state
+    // 5. The reconstructed state must carry full FailurePackage objects
+    //    so classifyProgress returns 'partial', not 'none'
+    // 6. The controller's Flash #2 decision (flash-repair, not pro-escalate)
+    //    must be reproducible from the reconstructed state.
+    const session = Session.create(SessionId('p0-progress'))
+    const goalId = 'goal-p0-progress'
+    const repairId = `repair-${goalId}-1700000000000`
+
+    // Flash #1: fail with A, B, C, D
+    setupTurn(session, 1, FLASH)
+    session.append('goal/verification', {
+      goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['A', 'B', 'C', 'D']),
+    } as never, { ignorable: true })
+    session.append('repair/evidence', {
+      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      failureFingerprint: 'fp-abcd', failurePackageId: 'fpid-1', progress: 'none',
+      failedCriteria: ['A', 'B', 'C', 'D'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+    }, { ignorable: true })
+    session.append('repair/decision', {
+      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-abcd',
+    }, { ignorable: true })
+
+    // Flash #2: fail with A, B (partial progress)
+    setupTurn(session, 2, FLASH)
+    session.append('goal/verification', {
+      goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['A', 'B']),
+    } as never, { ignorable: true })
+    session.append('repair/evidence', {
+      repairId, turn: 2, step: 0, attempt: 2, routingDecisionId: 'rd-2',
+      failureFingerprint: 'fp-ab', failurePackageId: 'fpid-2', progress: 'partial',
+      failedCriteria: ['A', 'B'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+    }, { ignorable: true })
+    session.append('repair/decision', {
+      repairId, turn: 2, step: 0, attempt: 2, action: 'flash-repair', failureFingerprint: 'fp-ab',
+    }, { ignorable: true })
+
+    // CRASH → restart → reconstruct
+    const reconstructed = reconstructRepairState(session.events, goalId)
+    expect(reconstructed).toBeDefined()
+    expect(reconstructed!.attempts).toHaveLength(2)
+
+    // The critical assertion: the reconstructed prior attempt carries a
+    // full FailurePackage with {A, B}, not just a fingerprint. Without it,
+    // classifyProgress would return 'none' and the controller would
+    // escalate to Pro instead of continuing Flash repair.
+    const priorAttempt = reconstructed!.attempts[1]!
+    expect(priorAttempt.failurePackage).toBeDefined()
+    expect(priorAttempt.failurePackage!.failedCriteria).toEqual(['A', 'B'])
+
+    // The first attempt also carries its full FailurePackage
+    const firstAttempt = reconstructed!.attempts[0]!
+    expect(firstAttempt.failurePackage).toBeDefined()
+    expect(firstAttempt.failurePackage!.failedCriteria).toEqual(['A', 'B', 'C', 'D'])
+  })
+
+  it('decision after restart matches decision without restart', () => {
+    // Run the same scenario uninterrupted and after restart, then
+    // require the decisions to be identical.
+    //
+    // Scenario: Flash #1 {A,B,C,D} fail → flash-repair
+    //           Flash #2 {A,B} fail → partial progress → flash-repair
+    //
+    // The decision at Flash #2 is the progress-aware one: partial progress
+    // → flash-repair (not pro-escalate). This decision must be identical
+    // whether computed live or after restart reconstruction.
+    const goalId = 'goal-p0-match'
+    const repairId = `repair-${goalId}-1700000000000`
+    const deps = defaultDeps()
+
+    // Uninterrupted execution
+    const session1 = Session.create(SessionId('p0-match-uninterrupted'))
+    const state1 = freshState(repairId)
+
+    setupTurn(session1, 1, FLASH)
+    handleVerificationFailure(session1, state1, deps, 1, failChecks(['A', 'B', 'C', 'D']))
+    setupTurn(session1, 2, FLASH)
+    const resultUninterrupted = handleVerificationFailure(
+      session1, state1, deps, 2, failChecks(['A', 'B']),
+    )
+
+    // The live decision at Flash #2 with partial progress is flash-repair
+    expect(resultUninterrupted.action).toBe('flash-repair')
+
+    // Restart execution: same events up to crash, then reconstruct
+    const session2 = Session.create(SessionId('p0-match-restart'))
+    setupTurn(session2, 1, FLASH)
+    session2.append('goal/verification', {
+      goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['A', 'B', 'C', 'D']),
+    } as never, { ignorable: true })
+    session2.append('repair/evidence', {
+      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      failureFingerprint: 'fp-abcd', failurePackageId: 'fpid-1', progress: 'none',
+      failedCriteria: ['A', 'B', 'C', 'D'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+    }, { ignorable: true })
+    session2.append('repair/decision', {
+      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-abcd',
+    }, { ignorable: true })
+
+    // Reconstruct after restart (crash happened after Flash #1 decision)
+    const reconstructed = reconstructRepairState(session2.events, goalId)
+    expect(reconstructed).toBeDefined()
+
+    // Now simulate Flash #2 failure with {A, B} (partial progress)
+    setupTurn(session2, 2, FLASH)
+    const resultAfterRestart = handleVerificationFailure(
+      session2, reconstructed!, deps, 2, failChecks(['A', 'B']),
+    )
+
+    // The decisions must match: both flash-repair
+    expect(resultAfterRestart.action).toBe(resultUninterrupted.action)
+    expect(resultAfterRestart.action).toBe('flash-repair')
   })
 })
