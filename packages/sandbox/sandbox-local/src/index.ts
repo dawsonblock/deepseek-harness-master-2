@@ -337,6 +337,7 @@ export class LocalSandboxProvider extends SandboxProvider {
       && (policy.protectedReadPaths ?? []).length === 0
     ) {
       throw new SandboxUnavailableError(
+        policy.mode,
         'seatbelt workspace-isolated requires non-empty protectedReadPaths; '
         + 'without protected paths, Seatbelt allows all reads and provides no isolation',
       )
