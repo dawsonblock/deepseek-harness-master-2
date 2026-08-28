@@ -11,7 +11,8 @@
 set -euo pipefail
 
 REPO_ROOT="/tmp/v019-batch-a-repos"
-mkdir -p "$REPO_ROOT"
+HOLDOUT_ROOT="$REPO_ROOT/holdouts"
+mkdir -p "$REPO_ROOT" "$HOLDOUT_ROOT"
 
 # Common package.json template
 make_package_json() {
@@ -55,13 +56,29 @@ make_tsconfig() {
 EOF
 }
 
-# Common vitest config
+# Common vitest config — diagnostic tests only; holdout tests are excluded
+# from diagnostic discovery and run separately by the verifier.
 make_vitest_config() {
   cat <<'EOF'
 import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
+    exclude: ['tests/**/*.holdout.test.ts', 'node_modules', 'dist'],
+  },
+})
+EOF
+}
+
+# Holdout vitest config — includes holdout test files without the exclude.
+# Used by the verifier when running staged holdout tests.
+make_vitest_holdout_config() {
+  cat <<'EOF'
+import { defineConfig } from 'vitest/config'
+export default defineConfig({
+  test: {
+    include: ['tests/**/*.holdout.test.ts'],
+    exclude: ['node_modules', 'dist'],
   },
 })
 EOF
@@ -87,6 +104,7 @@ create_ts_utils() {
   make_package_json "ts-utils" > "$dir/package.json"
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   # --- src/debounce.ts (BUG: missing clearTimeout) ---
   cat > "$dir/src/debounce.ts" <<'EOF'
@@ -239,7 +257,7 @@ describe('binarySearch', () => {
 })
 EOF
 
-  cat > "$dir/tests/debounce.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/debounce.holdout.test.ts" <<'EOF'
 import { describe, it, expect, vi } from 'vitest'
 import { debounce } from '../src/debounce.js'
 
@@ -254,7 +272,7 @@ describe('debounce holdout', () => {
 })
 EOF
 
-  cat > "$dir/tests/binarySearch.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/binarySearch.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { binarySearch } from '../src/binarySearch.js'
 
@@ -347,6 +365,7 @@ create_ts_validate() {
   make_package_json "ts-validate" > "$dir/package.json"
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   cat > "$dir/src/validators.ts" <<'EOF'
 export function isEmail(value: string): boolean {
@@ -402,7 +421,7 @@ describe('isRequired', () => {
 })
 EOF
 
-  cat > "$dir/tests/validators.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/validators.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { isUrl } from '../src/validators.js'
 
@@ -487,7 +506,7 @@ describe('isPhoneNumber', () => {
 })
 EOF
 
-  cat > "$dir/tests/phone.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/phone.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { isPhoneNumber } from '../src/phone.js'
 
@@ -498,7 +517,7 @@ describe('isPhoneNumber holdout', () => {
 })
 EOF
 
-  cat > "$dir/tests/schema.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/schema.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { validateWithSchema, isEmail, isRequired } from '../src/validators.js'
 
@@ -568,6 +587,7 @@ create_ts_collections() {
   make_package_json "ts-collections" > "$dir/package.json"
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   cat > "$dir/src/LinkedList.ts" <<'EOF'
 interface Node<T> { value: T; next: Node<T> | null }
@@ -686,7 +706,7 @@ describe('quickSort', () => {
 })
 EOF
 
-  cat > "$dir/tests/LinkedList.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/LinkedList.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { LinkedList } from '../src/LinkedList.js'
 
@@ -702,7 +722,7 @@ describe('LinkedList holdout', () => {
 })
 EOF
 
-  cat > "$dir/tests/quickSort.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/quickSort.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { quickSort } from '../src/quickSort.js'
 
@@ -820,7 +840,7 @@ describe('Stack', () => {
 })
 EOF
 
-  cat > "$dir/tests/Stack.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/Stack.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { Stack } from '../src/Stack.js'
 
@@ -890,6 +910,7 @@ EOF
 
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   cat > "$dir/src/headers.ts" <<'EOF'
 export function parseHeaders(rawHeaders: string): Record<string, string> {
@@ -947,7 +968,7 @@ describe('parseHeaders', () => {
 })
 EOF
 
-  cat > "$dir/tests/headers.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/headers.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { parseHeaders } from '../src/headers.js'
 
@@ -1046,6 +1067,7 @@ create_ts_string() {
   make_package_json "ts-string" > "$dir/package.json"
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   cat > "$dir/src/truncate.ts" <<'EOF'
 export function truncate(str: string, maxLen: number): string {
@@ -1131,7 +1153,7 @@ describe('slugify', () => {
 })
 EOF
 
-  cat > "$dir/tests/truncate.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/truncate.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { truncate } from '../src/truncate.js'
 
@@ -1142,7 +1164,7 @@ describe('truncate holdout', () => {
 })
 EOF
 
-  cat > "$dir/tests/slugify.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/slugify.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { slugify } from '../src/slugify.js'
 
@@ -1222,6 +1244,7 @@ create_ts_state() {
   make_package_json "ts-state" > "$dir/package.json"
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   cat > "$dir/src/Store.ts" <<'EOF'
 type Listener<S> = (state: S) => void
@@ -1336,7 +1359,7 @@ describe('Store', () => {
 })
 EOF
 
-  cat > "$dir/tests/Store.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/Store.holdout.test.ts" <<'EOF'
 import { describe, it, expect, vi } from 'vitest'
 import { Store } from '../src/Store.js'
 
@@ -1448,7 +1471,7 @@ describe('createSelector', () => {
 })
 EOF
 
-  cat > "$dir/tests/selector.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/selector.holdout.test.ts" <<'EOF'
 import { describe, it, expect, vi } from 'vitest'
 import { createSelector } from '../src/selector.js'
 
@@ -1494,6 +1517,7 @@ create_ts_date() {
   make_package_json "ts-date" > "$dir/package.json"
   make_tsconfig > "$dir/tsconfig.json"
   make_vitest_config > "$dir/vitest.config.ts"
+  make_vitest_holdout_config > "$dir/vitest.holdout.config.ts"
 
   cat > "$dir/src/format.ts" <<'EOF'
 export function formatDate(date: Date, format: string): string {
@@ -1590,7 +1614,7 @@ describe('isLeapYear', () => {
 })
 EOF
 
-  cat > "$dir/tests/format.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/format.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { formatDate } from '../src/format.js'
 
@@ -1602,7 +1626,7 @@ describe('formatDate holdout', () => {
 })
 EOF
 
-  cat > "$dir/tests/leapYear.holdout.test.ts" <<'EOF'
+  mkdir -p "$HOLDOUT_ROOT/$(basename "$dir")" && cat > "$HOLDOUT_ROOT/$(basename "$dir")/leapYear.holdout.test.ts" <<'EOF'
 import { describe, it, expect } from 'vitest'
 import { isLeapYear } from '../src/leapYear.js'
 

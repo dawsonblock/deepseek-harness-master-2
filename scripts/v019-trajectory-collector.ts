@@ -11,7 +11,7 @@
  * @module v019-trajectory-collector
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 
@@ -421,12 +421,55 @@ async function generateRepoConfig(model: string, workspace: string): Promise<str
 // Verifier: runs the repository's own build and test commands
 // ---------------------------------------------------------------------------
 
+/**
+ * Copy external holdout files into the workspace's `tests/` directory so the
+ * holdout verification commands can run them. Holdouts are stored outside the
+ * model workspace to prevent model-visible discovery; they are copied in only
+ * during holdout verification and removed afterward.
+ */
+async function stageHoldouts(workspace: string, manifest: TaskManifest): Promise<void> {
+  if (manifest.verification.holdout.length === 0) return
+  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+  try {
+    const entries = await readdir(holdoutDir)
+    await mkdir(join(workspace, 'tests'), { recursive: true })
+    for (const entry of entries) {
+      if (entry.endsWith('.holdout.test.ts')) {
+        await copyFile(join(holdoutDir, entry), join(workspace, 'tests', entry))
+      }
+    }
+  } catch {
+    // No external holdout directory — holdouts may be in-repo (legacy mode).
+  }
+}
+
+/** Remove staged holdout files from the workspace after verification. */
+async function unstageHoldouts(workspace: string, manifest: TaskManifest): Promise<void> {
+  if (manifest.verification.holdout.length === 0) return
+  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+  try {
+    const entries = await readdir(holdoutDir)
+    for (const entry of entries) {
+      if (entry.endsWith('.holdout.test.ts')) {
+        await rm(join(workspace, 'tests', entry), { force: true })
+      }
+    }
+  } catch {
+    // No external holdout directory — nothing to clean up.
+  }
+}
+
 async function realVerifier(workspace: string, manifest: TaskManifest): Promise<VerifyResult> {
   const diagnosticPass = await runVerificationCommands(workspace, manifest.verification.diagnostic)
   let holdoutPass: boolean | undefined
   if (diagnosticPass) {
     if (manifest.verification.holdout.length > 0) {
-      holdoutPass = await runVerificationCommands(workspace, manifest.verification.holdout)
+      await stageHoldouts(workspace, manifest)
+      try {
+        holdoutPass = await runVerificationCommands(workspace, manifest.verification.holdout)
+      } finally {
+        await unstageHoldouts(workspace, manifest)
+      }
     } else {
       holdoutPass = true
     }

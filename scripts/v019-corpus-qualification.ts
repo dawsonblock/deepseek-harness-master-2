@@ -17,11 +17,38 @@
  */
 
 import { execSync } from 'node:child_process'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, rmSync as rmSyncFn, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import type { TaskManifest, VerificationCommand } from './v019-task-manifest.ts'
+
+/** Copy external holdout files into the workspace for holdout verification. */
+function stageHoldouts(workspace: string, manifest: TaskManifest): void {
+  if (manifest.verification.holdout.length === 0) return
+  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+  if (!existsSync(holdoutDir)) return
+  const testsDir = join(workspace, 'tests')
+  mkdirSync(testsDir, { recursive: true })
+  for (const entry of readdirSync(holdoutDir)) {
+    if (entry.endsWith('.holdout.test.ts')) {
+      copyFileSync(join(holdoutDir, entry), join(testsDir, entry))
+    }
+  }
+}
+
+/** Remove staged holdout files from the workspace after verification. */
+function unstageHoldouts(workspace: string, manifest: TaskManifest): void {
+  if (manifest.verification.holdout.length === 0) return
+  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+  if (!existsSync(holdoutDir)) return
+  const testsDir = join(workspace, 'tests')
+  for (const entry of readdirSync(holdoutDir)) {
+    if (entry.endsWith('.holdout.test.ts')) {
+      rmSyncFn(join(testsDir, entry), { force: true })
+    }
+  }
+}
 
 /** Corpus state for one task. */
 export type CorpusState =
@@ -250,7 +277,13 @@ export function qualifyVerifierValidated(
 
   // Run holdout at fix commit if V3.
   if (manifest.verification.holdout.length > 0) {
-    const fixHoldout = runVerificationCommands(workspace, manifest.verification.holdout)
+    stageHoldouts(workspace, manifest)
+    let fixHoldout: boolean
+    try {
+      fixHoldout = runVerificationCommands(workspace, manifest.verification.holdout)
+    } finally {
+      unstageHoldouts(workspace, manifest)
+    }
     if (!fixHoldout) {
       return {
         taskId: manifest.taskId,
