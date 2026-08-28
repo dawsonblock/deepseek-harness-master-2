@@ -67,6 +67,7 @@ import { TASK_CORPUS } from './v019-task-corpus.ts'
 
 interface Checkpoint {
   experimentId: string
+  benchmarkEligible: boolean
   startedAt: string
   updatedAt: string
   completedTaskIds: string[]
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
   const maxTasksIdx = args.indexOf('--max-tasks')
   const maxTasks = maxTasksIdx >= 0 ? parseInt(args[maxTasksIdx + 1] ?? '75', 10) : 75
   const isB0 = args.includes('--b0')
+  const testCheckpoint = args.includes('--test-checkpoint')
   const benchmarkEligible = !isB0
 
   if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === '') {
@@ -139,6 +141,13 @@ async function main(): Promise<void> {
 
   // Load checkpoint for resumption
   const checkpoint = await loadCheckpoint()
+  if (checkpoint !== undefined && checkpoint.benchmarkEligible !== benchmarkEligible) {
+    process.stderr.write(
+      `FATAL: checkpoint benchmarkEligible=${checkpoint.benchmarkEligible} does not match run benchmarkEligible=${benchmarkEligible}\n` +
+      'Delete the checkpoint to start a new run, or use the matching mode.\n',
+    )
+    return
+  }
   const completedTaskIds = new Set(checkpoint?.completedTaskIds ?? [])
   const trajectories: TaskTrajectory[] = checkpoint?.trajectories ?? []
 
@@ -214,6 +223,7 @@ async function main(): Promise<void> {
       // Checkpoint after each task
       await saveCheckpoint({
         experimentId: experimentManifest.experimentId,
+        benchmarkEligible,
         startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         completedTaskIds: [...completedTaskIds],
@@ -233,6 +243,7 @@ async function main(): Promise<void> {
       completedTaskIds.add(taskManifest.taskId)
       await saveCheckpoint({
         experimentId: experimentManifest.experimentId,
+        benchmarkEligible,
         startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         completedTaskIds: [...completedTaskIds],
@@ -242,6 +253,86 @@ async function main(): Promise<void> {
       if (workspace !== undefined) {
         await cleanupWorkspace(workspace)
       }
+    }
+  }
+
+  // Checkpoint/resume validation: verify that reloading the checkpoint
+  // produces the same state without duplicate work or data loss.
+  if (testCheckpoint) {
+    process.stderr.write('\n--- CHECKPOINT/RESUME TEST ---\n')
+    const reloaded = await loadCheckpoint()
+    if (reloaded === undefined) {
+      process.stderr.write('FAIL: checkpoint not found after save\n')
+      process.exit(1)
+    }
+    const reloadedIds = new Set(reloaded.completedTaskIds)
+    const reloadedTrajectories = reloaded.trajectories
+    let checkpointErrors = 0
+
+    // Same task identities
+    if (reloadedIds.size !== completedTaskIds.size) {
+      process.stderr.write(`FAIL: task count mismatch (${reloadedIds.size} vs ${completedTaskIds.size})\n`)
+      checkpointErrors++
+    }
+    for (const id of completedTaskIds) {
+      if (!reloadedIds.has(id)) {
+        process.stderr.write(`FAIL: task ${id} missing from reloaded checkpoint\n`)
+        checkpointErrors++
+      }
+    }
+
+    // Same trajectory count
+    if (reloadedTrajectories.length !== trajectories.length) {
+      process.stderr.write(`FAIL: trajectory count mismatch (${reloadedTrajectories.length} vs ${trajectories.length})\n`)
+      checkpointErrors++
+    }
+
+    // Same accumulated cost
+    const reloadedCost = reloadedTrajectories.reduce((s, t) => s + t.totalCostUsd, 0)
+    const originalCost = trajectories.reduce((s, t) => s + t.totalCostUsd, 0)
+    if (Math.abs(reloadedCost - originalCost) > 1e-12) {
+      process.stderr.write(`FAIL: cost mismatch ($${reloadedCost.toFixed(12)} vs $${originalCost.toFixed(12)})\n`)
+      checkpointErrors++
+    }
+
+    // No duplicate task IDs in trajectories
+    const trajectoryIds = reloadedTrajectories.map(t => t.taskId)
+    const uniqueIds = new Set(trajectoryIds)
+    if (uniqueIds.size !== trajectoryIds.length) {
+      process.stderr.write(`FAIL: duplicate task IDs in trajectories (${trajectoryIds.length - uniqueIds.size} duplicates)\n`)
+      checkpointErrors++
+    }
+
+    // Same experiment ID
+    if (reloaded.experimentId !== experimentManifest.experimentId) {
+      process.stderr.write(`FAIL: experiment ID mismatch (${reloaded.experimentId} vs ${experimentManifest.experimentId})\n`)
+      checkpointErrors++
+    }
+
+    // Same benchmarkEligible
+    if (reloaded.benchmarkEligible !== benchmarkEligible) {
+      process.stderr.write(`FAIL: benchmarkEligible mismatch (${reloaded.benchmarkEligible} vs ${benchmarkEligible})\n`)
+      checkpointErrors++
+    }
+
+    // All trajectories have terminal outcomes
+    for (const t of reloadedTrajectories) {
+      if (t.terminalOutcome.length === 0) {
+        process.stderr.write(`FAIL: task ${t.taskId} missing terminal outcome\n`)
+        checkpointErrors++
+      }
+    }
+
+    if (checkpointErrors === 0) {
+      process.stderr.write('PASS: checkpoint/resume integrity verified\n')
+      process.stderr.write(`  Tasks: ${reloadedIds.size}\n`)
+      process.stderr.write(`  Trajectories: ${reloadedTrajectories.length}\n`)
+      process.stderr.write(`  Total cost: $${reloadedCost.toFixed(6)}\n`)
+      process.stderr.write('--- END CHECKPOINT/RESUME TEST ---\n')
+    } else {
+      process.stderr.write(`FAIL: ${checkpointErrors} checkpoint/resume errors\n`)
+      process.stderr.write('--- END CHECKPOINT/RESUME TEST ---\n')
+      process.exit(1)
     }
   }
 
@@ -281,6 +372,7 @@ async function generateReport(
     `Source commit: ${manifest.sourceCommit.slice(0, 12)}`,
     `Frozen v0.18 tag: ${manifest.frozenV018Tag}`,
     `Manifest hash: ${manifest.manifestHash}`,
+    `Benchmark eligible: ${manifest.benchmarkEligible}`,
     `Generated: ${new Date().toISOString()}`,
     '',
     '## Summary',
@@ -288,6 +380,8 @@ async function generateReport(
     '| Metric | Value |',
     '|--------|-------|',
     `| Tasks | ${metrics.taskCount} |`,
+    `| Evaluated tasks | ${metrics.evaluatedTaskCount} |`,
+    `| Infra failures | ${metrics.infraFailureCount} |`,
     `| Verified task rate | ${(metrics.verifiedTaskRate * 100).toFixed(1)}% |`,
     `| One-shot Flash rate | ${(metrics.oneShotFlashRate * 100).toFixed(1)}% |`,
     `| Repair rescue rate | ${(metrics.repairRescueRate * 100).toFixed(1)}% |`,
@@ -303,6 +397,8 @@ async function generateReport(
     `| Latency P95 | ${metrics.latencyP95}ms |`,
     `| Budget stop rate | ${(metrics.budgetStopRate * 100).toFixed(1)}% |`,
     `| Provider failure rate | ${(metrics.providerFailureRate * 100).toFixed(1)}% |`,
+    `| Reference-fix file miss rate | ${(metrics.referenceFixFileMissRate * 100).toFixed(1)}% |`,
+    `| Reference-fix file inspection rate | ${(metrics.referenceFixFileInspectionRate * 100).toFixed(1)}% |`,
     `| Cache hit % | ${(metrics.cacheHitPercentage * 100).toFixed(1)}% |`,
     `| Flash cost share | ${(metrics.flashCostShare * 100).toFixed(1)}% |`,
     `| Pro cost share | ${(metrics.proCostShare * 100).toFixed(1)}% |`,

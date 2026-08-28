@@ -24,6 +24,7 @@ export const TASK_CORPUS: TaskManifest[] = [
   buildTaskManifest({
     taskId: 'ts-utils-bug-001',
     category: 'bug-fix',
+    benchmarkEligible: false,
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
@@ -50,6 +51,7 @@ export const TASK_CORPUS: TaskManifest[] = [
   buildTaskManifest({
     taskId: 'ts-math-bug-001',
     category: 'bug-fix',
+    benchmarkEligible: false,
     repository: {
       name: 'ts-math',
       url: `${REPO_BASE}/ts-math`,
@@ -76,6 +78,7 @@ export const TASK_CORPUS: TaskManifest[] = [
   buildTaskManifest({
     taskId: 'ts-string-bug-001',
     category: 'bug-fix',
+    benchmarkEligible: false,
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
@@ -102,6 +105,7 @@ export const TASK_CORPUS: TaskManifest[] = [
   buildTaskManifest({
     taskId: 'ts-validate-feature-001',
     category: 'multi-file-feature',
+    benchmarkEligible: false,
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
@@ -128,6 +132,7 @@ export const TASK_CORPUS: TaskManifest[] = [
   buildTaskManifest({
     taskId: 'ts-events-feature-001',
     category: 'multi-file-feature',
+    benchmarkEligible: false,
     repository: {
       name: 'ts-events',
       url: `${REPO_BASE}/ts-events`,

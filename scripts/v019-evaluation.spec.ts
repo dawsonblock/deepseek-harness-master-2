@@ -87,6 +87,7 @@ describe('v019-task-manifest', () => {
     const base = {
       taskId: 'test-001',
       category: 'bug-fix' as const,
+      benchmarkEligible: true,
       repository: {
         name: 'test-repo',
         url: 'file:///tmp/test',
@@ -117,6 +118,7 @@ describe('v019-task-manifest', () => {
     const m = buildTaskManifest({
       taskId: 'test-002',
       category: 'bug-fix',
+      benchmarkEligible: true,
       repository: {
         name: 'test-repo',
         url: 'file:///tmp/test',
@@ -145,6 +147,7 @@ describe('v019-task-manifest', () => {
     const m = buildTaskManifest({
       taskId: '',
       category: 'bug-fix',
+      benchmarkEligible: true,
       repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
       repoSize: 'small',
       task: { title: 't', description: 'd', source: 'synthetic' },
@@ -164,6 +167,7 @@ describe('v019-task-manifest', () => {
     const m = buildTaskManifest({
       taskId: 'test-003',
       category: 'bug-fix',
+      benchmarkEligible: true,
       repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
       repoSize: 'small',
       task: { title: 't', description: 'd', source: 'synthetic' },
@@ -233,6 +237,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
     }],
     changedFiles: ['src/index.ts'],
     referenceFixFilesInspected: [],
+    referenceFixFilesModified: [],
     rollbackUsed: false,
     aborted: false,
     abortReason: undefined,
@@ -321,6 +326,7 @@ describe('v019-failure-taxonomy', () => {
       terminalOutcome: 'failed-no-rescue',
       failureCategory: undefined,
       referenceFixFilesInspected: [],
+      referenceFixFilesModified: [],
       timestamp: '2026-08-28T00:00:00.000Z',
       ...overrides,
     }
@@ -463,6 +469,45 @@ describe('v019 B0 vs benchmark separation', () => {
     expect(b0.experimentId).not.toBe(bench.experimentId)
     expect(b0.manifestHash).not.toBe(bench.manifestHash)
   })
+
+  it('task manifest carries benchmarkEligible', () => {
+    const m = buildTaskManifest({
+      taskId: 'test-bm',
+      category: 'bug-fix',
+      benchmarkEligible: false,
+      repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
+      repoSize: 'small',
+      task: { title: 't', description: 'd', source: 'synthetic' },
+      verification: {
+        build: { command: 'npm run build', expectedExitCode: 0 },
+        diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+        holdout: [],
+        strength: 'V2',
+      },
+      limits: { ...FROZEN_V018_LIMITS },
+    })
+    expect(m.benchmarkEligible).toBe(false)
+  })
+
+  it('benchmarkEligible is included in manifest hash', () => {
+    const base = {
+      taskId: 'test-hash',
+      category: 'bug-fix' as const,
+      repoSize: 'small' as const,
+      repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
+      task: { title: 't', description: 'd', source: 'synthetic' as const },
+      verification: {
+        build: { command: 'npm run build', expectedExitCode: 0 },
+        diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+        holdout: [] as readonly { command: string; expectedExitCode: number }[],
+        strength: 'V2' as const,
+      },
+      limits: { ...FROZEN_V018_LIMITS },
+    }
+    const eligible = buildTaskManifest({ ...base, benchmarkEligible: true })
+    const ineligible = buildTaskManifest({ ...base, benchmarkEligible: false })
+    expect(eligible.manifestHash).not.toBe(ineligible.manifestHash)
+  })
 })
 
 describe('v019 metrics reproducibility', () => {
@@ -497,7 +542,7 @@ describe('v019 metrics reproducibility', () => {
     expect(metrics.verifiedTaskRate).toBe(1.0)
   })
 
-  it('context discovery failure rate is computed', () => {
+  it('reference-fix file miss rate is computed for failed tasks', () => {
     const trajectories = [
       makeTrajectory({
         taskId: 't1',
@@ -515,6 +560,26 @@ describe('v019 metrics reproducibility', () => {
       }),
     ]
     const metrics = computeMetrics(trajectories)
-    expect(metrics.contextDiscoveryFailureRate).toBe(0.5)
+    expect(metrics.referenceFixFileMissRate).toBe(0.5)
+  })
+
+  it('reference-fix file inspection rate is computed across all tasks with reference', () => {
+    const trajectories = [
+      makeTrajectory({
+        taskId: 't1',
+        finalVerified: true,
+        referenceFixCommit: 'def456',
+        referenceFixFilesInspected: ['src/index.ts'],
+      }),
+      makeTrajectory({
+        taskId: 't2',
+        finalVerified: false,
+        modelCapabilityStatus: 'FAIL',
+        referenceFixCommit: 'def789',
+        referenceFixFilesInspected: [],
+      }),
+    ]
+    const metrics = computeMetrics(trajectories)
+    expect(metrics.referenceFixFileInspectionRate).toBe(0.5)
   })
 })

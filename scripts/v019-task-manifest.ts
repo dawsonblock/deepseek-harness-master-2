@@ -39,6 +39,7 @@ export interface VerificationCommand {
 export interface TaskManifest {
   readonly taskId: string
   readonly category: TaskCategory
+  readonly benchmarkEligible: boolean
   readonly repository: {
     readonly name: string
     readonly url: string
@@ -78,6 +79,7 @@ export function computeTaskManifestHash(fields: Omit<TaskManifest, 'manifestHash
   const manifestContent = [
     fields.taskId,
     fields.category,
+    String(fields.benchmarkEligible),
     fields.repository.name,
     fields.repository.url,
     fields.repository.baseCommit,

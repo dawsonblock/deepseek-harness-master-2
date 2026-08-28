@@ -78,6 +78,8 @@ export interface TaskTrajectory {
   readonly changedFiles: readonly string[]
   /** Files from the reference fix commit that the agent inspected. Empty if no reference fix exists. */
   readonly referenceFixFilesInspected: readonly string[]
+  /** Files from the reference fix commit that the agent modified. Empty if no reference fix exists. */
+  readonly referenceFixFilesModified: readonly string[]
   readonly rollbackUsed: boolean
   readonly aborted: boolean
   readonly abortReason: string | undefined
@@ -163,6 +165,8 @@ export async function runTaskTrajectory(
 
   const allFilesInspected = collectFilesInspected(workspace)
   const referenceFixFilesInspected = referenceFixFiles.filter(f => allFilesInspected.includes(f))
+  const changedFilesList = getChangedFiles(workspace)
+  const referenceFixFilesModified = referenceFixFiles.filter(f => changedFilesList.includes(f))
 
   const attempts: AttemptTrajectory[] = loopResult.attempts.map(a => ({
     attempt: a.attempt,
@@ -222,6 +226,7 @@ export async function runTaskTrajectory(
     attempts,
     changedFiles,
     referenceFixFilesInspected,
+    referenceFixFilesModified,
     rollbackUsed: false,
     aborted: loopResult.aborted,
     abortReason: loopResult.abortReason?.kind,
@@ -272,6 +277,7 @@ export function buildInfraFailureTrajectory(
     attempts: [],
     changedFiles: [],
     referenceFixFilesInspected: [],
+    referenceFixFilesModified: [],
     rollbackUsed: false,
     aborted: true,
     abortReason: failureReason,

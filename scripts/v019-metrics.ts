@@ -44,7 +44,8 @@ export interface MetricsReport {
   readonly budgetStopRate: number
   readonly replayMismatchRate: number
   readonly providerFailureRate: number
-  readonly contextDiscoveryFailureRate: number
+  readonly referenceFixFileMissRate: number
+  readonly referenceFixFileInspectionRate: number
   readonly flashCostShare: number
   readonly proCostShare: number
   readonly cacheHitPercentage: number
@@ -110,15 +111,25 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     return flashFingerprints.length > 1 && unique.size === 1
   })
 
-  // Context discovery failure: failed task with a reference fix where the
-  // agent never inspected any file from the reference fix.
+  // Reference-fix file miss: failed task with a reference fix where the
+  // agent never inspected any file from the reference fix. This is a raw
+  // proxy, not a definitive context-discovery failure — manual forensic
+  // review is needed to promote a subset to genuine context failures.
   const failedWithReference = evaluated.filter(t =>
     !t.finalVerified &&
-    t.referenceFixCommit !== undefined &&
-    t.referenceFixFilesInspected !== undefined,
+    t.referenceFixCommit !== undefined,
   )
-  const contextDiscoveryFailures = failedWithReference.filter(t =>
+  const referenceFixFileMisses = failedWithReference.filter(t =>
     t.referenceFixFilesInspected.length === 0,
+  )
+
+  // Reference-fix file inspection rate: across all tasks with a reference
+  // fix, the fraction where the agent inspected at least one reference file.
+  const tasksWithReference = evaluated.filter(t =>
+    t.referenceFixCommit !== undefined,
+  )
+  const referenceFixFileInspected = tasksWithReference.filter(t =>
+    t.referenceFixFilesInspected.length > 0,
   )
 
   const totalCost = evaluated.reduce((s, t) => s + t.totalCostUsd, 0)
@@ -165,8 +176,11 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     budgetStopRate: evalN > 0 ? budgetStops.length / evalN : 0,
     replayMismatchRate: 0,
     providerFailureRate: evalN > 0 ? providerFailures.length / evalN : 0,
-    contextDiscoveryFailureRate: failedWithReference.length > 0
-      ? contextDiscoveryFailures.length / failedWithReference.length
+    referenceFixFileMissRate: failedWithReference.length > 0
+      ? referenceFixFileMisses.length / failedWithReference.length
+      : 0,
+    referenceFixFileInspectionRate: tasksWithReference.length > 0
+      ? referenceFixFileInspected.length / tasksWithReference.length
       : 0,
     flashCostShare: totalCost > 0 ? flashCost / totalCost : 0,
     proCostShare: totalCost > 0 ? proCost / totalCost : 0,
@@ -237,7 +251,8 @@ function emptyMetrics(): MetricsReport {
     meanCostPerVerifiedTask: 0, medianCostPerVerifiedTask: 0,
     latencyP50: 0, latencyP75: 0, latencyP90: 0, latencyP95: 0, latencyMax: 0,
     sameFailureEscalationRate: 0, rollbackRate: 0, budgetStopRate: 0,
-    replayMismatchRate: 0, providerFailureRate: 0, contextDiscoveryFailureRate: 0,
+    replayMismatchRate: 0, providerFailureRate: 0,
+    referenceFixFileMissRate: 0, referenceFixFileInspectionRate: 0,
     flashCostShare: 0, proCostShare: 0, cacheHitPercentage: 0,
     incrementalRepairCost: 0, categoryBreakdown: [],
   }
