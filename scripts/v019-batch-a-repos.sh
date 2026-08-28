@@ -1255,9 +1255,49 @@ EOF
 export type Reducer<S, A> = (state: S, action: A) => S
 EOF
 
+  # Source file that uses Reducer with undefined — fails at base, passes at fix
+  cat > "$dir/src/createStore.ts" <<'EOF'
+import type { Reducer } from './types.js'
+
+export function createStore<S, A>(reducer: Reducer<S, A>, initial: S | undefined): S {
+  return reducer(initial, {} as A)
+}
+EOF
+
   cat > "$dir/src/index.ts" <<'EOF'
 export { Store } from './Store.js'
 export type { Reducer } from './types.js'
+export { createStore } from './createStore.js'
+EOF
+
+  # Type-level test that fails at base (Reducer doesn't accept undefined)
+  cat > "$dir/tests/types.test.ts" <<'EOF'
+import { describe, it, expect } from 'vitest'
+import type { Reducer } from '../src/types.js'
+
+// This test verifies the Reducer type accepts undefined initial state.
+// At the base commit, the Reducer type is (state: S, action: A) => S
+// which does not accept undefined, causing a type error.
+interface State { count: number }
+type Action = { type: 'increment' } | { type: 'reset' }
+
+const reducer: Reducer<State, Action> = (state, action) => {
+  if (state === undefined) return { count: 0 }
+  switch (action.type) {
+    case 'increment': return { count: state.count + 1 }
+    case 'reset': return { count: 0 }
+  }
+}
+
+describe('Reducer type', () => {
+  it('accepts undefined initial state', () => {
+    expect(reducer(undefined, { type: 'increment' })).toEqual({ count: 0 })
+  })
+
+  it('handles actions with defined state', () => {
+    expect(reducer({ count: 5 }, { type: 'increment' })).toEqual({ count: 6 })
+  })
+})
 EOF
 
   cat > "$dir/tests/Store.test.ts" <<'EOF'

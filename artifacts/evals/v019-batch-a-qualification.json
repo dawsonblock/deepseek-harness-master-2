@@ -1,0 +1,683 @@
+{
+  "qualifiedAt": "2026-08-28T05:28:20.857Z",
+  "totalTasks": 25,
+  "frozen": 25,
+  "rejected": 0,
+  "results": [
+    {
+      "taskId": "batch-a-ts-utils-debounce-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:26:38.830Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-utils-chunk-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:26:42.915Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-utils-type-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:26:46.322Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-utils-binarysearch-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:26:51.241Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-validate-isurl-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:26:55.595Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-validate-phone-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:26:59.970Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-validate-refactor-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:03.747Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-validate-schema-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:08.364Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-collections-linkedlist-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:12.917Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-collections-quicksort-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:17.372Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-collections-stack-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:21.906Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-collections-hashmap-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:25.604Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-http-headers-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:30.112Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-http-interceptor-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:33.875Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-http-deps-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:37.617Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-string-truncate-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:42.256Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-string-padstart-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:46.141Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-string-template-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:49.841Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-string-slugify-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:54.313Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-state-subscribe-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:27:58.737Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-state-selector-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:28:03.343Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-state-type-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:28:08.201Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-date-format-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:28:12.552Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-date-dst-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:28:16.205Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    },
+    {
+      "taskId": "batch-a-ts-date-leapyear-001",
+      "currentState": "FROZEN",
+      "qualifiedAt": "2026-08-28T05:28:20.737Z",
+      "history": [
+        {
+          "gate": "REPRODUCED",
+          "passed": true,
+          "reason": "Repository cloned, base and reference commits verified"
+        },
+        {
+          "gate": "VERIFIER_VALIDATED",
+          "passed": true,
+          "reason": "Diagnostic fails at base, passes at fix; holdout validated"
+        },
+        {
+          "gate": "LEAKAGE_CHECKED",
+          "passed": true,
+          "reason": "No reference fix commit, file paths, or solution patterns in task description"
+        },
+        {
+          "gate": "FROZEN",
+          "passed": true,
+          "reason": "Manifest hashed, benchmarkEligible=true, ready for live run"
+        }
+      ]
+    }
+  ]
+}

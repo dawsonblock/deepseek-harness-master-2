@@ -212,6 +212,17 @@ export function qualifyVerifierValidated(
       `git checkout ${manifest.repository.referenceFixCommit}`,
       { cwd: workspace, encoding: 'utf8', timeout: 30000 },
     )
+    // Reinstall dependencies at the fix commit — package.json may have changed.
+    try {
+      execSync('npm install --silent', {
+        cwd: workspace,
+        encoding: 'utf8',
+        timeout: 120000,
+        stdio: 'pipe',
+      })
+    } catch {
+      // Non-fatal: some tasks may not need install changes.
+    }
   } catch (error: unknown) {
     return {
       taskId: manifest.taskId,

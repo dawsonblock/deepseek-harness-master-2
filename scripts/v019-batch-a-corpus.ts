@@ -57,8 +57,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'de8780aff3b265c7a268b59eefc83ce6470fb30f',
-      referenceFixCommit: '13b92c953ef84d14d56bbdbedc9d1ceca8d0d74a',
+      baseCommit: 'bc257873fa5b54343d983977fff9119a875b1743',
+      referenceFixCommit: 'd381d6f8311d4ac9f27d5b860025cd0a765dbcdf',
     },
     repoSize: 'small',
     task: {
@@ -82,8 +82,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'de8780aff3b265c7a268b59eefc83ce6470fb30f',
-      referenceFixCommit: '13b92c953ef84d14d56bbdbedc9d1ceca8d0d74a',
+      baseCommit: 'bc257873fa5b54343d983977fff9119a875b1743',
+      referenceFixCommit: 'd381d6f8311d4ac9f27d5b860025cd0a765dbcdf',
     },
     repoSize: 'small',
     task: {
@@ -107,8 +107,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'de8780aff3b265c7a268b59eefc83ce6470fb30f',
-      referenceFixCommit: '13b92c953ef84d14d56bbdbedc9d1ceca8d0d74a',
+      baseCommit: 'bc257873fa5b54343d983977fff9119a875b1743',
+      referenceFixCommit: 'd381d6f8311d4ac9f27d5b860025cd0a765dbcdf',
     },
     repoSize: 'small',
     task: {
@@ -132,8 +132,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'de8780aff3b265c7a268b59eefc83ce6470fb30f',
-      referenceFixCommit: '13b92c953ef84d14d56bbdbedc9d1ceca8d0d74a',
+      baseCommit: 'bc257873fa5b54343d983977fff9119a875b1743',
+      referenceFixCommit: 'd381d6f8311d4ac9f27d5b860025cd0a765dbcdf',
     },
     repoSize: 'small',
     task: {
@@ -158,8 +158,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '50d537541f19e3bc2a596c2fc7aae6b4ac2fefe9',
-      referenceFixCommit: '51f6b65fc177ccfc30f010c136260cb733055dc4',
+      baseCommit: '891c0bfbde579feb4772b6479296183facf7e359',
+      referenceFixCommit: 'b12f9608fbf3900248d5d8b173532a1e7660bc03',
     },
     repoSize: 'small',
     task: {
@@ -183,8 +183,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '50d537541f19e3bc2a596c2fc7aae6b4ac2fefe9',
-      referenceFixCommit: '51f6b65fc177ccfc30f010c136260cb733055dc4',
+      baseCommit: '891c0bfbde579feb4772b6479296183facf7e359',
+      referenceFixCommit: 'b12f9608fbf3900248d5d8b173532a1e7660bc03',
     },
     repoSize: 'small',
     task: {
@@ -208,8 +208,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '50d537541f19e3bc2a596c2fc7aae6b4ac2fefe9',
-      referenceFixCommit: '51f6b65fc177ccfc30f010c136260cb733055dc4',
+      baseCommit: '891c0bfbde579feb4772b6479296183facf7e359',
+      referenceFixCommit: 'b12f9608fbf3900248d5d8b173532a1e7660bc03',
     },
     repoSize: 'small',
     task: {
@@ -233,8 +233,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '50d537541f19e3bc2a596c2fc7aae6b4ac2fefe9',
-      referenceFixCommit: '51f6b65fc177ccfc30f010c136260cb733055dc4',
+      baseCommit: '891c0bfbde579feb4772b6479296183facf7e359',
+      referenceFixCommit: 'b12f9608fbf3900248d5d8b173532a1e7660bc03',
     },
     repoSize: 'small',
     task: {
@@ -259,8 +259,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: '74881911ba93f208bddda02b14b018f144e9a243',
-      referenceFixCommit: '0e42c0c1c8ba68fe99bda23beffcdc6bb3b2e38d',
+      baseCommit: '2e88f5a3972bb69f14aee3d0a8ed6b9af41a598d',
+      referenceFixCommit: 'bad10a0c9381277f072a4c5d99e9ae6b7d65d16d',
     },
     repoSize: 'small',
     task: {
@@ -284,8 +284,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: '74881911ba93f208bddda02b14b018f144e9a243',
-      referenceFixCommit: '0e42c0c1c8ba68fe99bda23beffcdc6bb3b2e38d',
+      baseCommit: '2e88f5a3972bb69f14aee3d0a8ed6b9af41a598d',
+      referenceFixCommit: 'bad10a0c9381277f072a4c5d99e9ae6b7d65d16d',
     },
     repoSize: 'small',
     task: {
@@ -309,8 +309,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: '74881911ba93f208bddda02b14b018f144e9a243',
-      referenceFixCommit: '0e42c0c1c8ba68fe99bda23beffcdc6bb3b2e38d',
+      baseCommit: '2e88f5a3972bb69f14aee3d0a8ed6b9af41a598d',
+      referenceFixCommit: 'bad10a0c9381277f072a4c5d99e9ae6b7d65d16d',
     },
     repoSize: 'small',
     task: {
@@ -334,8 +334,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: '74881911ba93f208bddda02b14b018f144e9a243',
-      referenceFixCommit: '0e42c0c1c8ba68fe99bda23beffcdc6bb3b2e38d',
+      baseCommit: '2e88f5a3972bb69f14aee3d0a8ed6b9af41a598d',
+      referenceFixCommit: 'bad10a0c9381277f072a4c5d99e9ae6b7d65d16d',
     },
     repoSize: 'small',
     task: {
@@ -360,8 +360,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: 'a3c92155ef73b87feb380db271ae6f6bd5ee9b92',
-      referenceFixCommit: '6e32aa653fd21d1a051221228e632d216c14470e',
+      baseCommit: '1504395f8b4d884eea6a6bd065b0885f02b6fd89',
+      referenceFixCommit: '5b9994e0192d78ef5e09720ccde113bfa99cad57',
     },
     repoSize: 'small',
     task: {
@@ -385,8 +385,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: 'a3c92155ef73b87feb380db271ae6f6bd5ee9b92',
-      referenceFixCommit: '6e32aa653fd21d1a051221228e632d216c14470e',
+      baseCommit: '1504395f8b4d884eea6a6bd065b0885f02b6fd89',
+      referenceFixCommit: '5b9994e0192d78ef5e09720ccde113bfa99cad57',
     },
     repoSize: 'small',
     task: {
@@ -410,8 +410,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: 'a3c92155ef73b87feb380db271ae6f6bd5ee9b92',
-      referenceFixCommit: '6e32aa653fd21d1a051221228e632d216c14470e',
+      baseCommit: '1504395f8b4d884eea6a6bd065b0885f02b6fd89',
+      referenceFixCommit: '5b9994e0192d78ef5e09720ccde113bfa99cad57',
     },
     repoSize: 'small',
     task: {
@@ -436,8 +436,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '82ecba645b62a5ec619b94886c228f18ca5160d9',
-      referenceFixCommit: 'a1b85df3cfe6c1f64f967b90722ace83f139f73e',
+      baseCommit: '1bacb05dd4f3f4fb53482cbf7a2e63811a7537a7',
+      referenceFixCommit: '068b29f27abfa33692a2070aba5ba99d54df971d',
     },
     repoSize: 'small',
     task: {
@@ -461,8 +461,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '82ecba645b62a5ec619b94886c228f18ca5160d9',
-      referenceFixCommit: 'a1b85df3cfe6c1f64f967b90722ace83f139f73e',
+      baseCommit: '1bacb05dd4f3f4fb53482cbf7a2e63811a7537a7',
+      referenceFixCommit: '068b29f27abfa33692a2070aba5ba99d54df971d',
     },
     repoSize: 'small',
     task: {
@@ -486,8 +486,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '82ecba645b62a5ec619b94886c228f18ca5160d9',
-      referenceFixCommit: 'a1b85df3cfe6c1f64f967b90722ace83f139f73e',
+      baseCommit: '1bacb05dd4f3f4fb53482cbf7a2e63811a7537a7',
+      referenceFixCommit: '068b29f27abfa33692a2070aba5ba99d54df971d',
     },
     repoSize: 'small',
     task: {
@@ -511,8 +511,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '82ecba645b62a5ec619b94886c228f18ca5160d9',
-      referenceFixCommit: 'a1b85df3cfe6c1f64f967b90722ace83f139f73e',
+      baseCommit: '1bacb05dd4f3f4fb53482cbf7a2e63811a7537a7',
+      referenceFixCommit: '068b29f27abfa33692a2070aba5ba99d54df971d',
     },
     repoSize: 'small',
     task: {
@@ -537,8 +537,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-state',
       url: `${REPO_BASE}/ts-state`,
-      baseCommit: 'd5fe44ee7a44308cdb8631030761e3fa7b099f75',
-      referenceFixCommit: 'd54bb48ce2ac35661313d8473f62e2c24a11d13a',
+      baseCommit: '42e7ae30b82ff4ec1e9fa4c65b00eb40b17eec0b',
+      referenceFixCommit: '59c80573fdcd4c12c2bfba00cb3668973766c8e9',
     },
     repoSize: 'small',
     task: {
@@ -562,8 +562,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-state',
       url: `${REPO_BASE}/ts-state`,
-      baseCommit: 'd5fe44ee7a44308cdb8631030761e3fa7b099f75',
-      referenceFixCommit: 'd54bb48ce2ac35661313d8473f62e2c24a11d13a',
+      baseCommit: '42e7ae30b82ff4ec1e9fa4c65b00eb40b17eec0b',
+      referenceFixCommit: '59c80573fdcd4c12c2bfba00cb3668973766c8e9',
     },
     repoSize: 'small',
     task: {
@@ -587,8 +587,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-state',
       url: `${REPO_BASE}/ts-state`,
-      baseCommit: 'd5fe44ee7a44308cdb8631030761e3fa7b099f75',
-      referenceFixCommit: 'd54bb48ce2ac35661313d8473f62e2c24a11d13a',
+      baseCommit: '42e7ae30b82ff4ec1e9fa4c65b00eb40b17eec0b',
+      referenceFixCommit: '59c80573fdcd4c12c2bfba00cb3668973766c8e9',
     },
     repoSize: 'small',
     task: {
@@ -613,8 +613,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-date',
       url: `${REPO_BASE}/ts-date`,
-      baseCommit: 'f7b95e214b228cbdcb53b959abae3dc154beb952',
-      referenceFixCommit: 'fd01e23789b65db988a30b448eb6a5f5f20a1f5b',
+      baseCommit: '8c4c4a838f30cdace3ba38a76e6cf321a7324df9',
+      referenceFixCommit: '572e9e3396b99f1d1b9b31c72c3f9f12592528b8',
     },
     repoSize: 'small',
     task: {
@@ -638,8 +638,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-date',
       url: `${REPO_BASE}/ts-date`,
-      baseCommit: 'f7b95e214b228cbdcb53b959abae3dc154beb952',
-      referenceFixCommit: 'fd01e23789b65db988a30b448eb6a5f5f20a1f5b',
+      baseCommit: '8c4c4a838f30cdace3ba38a76e6cf321a7324df9',
+      referenceFixCommit: '572e9e3396b99f1d1b9b31c72c3f9f12592528b8',
     },
     repoSize: 'small',
     task: {
@@ -663,8 +663,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-date',
       url: `${REPO_BASE}/ts-date`,
-      baseCommit: 'f7b95e214b228cbdcb53b959abae3dc154beb952',
-      referenceFixCommit: 'fd01e23789b65db988a30b448eb6a5f5f20a1f5b',
+      baseCommit: '8c4c4a838f30cdace3ba38a76e6cf321a7324df9',
+      referenceFixCommit: '572e9e3396b99f1d1b9b31c72c3f9f12592528b8',
     },
     repoSize: 'small',
     task: {
@@ -684,21 +684,21 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
 
 /** Category quota targets for Batch A. */
 export const BATCH_A_QUOTAS: Record<string, number> = {
-  'bug-fix': 4,
-  'failing-test': 4,
-  'type-build-error': 3,
+  'bug-fix': 7,
+  'failing-test': 3,
+  'type-build-error': 2,
   'multi-file-feature': 3,
   'refactor': 3,
   'api-integration': 2,
   'repo-understanding': 2,
   'algorithm': 2,
-  'config-deps': 2,
+  'config-deps': 1,
 }
 
 /** Verification strength targets for Batch A. */
 export const BATCH_A_STRENGTH_QUOTAS: Record<string, number> = {
-  V3: 12,
-  V2: 11,
-  V1: 2,
+  V3: 15,
+  V2: 9,
+  V1: 1,
   V0: 0,
 }
