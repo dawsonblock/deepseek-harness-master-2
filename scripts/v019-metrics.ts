@@ -46,6 +46,7 @@ export interface MetricsReport {
   readonly providerFailureRate: number
   readonly referenceFixFileMissRate: number
   readonly referenceFixFileInspectionRate: number
+  readonly referenceFixFileInspectionRecall: number
   readonly flashCostShare: number
   readonly proCostShare: number
   readonly cacheHitPercentage: number
@@ -138,6 +139,14 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     t.referenceFixFilesInspected.length > 0,
   )
 
+  // Reference-fix file inspection recall: across all tasks with a reference
+  // fix, the average fraction of reference-fix files the agent inspected.
+  // For example, if the fix touched 4 files and the agent inspected 1,
+  // recall for that task is 0.25.
+  const recallPerTask = tasksWithReference
+    .filter(t => t.referenceFixFiles.length > 0)
+    .map(t => t.referenceFixFilesInspected.length / t.referenceFixFiles.length)
+
   const totalCost = evaluated.reduce((s, t) => s + t.totalCostUsd, 0)
   const verifiedCost = verified.reduce((s, t) => s + t.totalCostUsd, 0)
   const flashCost = evaluated.reduce((s, t) =>
@@ -187,6 +196,9 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
       : 0,
     referenceFixFileInspectionRate: tasksWithReference.length > 0
       ? referenceFixFileInspected.length / tasksWithReference.length
+      : 0,
+    referenceFixFileInspectionRecall: recallPerTask.length > 0
+      ? recallPerTask.reduce((s, r) => s + r, 0) / recallPerTask.length
       : 0,
     flashCostShare: totalCost > 0 ? flashCost / totalCost : 0,
     proCostShare: totalCost > 0 ? proCost / totalCost : 0,
@@ -259,6 +271,7 @@ function emptyMetrics(): MetricsReport {
     sameFailureEscalationRate: 0, rollbackRate: 0, budgetStopRate: 0,
     replayMismatchRate: 0, providerFailureRate: 0,
     referenceFixFileMissRate: 0, referenceFixFileInspectionRate: 0,
+    referenceFixFileInspectionRecall: 0,
     flashCostShare: 0, proCostShare: 0, cacheHitPercentage: 0,
     incrementalRepairCost: 0, categoryBreakdown: [],
   }

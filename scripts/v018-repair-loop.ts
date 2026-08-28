@@ -34,6 +34,8 @@ export interface TurnResult {
   cacheReadTokens: number
   cacheMissTokens: number
   routingDecisionId: string
+  /** Session events captured during this turn (for trajectory extraction). */
+  sessionEvents?: readonly import('@deepseek-ai/dsh-session').SessionEvent[]
 }
 
 /** Verification result for one attempt. */
@@ -81,6 +83,8 @@ export interface LoopAttempt {
   repairAction: RepairDecision['action']
   repairReason?: string | undefined
   providerFailure: ProviderFailure | undefined
+  /** Session events captured during this attempt's model turn. */
+  sessionEvents?: readonly import('@deepseek-ai/dsh-session').SessionEvent[] | undefined
 }
 
 /** One fixture's full repair-loop result. */
@@ -269,6 +273,7 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
         repairAction: 'complete',
         repairReason: 'qualification-failed',
         providerFailure: undefined,
+        sessionEvents: turnResult.sessionEvents,
       }
       attempts.push(attemptRecord)
       break
@@ -346,6 +351,7 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
         ? { repairReason: decision.reason }
         : {}),
       providerFailure: undefined,
+      sessionEvents: turnResult.sessionEvents,
     }
     attempts.push(attemptRecord)
 

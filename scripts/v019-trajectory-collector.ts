@@ -28,6 +28,11 @@ import {
 } from '@deepseek-ai/dsh-repair-controller'
 
 import {
+  extractRepositoryObservation,
+  intersectPaths,
+} from './v019-session-extraction.ts'
+
+import {
   type TurnResult,
   type VerifyResult,
   runRepairLoop,
@@ -76,6 +81,8 @@ export interface TaskTrajectory {
   readonly totalCacheMissTokens: number
   readonly attempts: readonly AttemptTrajectory[]
   readonly changedFiles: readonly string[]
+  /** All files touched by the reference fix commit. Empty if no reference fix exists. Verifier-only. */
+  readonly referenceFixFiles: readonly string[]
   /** Files from the reference fix commit that the agent inspected. Empty if no reference fix exists. */
   readonly referenceFixFilesInspected: readonly string[]
   /** Files from the reference fix commit that the agent modified. Empty if no reference fix exists. */
@@ -163,41 +170,49 @@ export async function runTaskTrajectory(
   const modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED' =
     loopResult.aborted ? 'NOT_EVALUATED' : loopResult.finalVerified ? 'PASS' : 'FAIL'
 
-  const allFilesInspected = collectFilesInspected(workspace)
-  const referenceFixFilesInspected = referenceFixFiles.filter(f => allFilesInspected.includes(f))
-  const changedFilesList = getChangedFiles(workspace)
-  const referenceFixFilesModified = referenceFixFiles.filter(f => changedFilesList.includes(f))
+  // Extract repository observations from all attempt session events.
+  const allSessionEvents = loopResult.attempts
+    .filter(a => a.sessionEvents !== undefined)
+    .flatMap(a => a.sessionEvents ?? [])
+  const observation = extractRepositoryObservation(allSessionEvents, workspace)
+  const referenceFixFilesInspected = intersectPaths(observation.filesInspected, referenceFixFiles)
+  const referenceFixFilesModified = intersectPaths(observation.filesModified, referenceFixFiles)
 
-  const attempts: AttemptTrajectory[] = loopResult.attempts.map(a => ({
-    attempt: a.attempt,
-    model: a.model,
-    routingDecisionId: a.routingDecisionId,
-    verified: a.verified,
-    diagnosticPass: a.diagnosticPass,
-    holdoutPass: a.holdoutPass,
-    failureFingerprint: a.failureFingerprint,
-    progress: a.progress,
-    usage: {
-      inputTokens: a.inputTokens,
-      outputTokens: a.outputTokens,
-      reasoningTokens: a.reasoningTokens,
-      totalTokens: a.totalTokens,
-      cacheReadTokens: a.cacheReadTokens,
-      cacheMissTokens: a.cacheMissTokens,
-    },
-    costUsd: a.costUsd,
-    latencyMs: a.latencyMs,
-    repairAction: a.repairAction,
-    repairReason: a.repairReason,
-    changedFiles: getChangedFiles(workspace),
-    toolCallCount: 0,
-    filesInspected: [],
-    terminalOutcome: a.repairAction === 'complete' && a.repairReason === 'qualification-failed'
-      ? 'qualification-failed'
-      : a.repairAction === 'complete' && a.verified
-        ? 'verified-complete'
-        : a.repairAction,
-  }))
+  const attempts: AttemptTrajectory[] = loopResult.attempts.map((a) => {
+    const attemptObservation = a.sessionEvents !== undefined
+      ? extractRepositoryObservation(a.sessionEvents, workspace)
+      : { filesInspected: [] as string[], filesModified: [] as string[], commandsExecuted: [] as string[], testsExecuted: [] as string[] }
+    return {
+      attempt: a.attempt,
+      model: a.model,
+      routingDecisionId: a.routingDecisionId,
+      verified: a.verified,
+      diagnosticPass: a.diagnosticPass,
+      holdoutPass: a.holdoutPass,
+      failureFingerprint: a.failureFingerprint,
+      progress: a.progress,
+      usage: {
+        inputTokens: a.inputTokens,
+        outputTokens: a.outputTokens,
+        reasoningTokens: a.reasoningTokens,
+        totalTokens: a.totalTokens,
+        cacheReadTokens: a.cacheReadTokens,
+        cacheMissTokens: a.cacheMissTokens,
+      },
+      costUsd: a.costUsd,
+      latencyMs: a.latencyMs,
+      repairAction: a.repairAction,
+      repairReason: a.repairReason,
+      changedFiles: getChangedFiles(workspace),
+      toolCallCount: a.sessionEvents?.filter(e => e.type === 'tool/call').length ?? 0,
+      filesInspected: attemptObservation.filesInspected,
+      terminalOutcome: a.repairAction === 'complete' && a.repairReason === 'qualification-failed'
+        ? 'qualification-failed'
+        : a.repairAction === 'complete' && a.verified
+          ? 'verified-complete'
+          : a.repairAction,
+    }
+  })
 
   return {
     taskId: manifest.taskId,
@@ -225,6 +240,7 @@ export async function runTaskTrajectory(
     totalCacheMissTokens: attempts.reduce((s, a) => s + a.usage.cacheMissTokens, 0),
     attempts,
     changedFiles,
+    referenceFixFiles,
     referenceFixFilesInspected,
     referenceFixFilesModified,
     rollbackUsed: false,
@@ -276,6 +292,7 @@ export function buildInfraFailureTrajectory(
     totalCacheMissTokens: 0,
     attempts: [],
     changedFiles: [],
+    referenceFixFiles: [],
     referenceFixFilesInspected: [],
     referenceFixFilesModified: [],
     rollbackUsed: false,
@@ -352,6 +369,7 @@ async function realTurnRunner(
     return {
       output, costUsd, latencyMs, inputTokens, outputTokens, reasoningTokens,
       totalTokens, cacheReadTokens, cacheMissTokens, routingDecisionId,
+      sessionEvents: events,
     }
   } finally {
     if (uninstallFailLoud !== undefined) uninstallFailLoud()
@@ -452,13 +470,6 @@ function getChangedFiles(workspace: string): string[] {
   } catch {
     return []
   }
-}
-
-function collectFilesInspected(_workspace: string): string[] {
-  // The harness session log records file reads/inspections. For the initial
-  // infrastructure, this returns an empty list; the full implementation will
-  // extract file-read tool calls from the session event stream.
-  return []
 }
 
 function computeTerminalOutcome(

@@ -399,6 +399,7 @@ async function generateReport(
     `| Provider failure rate | ${(metrics.providerFailureRate * 100).toFixed(1)}% |`,
     `| Reference-fix file miss rate | ${(metrics.referenceFixFileMissRate * 100).toFixed(1)}% |`,
     `| Reference-fix file inspection rate | ${(metrics.referenceFixFileInspectionRate * 100).toFixed(1)}% |`,
+    `| Reference-fix file inspection recall | ${(metrics.referenceFixFileInspectionRecall * 100).toFixed(1)}% |`,
     `| Cache hit % | ${(metrics.cacheHitPercentage * 100).toFixed(1)}% |`,
     `| Flash cost share | ${(metrics.flashCostShare * 100).toFixed(1)}% |`,
     `| Pro cost share | ${(metrics.proCostShare * 100).toFixed(1)}% |`,
