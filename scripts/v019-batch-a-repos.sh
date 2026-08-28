@@ -135,7 +135,7 @@ EOF
  * @returns array of chunks
  */
 export function chunk<T>(arr: T[], size: number): T[][] {
-  // BUG: throws on empty array because of the loop condition
+  if (arr.length === 0) throw new Error('cannot chunk empty array')
   const result: T[][] = []
   for (let i = 0; i < arr.length; i += size) {
     result.push(arr.slice(i, i + size))
@@ -631,10 +631,7 @@ export function quickSort(arr: number[]): number[] {
   const left: number[] = []
   const right: number[] = []
   for (let i = 0; i < arr.length - 1; i++) {
-    // BUG: should be arr[i] < pivot, but uses <= which is fine
-    // Actually the bug is: it skips the last element but partition
-    // logic has off-by-one for arrays with repeated elements
-    if (arr[i] <= pivot) left.push(arr[i])
+    if (arr[i] >= pivot) left.push(arr[i])
     else right.push(arr[i])
   }
   return [...quickSort(left), pivot, ...quickSort(right)]
@@ -691,11 +688,14 @@ import { describe, it, expect } from 'vitest'
 import { quickSort } from '../src/quickSort.js'
 
 describe('quickSort', () => {
-  it('sorts an array', () => {
+  it('sorts an array in ascending order', () => {
     expect(quickSort([3, 1, 2])).toEqual([1, 2, 3])
   })
   it('handles duplicates', () => {
     expect(quickSort([3, 1, 2, 1, 3])).toEqual([1, 1, 2, 3, 3])
+  })
+  it('sorts a larger array', () => {
+    expect(quickSort([5, 3, 8, 1, 9, 2, 7, 4, 6])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
   })
   it('handles single element', () => {
     expect(quickSort([1])).toEqual([1])
@@ -964,6 +964,36 @@ describe('parseHeaders', () => {
   it('handles multiple Set-Cookie headers', () => {
     const result = parseHeaders('Set-Cookie: a=1\nSet-Cookie: b=2') as Record<string, unknown>
     expect(result['Set-Cookie']).toEqual(['a=1', 'b=2'])
+  })
+})
+EOF
+
+  cat > "$dir/tests/HttpClient.test.ts" <<'EOF'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { HttpClient } from '../src/HttpClient.js'
+
+describe('HttpClient interceptors', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('calls interceptors in registration order before request', async () => {
+    const client = new HttpClient()
+    const calls: string[] = []
+    client.addInterceptor((config) => { calls.push('first'); return config })
+    client.addInterceptor((config) => { calls.push('second'); return config })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')))
+    await client.request({ url: 'http://example.com' })
+    expect(calls).toEqual(['first', 'second'])
+  })
+
+  it('passes modified config from interceptor to fetch', async () => {
+    const client = new HttpClient()
+    client.addInterceptor((config) => ({ ...config, headers: { 'X-Injected': 'yes' } }))
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    await client.request({ url: 'http://example.com' })
+    expect(fetchMock).toHaveBeenCalledWith('http://example.com', expect.objectContaining({
+      headers: { 'X-Injected': 'yes' },
+    }))
   })
 })
 EOF
@@ -1541,7 +1571,7 @@ EOF
 export function daysBetween(from: Date, to: Date): number {
   // BUG: divides by fixed 86400000 ms, doesn't account for DST
   const ms = to.getTime() - from.getTime()
-  return Math.round(ms / 86400000)
+  return Math.floor(ms / 86400000)
 }
 EOF
 
@@ -1587,6 +1617,12 @@ describe('daysBetween', () => {
 
   it('handles dates spanning a month boundary', () => {
     expect(daysBetween(new Date('2024-01-30'), new Date('2024-02-02'))).toBe(3)
+  })
+
+  it('handles dates spanning a DST spring-forward transition', () => {
+    // 2024-03-09 to 2024-03-11 spans US DST spring-forward (Mar 10).
+    // A naive ms/86400000 calculation yields 1.958 days → floor = 1 instead of 2.
+    expect(daysBetween(new Date('2024-03-09T00:00:00'), new Date('2024-03-11T00:00:00'))).toBe(2)
   })
 })
 EOF

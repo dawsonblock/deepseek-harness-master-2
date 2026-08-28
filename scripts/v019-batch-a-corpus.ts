@@ -57,8 +57,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'e5159d28a9e2e81eb399b656e4b5f8a6c8f06012',
-      referenceFixCommit: 'f1cda052d361c308f8df8d3f4a26c1535a7026cb',
+      baseCommit: '77ba0c0305446d8b62f23763e9b44b633e9eb84c',
+      referenceFixCommit: '728f2f0d381c5a651db8eabe82fbc797576d3813',
     },
     repoSize: 'small',
     task: {
@@ -68,7 +68,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/debounce.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/debounce.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -82,8 +82,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'e5159d28a9e2e81eb399b656e4b5f8a6c8f06012',
-      referenceFixCommit: 'f1cda052d361c308f8df8d3f4a26c1535a7026cb',
+      baseCommit: '77ba0c0305446d8b62f23763e9b44b633e9eb84c',
+      referenceFixCommit: '728f2f0d381c5a651db8eabe82fbc797576d3813',
     },
     repoSize: 'small',
     task: {
@@ -93,7 +93,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/chunk.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -107,8 +107,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'e5159d28a9e2e81eb399b656e4b5f8a6c8f06012',
-      referenceFixCommit: 'f1cda052d361c308f8df8d3f4a26c1535a7026cb',
+      baseCommit: '77ba0c0305446d8b62f23763e9b44b633e9eb84c',
+      referenceFixCommit: '728f2f0d381c5a651db8eabe82fbc797576d3813',
     },
     repoSize: 'small',
     task: {
@@ -132,8 +132,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'e5159d28a9e2e81eb399b656e4b5f8a6c8f06012',
-      referenceFixCommit: 'f1cda052d361c308f8df8d3f4a26c1535a7026cb',
+      baseCommit: '77ba0c0305446d8b62f23763e9b44b633e9eb84c',
+      referenceFixCommit: '728f2f0d381c5a651db8eabe82fbc797576d3813',
     },
     repoSize: 'small',
     task: {
@@ -143,7 +143,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/binarySearch.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/binarySearch.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -158,8 +158,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '9c90bed0da6cb6047500e26058cfe906c9f0720a',
-      referenceFixCommit: 'fd1877f17be97015d65824bd77d2f13b94a1590b',
+      baseCommit: '659f8f7329fb323e35ae76b5dc880caf065d27b9',
+      referenceFixCommit: '463f72adf99f5acf69db6d0a295775f7fe4fe8db',
     },
     repoSize: 'small',
     task: {
@@ -169,7 +169,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/validators.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/validators.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -183,8 +183,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '9c90bed0da6cb6047500e26058cfe906c9f0720a',
-      referenceFixCommit: 'fd1877f17be97015d65824bd77d2f13b94a1590b',
+      baseCommit: '659f8f7329fb323e35ae76b5dc880caf065d27b9',
+      referenceFixCommit: '463f72adf99f5acf69db6d0a295775f7fe4fe8db',
     },
     repoSize: 'small',
     task: {
@@ -194,7 +194,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/phone.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/phone.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -208,8 +208,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '9c90bed0da6cb6047500e26058cfe906c9f0720a',
-      referenceFixCommit: 'fd1877f17be97015d65824bd77d2f13b94a1590b',
+      baseCommit: '659f8f7329fb323e35ae76b5dc880caf065d27b9',
+      referenceFixCommit: '463f72adf99f5acf69db6d0a295775f7fe4fe8db',
     },
     repoSize: 'small',
     task: {
@@ -219,7 +219,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/phone.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -233,8 +233,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: '9c90bed0da6cb6047500e26058cfe906c9f0720a',
-      referenceFixCommit: 'fd1877f17be97015d65824bd77d2f13b94a1590b',
+      baseCommit: '659f8f7329fb323e35ae76b5dc880caf065d27b9',
+      referenceFixCommit: '463f72adf99f5acf69db6d0a295775f7fe4fe8db',
     },
     repoSize: 'small',
     task: {
@@ -244,7 +244,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/phone.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/schema.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -259,8 +259,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: 'd2ccd75229ac016fce37603cfdaa14cb1eda82c4',
-      referenceFixCommit: 'bf61e08f4d23d71434feff4bec038c7923578cbd',
+      baseCommit: '7440e988814d6ac58efc1524d4259d62ecfd82b4',
+      referenceFixCommit: '83bbe6da039876787ab1a7109126003b0028ba1f',
     },
     repoSize: 'small',
     task: {
@@ -270,7 +270,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/LinkedList.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/LinkedList.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -284,8 +284,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: 'd2ccd75229ac016fce37603cfdaa14cb1eda82c4',
-      referenceFixCommit: 'bf61e08f4d23d71434feff4bec038c7923578cbd',
+      baseCommit: '7440e988814d6ac58efc1524d4259d62ecfd82b4',
+      referenceFixCommit: '83bbe6da039876787ab1a7109126003b0028ba1f',
     },
     repoSize: 'small',
     task: {
@@ -295,7 +295,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/quickSort.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/quickSort.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -309,8 +309,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: 'd2ccd75229ac016fce37603cfdaa14cb1eda82c4',
-      referenceFixCommit: 'bf61e08f4d23d71434feff4bec038c7923578cbd',
+      baseCommit: '7440e988814d6ac58efc1524d4259d62ecfd82b4',
+      referenceFixCommit: '83bbe6da039876787ab1a7109126003b0028ba1f',
     },
     repoSize: 'small',
     task: {
@@ -320,7 +320,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/Stack.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/Stack.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -334,8 +334,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-collections',
       url: `${REPO_BASE}/ts-collections`,
-      baseCommit: 'd2ccd75229ac016fce37603cfdaa14cb1eda82c4',
-      referenceFixCommit: 'bf61e08f4d23d71434feff4bec038c7923578cbd',
+      baseCommit: '7440e988814d6ac58efc1524d4259d62ecfd82b4',
+      referenceFixCommit: '83bbe6da039876787ab1a7109126003b0028ba1f',
     },
     repoSize: 'small',
     task: {
@@ -345,7 +345,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/Stack.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -360,8 +360,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: 'ca162052d3b1968d394cc5973631da32c354d313',
-      referenceFixCommit: '018ef4ab7e02e3bae1786f235e80e41839105cd2',
+      baseCommit: '149699b3ec0e394bd22a4b5423179c5b28ebbc89',
+      referenceFixCommit: '7ea23275a0ec57a9f06cc2f278378a0c88e082cb',
     },
     repoSize: 'small',
     task: {
@@ -371,7 +371,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/headers.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/headers.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -385,8 +385,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: 'ca162052d3b1968d394cc5973631da32c354d313',
-      referenceFixCommit: '018ef4ab7e02e3bae1786f235e80e41839105cd2',
+      baseCommit: '149699b3ec0e394bd22a4b5423179c5b28ebbc89',
+      referenceFixCommit: '7ea23275a0ec57a9f06cc2f278378a0c88e082cb',
     },
     repoSize: 'small',
     task: {
@@ -396,7 +396,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/HttpClient.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -410,8 +410,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: 'ca162052d3b1968d394cc5973631da32c354d313',
-      referenceFixCommit: '018ef4ab7e02e3bae1786f235e80e41839105cd2',
+      baseCommit: '149699b3ec0e394bd22a4b5423179c5b28ebbc89',
+      referenceFixCommit: '7ea23275a0ec57a9f06cc2f278378a0c88e082cb',
     },
     repoSize: 'small',
     task: {
@@ -421,7 +421,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm install', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npm install && npm run build', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V1',
     },
@@ -436,8 +436,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '1a8a14557f4ecadf848a20b7ed25418d6ce94744',
-      referenceFixCommit: '9cfea4bc216bf9178c60af074ed4c1d2034abb67',
+      baseCommit: '963ebdf02e21a37bc2c307f953b3af37e4d0594b',
+      referenceFixCommit: 'eab0b378820cd129ff6a8ce2a1d4a76b03a5098b',
     },
     repoSize: 'small',
     task: {
@@ -447,7 +447,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/truncate.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/truncate.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -461,8 +461,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '1a8a14557f4ecadf848a20b7ed25418d6ce94744',
-      referenceFixCommit: '9cfea4bc216bf9178c60af074ed4c1d2034abb67',
+      baseCommit: '963ebdf02e21a37bc2c307f953b3af37e4d0594b',
+      referenceFixCommit: 'eab0b378820cd129ff6a8ce2a1d4a76b03a5098b',
     },
     repoSize: 'small',
     task: {
@@ -472,7 +472,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/padStart.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -486,8 +486,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '1a8a14557f4ecadf848a20b7ed25418d6ce94744',
-      referenceFixCommit: '9cfea4bc216bf9178c60af074ed4c1d2034abb67',
+      baseCommit: '963ebdf02e21a37bc2c307f953b3af37e4d0594b',
+      referenceFixCommit: 'eab0b378820cd129ff6a8ce2a1d4a76b03a5098b',
     },
     repoSize: 'small',
     task: {
@@ -497,7 +497,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/padStart.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -511,8 +511,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: '1a8a14557f4ecadf848a20b7ed25418d6ce94744',
-      referenceFixCommit: '9cfea4bc216bf9178c60af074ed4c1d2034abb67',
+      baseCommit: '963ebdf02e21a37bc2c307f953b3af37e4d0594b',
+      referenceFixCommit: 'eab0b378820cd129ff6a8ce2a1d4a76b03a5098b',
     },
     repoSize: 'small',
     task: {
@@ -522,7 +522,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/slugify.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/slugify.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -537,8 +537,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-state',
       url: `${REPO_BASE}/ts-state`,
-      baseCommit: 'c80e9593ceed010ca27ac823f65aaf562fac0bad',
-      referenceFixCommit: '599d2271e01c2ae7854b0189d6e9328f9910f276',
+      baseCommit: '21e2424fc2c8215a7a169a619d41f960f7fd78f9',
+      referenceFixCommit: '2786a46d6c517dcbde3bb7c233e4abb1ef173d65',
     },
     repoSize: 'small',
     task: {
@@ -548,7 +548,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/Store.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/Store.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -562,8 +562,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-state',
       url: `${REPO_BASE}/ts-state`,
-      baseCommit: 'c80e9593ceed010ca27ac823f65aaf562fac0bad',
-      referenceFixCommit: '599d2271e01c2ae7854b0189d6e9328f9910f276',
+      baseCommit: '21e2424fc2c8215a7a169a619d41f960f7fd78f9',
+      referenceFixCommit: '2786a46d6c517dcbde3bb7c233e4abb1ef173d65',
     },
     repoSize: 'small',
     task: {
@@ -573,7 +573,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/selector.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/selector.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -587,8 +587,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-state',
       url: `${REPO_BASE}/ts-state`,
-      baseCommit: 'c80e9593ceed010ca27ac823f65aaf562fac0bad',
-      referenceFixCommit: '599d2271e01c2ae7854b0189d6e9328f9910f276',
+      baseCommit: '21e2424fc2c8215a7a169a619d41f960f7fd78f9',
+      referenceFixCommit: '2786a46d6c517dcbde3bb7c233e4abb1ef173d65',
     },
     repoSize: 'small',
     task: {
@@ -613,8 +613,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-date',
       url: `${REPO_BASE}/ts-date`,
-      baseCommit: 'f3aa39a95dbbcb7d9e5256d94731baf6842ea614',
-      referenceFixCommit: '80f7fc23be16f5685b4fadf1a1d998018c4a7d92',
+      baseCommit: '340dfa61a305713d42b8c02479a3afa97eb8909c',
+      referenceFixCommit: 'a5ddcc53097a05f4f48c1dff3ec14cc7dc0be1ec',
     },
     repoSize: 'small',
     task: {
@@ -624,7 +624,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/format.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/format.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -638,8 +638,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-date',
       url: `${REPO_BASE}/ts-date`,
-      baseCommit: 'f3aa39a95dbbcb7d9e5256d94731baf6842ea614',
-      referenceFixCommit: '80f7fc23be16f5685b4fadf1a1d998018c4a7d92',
+      baseCommit: '340dfa61a305713d42b8c02479a3afa97eb8909c',
+      referenceFixCommit: 'a5ddcc53097a05f4f48c1dff3ec14cc7dc0be1ec',
     },
     repoSize: 'small',
     task: {
@@ -649,7 +649,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'TZ=America/New_York npx vitest run tests/diff.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -663,8 +663,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-date',
       url: `${REPO_BASE}/ts-date`,
-      baseCommit: 'f3aa39a95dbbcb7d9e5256d94731baf6842ea614',
-      referenceFixCommit: '80f7fc23be16f5685b4fadf1a1d998018c4a7d92',
+      baseCommit: '340dfa61a305713d42b8c02479a3afa97eb8909c',
+      referenceFixCommit: 'a5ddcc53097a05f4f48c1dff3ec14cc7dc0be1ec',
     },
     repoSize: 'small',
     task: {
@@ -674,7 +674,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/leapYear.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/leapYear.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
