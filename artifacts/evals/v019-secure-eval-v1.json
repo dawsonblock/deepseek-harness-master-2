@@ -1,0 +1,24 @@
+{
+  "freezeId": "v019-secure-eval-v1",
+  "frozenAt": "2026-08-28T08:22:12.548Z",
+  "securityQualificationId": "v019-security-qualification-v1",
+  "securityQualificationPassed": true,
+  "securityPropertyCount": 20,
+  "securityPassedCount": 20,
+  "securityFailedCount": 0,
+  "b0SmokeTestCount": 12,
+  "corpusFrozenTasks": 25,
+  "corpusRejectedTasks": 0,
+  "effectiveComposition": {
+    "filesystemPlane": "fs-sandbox",
+    "subprocessPlane": "bash-sandbox",
+    "sandboxPolicy": "workspace-isolated",
+    "seatbeltEnforcement": "partial",
+    "holdoutLocation": "external",
+    "repairRuntime": "production",
+    "rollbackProvider": "harness-owned",
+    "provenanceProvider": "sha256-content-hash",
+    "routingAuthority": "durable"
+  },
+  "ready": true
+}
