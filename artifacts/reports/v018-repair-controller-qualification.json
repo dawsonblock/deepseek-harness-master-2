@@ -2,7 +2,7 @@
   "release": "v0.18",
   "experimentType": "repair-controller-qualification",
   "fixtureCount": 5,
-  "timestamp": "2026-08-27T00:35:35.170Z",
+  "timestamp": "2026-08-28T02:08:20.987Z",
   "results": [
     {
       "taskId": "implement-debounce",
@@ -13,11 +13,11 @@
       "holdoutPass": true,
       "failureFingerprints": [],
       "progress": [],
-      "cacheReadTokens": 87040,
-      "cacheMissTokens": 8828,
-      "outputTokens": 1948,
-      "cost": 0.0038371200000000003,
-      "latency": 40450,
+      "cacheReadTokens": 81920,
+      "cacheMissTokens": 5323,
+      "outputTokens": 1594,
+      "cost": 0.00559308,
+      "latency": 23929,
       "flashAttempts": 1,
       "proAttempts": 0,
       "escalatedToPro": false,
@@ -25,86 +25,60 @@
     },
     {
       "taskId": "implement-throttle",
-      "attempts": 4,
+      "attempts": 1,
       "diagnosticPassPerAttempt": [
-        true,
-        true,
-        true,
         true
       ],
       "holdoutPass": false,
-      "failureFingerprints": [
-        "e3b0c44298fc1c14",
-        "e3b0c44298fc1c14",
-        "e3b0c44298fc1c14",
-        "e3b0c44298fc1c14"
-      ],
-      "progress": [
-        "none",
-        "resolved",
-        "resolved",
-        "resolved"
-      ],
-      "cacheReadTokens": 3103104,
-      "cacheMissTokens": 63759,
-      "outputTokens": 83179,
-      "cost": 0.209236608,
-      "latency": 1333401,
-      "flashAttempts": 2,
-      "proAttempts": 2,
-      "escalatedToPro": true,
+      "failureFingerprints": [],
+      "progress": [],
+      "cacheReadTokens": 49920,
+      "cacheMissTokens": 4983,
+      "outputTokens": 992,
+      "cost": 0.00420084,
+      "latency": 22781,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
       "finalVerified": false
     },
     {
       "taskId": "implement-memoize",
-      "attempts": 2,
+      "attempts": 1,
       "diagnosticPassPerAttempt": [
-        true,
         true
       ],
       "holdoutPass": true,
-      "failureFingerprints": [
-        "e3b0c44298fc1c14"
-      ],
-      "progress": [
-        "none"
-      ],
-      "cacheReadTokens": 1255168,
-      "cacheMissTokens": 23955,
-      "outputTokens": 28087,
-      "cost": 0.032593696,
-      "latency": 308204,
-      "flashAttempts": 2,
+      "failureFingerprints": [],
+      "progress": [],
+      "cacheReadTokens": 189696,
+      "cacheMissTokens": 9131,
+      "outputTokens": 3128,
+      "cost": 0.010802344000000002,
+      "latency": 56080,
+      "flashAttempts": 1,
       "proAttempts": 0,
       "escalatedToPro": false,
       "finalVerified": true
     },
     {
       "taskId": "fix-broken-sort",
-      "attempts": 3,
+      "attempts": 1,
       "diagnosticPassPerAttempt": [
-        true,
-        true,
         true
       ],
-      "holdoutPass": true,
-      "failureFingerprints": [
-        "e3b0c44298fc1c14",
-        "e3b0c44298fc1c14"
-      ],
-      "progress": [
-        "none",
-        "resolved"
-      ],
-      "cacheReadTokens": 1761792,
-      "cacheMissTokens": 60935,
-      "outputTokens": 32566,
-      "cost": 0.071750484,
-      "latency": 404646,
-      "flashAttempts": 2,
-      "proAttempts": 1,
-      "escalatedToPro": true,
-      "finalVerified": true
+      "holdoutPass": false,
+      "failureFingerprints": [],
+      "progress": [],
+      "cacheReadTokens": 59392,
+      "cacheMissTokens": 4776,
+      "outputTokens": 1429,
+      "cost": 0.004819208,
+      "latency": 25729,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
+      "finalVerified": false
     },
     {
       "taskId": "implement-promise-pool",
@@ -115,11 +89,11 @@
       "holdoutPass": true,
       "failureFingerprints": [],
       "progress": [],
-      "cacheReadTokens": 85248,
-      "cacheMissTokens": 5606,
-      "outputTokens": 2260,
-      "cost": 0.003321656,
-      "latency": 47943,
+      "cacheReadTokens": 103936,
+      "cacheMissTokens": 5809,
+      "outputTokens": 1844,
+      "cost": 0.006445144,
+      "latency": 35070,
       "flashAttempts": 1,
       "proAttempts": 0,
       "escalatedToPro": false,
