@@ -198,6 +198,7 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
   let proAttempts = 0
   let totalCostUsd = 0
   let totalLatencyMs = 0
+  let totalOutputTokens = 0
   const failureFingerprints: string[] = []
   const progressHistory: string[] = []
   let priorFailure: FailurePackage | undefined
@@ -234,11 +235,44 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
 
     totalCostUsd += turnResult.costUsd
     totalLatencyMs += turnResult.latencyMs
+    totalOutputTokens += turnResult.outputTokens
 
     const verification = await verify(workspace, currentModel)
     const diagnosticPass = verification.diagnosticPass
     const holdoutPass = verification.holdoutPass
     const verified = diagnosticPass && (holdoutPass ?? true)
+
+    // Holdout failure is terminal: diagnostic passed but the unseen holdout
+    // failed. No repair, no escalation, no further provider calls.
+    if (diagnosticPass && holdoutPass === false) {
+      if (currentModel.model === flashModel.model) {
+        flashAttempts += 1
+      } else {
+        proAttempts += 1
+      }
+      const attemptRecord: LoopAttempt = {
+        attempt: attemptNumber,
+        model: modelId,
+        routingDecisionId: turnResult.routingDecisionId,
+        verified: false,
+        diagnosticPass: true,
+        holdoutPass: false,
+        failureFingerprint: undefined,
+        costUsd: turnResult.costUsd,
+        latencyMs: turnResult.latencyMs,
+        cacheReadTokens: turnResult.cacheReadTokens,
+        cacheMissTokens: turnResult.cacheMissTokens,
+        outputTokens: turnResult.outputTokens,
+        inputTokens: turnResult.inputTokens,
+        reasoningTokens: turnResult.reasoningTokens,
+        totalTokens: turnResult.totalTokens,
+        repairAction: 'complete',
+        repairReason: 'qualification-failed',
+        providerFailure: undefined,
+      }
+      attempts.push(attemptRecord)
+      break
+    }
 
     let fingerprint: string | undefined
     let progress: RepairAttempt['progress']
@@ -285,7 +319,7 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
       budget: {
         totalCostUsd,
         elapsedMs: totalLatencyMs,
-        totalOutputTokens: 0,
+        totalOutputTokens,
       },
       limits,
     })
