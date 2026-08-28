@@ -1,0 +1,69 @@
+{
+  "taskId": "ts-validate-feature-001",
+  "taskManifestHash": "ebe97173c984dcb112620248909ef56d3a2c0b6bdd4827123a7048bbe89bcf41",
+  "experimentId": "v019-infra-validation-v1",
+  "benchmarkEligible": false,
+  "repository": {
+    "name": "ts-validate",
+    "url": "file:///tmp/v019-test-repos/ts-validate",
+    "baseCommit": "c59e92d60484dfce94449b6ab9faec7a323a8f5e",
+    "size": "small",
+    "loc": 75,
+    "fileCount": 2,
+    "packageCount": 1,
+    "testCount": 1
+  },
+  "category": "multi-file-feature",
+  "taskDescription": "The `ts-validate` library is missing an `isEmail` function. The test file `tests/index.test.ts` already imports `isEmail` from `src/index.ts` and has tests for it, but the function does not exist in `src/index.ts`. Implement the `isEmail` function to validate email addresses. It should return `true` for valid emails like `user@example.com` and `false` for invalid ones (missing @, missing domain, empty string). Export `isEmail` as a named export from `src/index.ts`.",
+  "baseCommit": "c59e92d60484dfce94449b6ab9faec7a323a8f5e",
+  "taskState": "COMPLETED",
+  "controlPlaneStatus": "PASS",
+  "modelCapabilityStatus": "PASS",
+  "finalVerified": true,
+  "holdoutPass": true,
+  "verificationStrength": "V2",
+  "flashAttempts": 1,
+  "proAttempts": 0,
+  "escalatedToPro": false,
+  "totalCostUsd": 0.002252984,
+  "totalLatencyMs": 14556,
+  "totalOutputTokens": 971,
+  "totalCacheReadTokens": 61312,
+  "totalCacheMissTokens": 5377,
+  "attempts": [
+    {
+      "attempt": 1,
+      "model": "deepseek-v4-flash",
+      "routingDecisionId": "unknown",
+      "verified": true,
+      "diagnosticPass": true,
+      "holdoutPass": true,
+      "usage": {
+        "inputTokens": 5377,
+        "outputTokens": 971,
+        "reasoningTokens": 240,
+        "totalTokens": 67660,
+        "cacheReadTokens": 61312,
+        "cacheMissTokens": 5377
+      },
+      "costUsd": 0.002252984,
+      "latencyMs": 14556,
+      "repairAction": "complete",
+      "changedFiles": [
+        "src/index.ts"
+      ],
+      "toolCallCount": 0,
+      "filesInspected": [],
+      "terminalOutcome": "verified-complete"
+    }
+  ],
+  "changedFiles": [
+    "src/index.ts"
+  ],
+  "referenceFixFilesInspected": [],
+  "referenceFixFilesModified": [],
+  "rollbackUsed": false,
+  "aborted": false,
+  "terminalOutcome": "verified-complete",
+  "timestamp": "2026-08-28T04:46:32.297Z"
+}

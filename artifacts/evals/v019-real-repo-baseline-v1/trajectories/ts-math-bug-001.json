@@ -1,0 +1,69 @@
+{
+  "taskId": "ts-math-bug-001",
+  "taskManifestHash": "5a5568ab42c4939c22779dc1a1f89fcc9baae34f11e664610d68d944b61f08c0",
+  "experimentId": "v019-infra-validation-v1",
+  "benchmarkEligible": false,
+  "repository": {
+    "name": "ts-math",
+    "url": "file:///tmp/v019-test-repos/ts-math",
+    "baseCommit": "ac0f0a02abd5f519c9faac6f1f32be25cac021b3",
+    "size": "small",
+    "loc": 68,
+    "fileCount": 2,
+    "packageCount": 1,
+    "testCount": 1
+  },
+  "category": "bug-fix",
+  "taskDescription": "The `round` function in `src/index.ts` has a floating point precision bug. `round(1.005, 2)` returns `1` instead of `1.01` because `Math.round(1.005 * 100)` evaluates to `100` due to floating point representation. Fix the function to handle this edge case correctly. The test file `tests/index.test.ts` already exists and must pass.",
+  "baseCommit": "ac0f0a02abd5f519c9faac6f1f32be25cac021b3",
+  "taskState": "COMPLETED",
+  "controlPlaneStatus": "PASS",
+  "modelCapabilityStatus": "PASS",
+  "finalVerified": true,
+  "holdoutPass": true,
+  "verificationStrength": "V2",
+  "flashAttempts": 1,
+  "proAttempts": 0,
+  "escalatedToPro": false,
+  "totalCostUsd": 0.002210796,
+  "totalLatencyMs": 14518,
+  "totalOutputTokens": 1264,
+  "totalCacheReadTokens": 42368,
+  "totalCacheMissTokens": 4909,
+  "attempts": [
+    {
+      "attempt": 1,
+      "model": "deepseek-v4-flash",
+      "routingDecisionId": "unknown",
+      "verified": true,
+      "diagnosticPass": true,
+      "holdoutPass": true,
+      "usage": {
+        "inputTokens": 4909,
+        "outputTokens": 1264,
+        "reasoningTokens": 631,
+        "totalTokens": 48541,
+        "cacheReadTokens": 42368,
+        "cacheMissTokens": 4909
+      },
+      "costUsd": 0.002210796,
+      "latencyMs": 14518,
+      "repairAction": "complete",
+      "changedFiles": [
+        "src/index.ts"
+      ],
+      "toolCallCount": 0,
+      "filesInspected": [],
+      "terminalOutcome": "verified-complete"
+    }
+  ],
+  "changedFiles": [
+    "src/index.ts"
+  ],
+  "referenceFixFilesInspected": [],
+  "referenceFixFilesModified": [],
+  "rollbackUsed": false,
+  "aborted": false,
+  "terminalOutcome": "verified-complete",
+  "timestamp": "2026-08-28T04:45:36.291Z"
+}

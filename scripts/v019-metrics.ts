@@ -77,9 +77,15 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   const n = trajectories.length
   if (n === 0) return emptyMetrics()
 
-  const evaluated = trajectories.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
+  // Sort by taskId for deterministic floating-point summation order.
+  // Without this, metrics computed from execution-order trajectories differ
+  // from metrics regenerated from disk-sorted trajectory files because
+  // floating-point addition is not associative.
+  const sorted = [...trajectories].sort((a, b) => a.taskId.localeCompare(b.taskId))
+
+  const evaluated = sorted.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
   const evalN = evaluated.length
-  const infraFailures = trajectories.filter(t => t.taskState === 'FAILED_INFRA')
+  const infraFailures = sorted.filter(t => t.taskState === 'FAILED_INFRA')
 
   const verified = evaluated.filter(t => t.finalVerified)
   const verifiedCount = verified.length
@@ -148,10 +154,10 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   const totalCacheMiss = evaluated.reduce((s, t) => s + t.totalCacheMissTokens, 0)
   const totalInputTokens = totalCacheRead + totalCacheMiss
 
-  const categories = groupByCategory(trajectories)
+  const categories = groupByCategory(sorted)
 
   return {
-    experimentId: trajectories[0]?.experimentId ?? '',
+    experimentId: sorted[0]?.experimentId ?? '',
     taskCount: n,
     evaluatedTaskCount: evalN,
     infraFailureCount: infraFailures.length,

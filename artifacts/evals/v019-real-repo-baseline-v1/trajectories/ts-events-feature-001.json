@@ -1,0 +1,69 @@
+{
+  "taskId": "ts-events-feature-001",
+  "taskManifestHash": "77e93e5e6d8143c11ab7345e0c06e3e587083fa3582d91f4d3d7437b628dace2",
+  "experimentId": "v019-infra-validation-v1",
+  "benchmarkEligible": false,
+  "repository": {
+    "name": "ts-events",
+    "url": "file:///tmp/v019-test-repos/ts-events",
+    "baseCommit": "04a5e83060f76a0b0108b239278b666ff6de15b2",
+    "size": "small",
+    "loc": 72,
+    "fileCount": 4,
+    "packageCount": 1,
+    "testCount": 1
+  },
+  "category": "multi-file-feature",
+  "taskDescription": "The `EventEmitter` class in `src/emitter.ts` is missing the `off()` and `once()` methods. The test file `tests/index.test.ts` already has tests for these methods. Implement `off(event, handler)` to remove a specific handler from an event, and `once(event, handler)` to add a handler that is automatically removed after its first invocation. Both methods should be on the `EventEmitter` class in `src/emitter.ts`.",
+  "baseCommit": "04a5e83060f76a0b0108b239278b666ff6de15b2",
+  "taskState": "COMPLETED",
+  "controlPlaneStatus": "PASS",
+  "modelCapabilityStatus": "PASS",
+  "finalVerified": true,
+  "holdoutPass": true,
+  "verificationStrength": "V2",
+  "flashAttempts": 1,
+  "proAttempts": 0,
+  "escalatedToPro": false,
+  "totalCostUsd": 0.002546216,
+  "totalLatencyMs": 17688,
+  "totalOutputTokens": 1477,
+  "totalCacheReadTokens": 62848,
+  "totalCacheMissTokens": 5143,
+  "attempts": [
+    {
+      "attempt": 1,
+      "model": "deepseek-v4-flash",
+      "routingDecisionId": "unknown",
+      "verified": true,
+      "diagnosticPass": true,
+      "holdoutPass": true,
+      "usage": {
+        "inputTokens": 5143,
+        "outputTokens": 1477,
+        "reasoningTokens": 496,
+        "totalTokens": 69468,
+        "cacheReadTokens": 62848,
+        "cacheMissTokens": 5143
+      },
+      "costUsd": 0.002546216,
+      "latencyMs": 17688,
+      "repairAction": "complete",
+      "changedFiles": [
+        "src/emitter.ts"
+      ],
+      "toolCallCount": 0,
+      "filesInspected": [],
+      "terminalOutcome": "verified-complete"
+    }
+  ],
+  "changedFiles": [
+    "src/emitter.ts"
+  ],
+  "referenceFixFilesInspected": [],
+  "referenceFixFilesModified": [],
+  "rollbackUsed": false,
+  "aborted": false,
+  "terminalOutcome": "verified-complete",
+  "timestamp": "2026-08-28T04:46:52.848Z"
+}
