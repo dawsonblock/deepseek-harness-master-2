@@ -290,6 +290,11 @@ export function decideRepair(input: RepairDecisionInput): RepairDecision {
     return { action: 'stop', reason: 'time-limit' }
   }
 
+  // Rule 3b: output token budget exceeded → stop
+  if (limits.maxOutputTokens !== undefined && budget.totalOutputTokens >= limits.maxOutputTokens) {
+    return { action: 'stop', reason: 'output-token-limit' }
+  }
+
   // Rule 4: total attempt limit reached → stop
   if (attempts.length >= limits.maxTotalAttempts) {
     return { action: 'stop', reason: 'attempt-limit' }

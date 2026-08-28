@@ -68,6 +68,7 @@ function freshState(repairId: string): RepairState {
     startedAt: Date.now(),
     flashAttempts: 0,
     proAttempts: 0,
+    totalOutputTokens: 0,
   }
 }
 
@@ -621,7 +622,7 @@ describe('P0: deterministic repairId', () => {
 })
 
 describe('P0: repair completion on verification PASS', () => {
-  it('active repair + goal/verification PASS → repair/completed exactly once', () => {
+  it('active repair + goal/verification PASS → repair/completed exactly once', async () => {
     const session = Session.create(SessionId('p0-complete'))
     const state = freshState('repair-goal-p0-complete')
     const deps = defaultDeps()
@@ -632,7 +633,7 @@ describe('P0: repair completion on verification PASS', () => {
 
     // Turn 2: Flash repair passes
     setupTurn(session, 2, FLASH)
-    const completedEvent = handleVerificationPass(session, state, 2, 'rd-2')
+    const completedEvent = await handleVerificationPass(session, state, 2, 'rd-2')
 
     expect(completedEvent).toBeDefined()
     expect(completedEvent!.type).toBe('repair/completed')

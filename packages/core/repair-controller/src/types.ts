@@ -47,6 +47,8 @@ export interface RepairAttempt {
   readonly failurePackageId?: string
   readonly costUsd: number
   readonly latencyMs: number
+  /** SHA-256 hash of the workspace file contents at this attempt, when provenance is tracked. */
+  readonly workspaceHash?: string
 }
 
 /** Runtime-owned hard limits. The model cannot increase these. */
@@ -82,10 +84,12 @@ export interface ProgressMetrics {
   readonly resolvedFailureCount: number
 }
 
-/** Cost and time budget for the repair sequence. */
+/** Cost, time, and token budget for the repair sequence. */
 export interface RepairBudget {
   readonly totalCostUsd: number
   readonly elapsedMs: number
+  /** Cumulative output tokens across all attempts, derived from model/usage events. */
+  readonly totalOutputTokens: number
 }
 
 /** Why a Pro escalation was chosen. */
@@ -99,9 +103,12 @@ export type StopReason =
   | 'attempt-limit'
   | 'cost-limit'
   | 'time-limit'
+  | 'output-token-limit'
   | 'verification-impossible'
   | 'pro-exhausted'
   | 'escalation-model-unavailable'
+  | 'selection-authority-undecidable'
+  | 'rollback-failed'
 
 /**
  * Canonical provider failure kind. Classifies HTTP and transport errors
@@ -181,6 +188,8 @@ export interface RepairEvidenceEventData {
   readonly typeErrors: readonly string[]
   readonly buildErrors: readonly string[]
   readonly changedFiles: readonly string[]
+  /** SHA-256 hash of the workspace file contents that produced this failure, when provenance is tracked. */
+  readonly workspaceHash?: string
 }
 
 /**
@@ -218,6 +227,23 @@ export interface ModelEscalationEventData {
 }
 
 /**
+ * Explicit terminal outcome for a repair sequence. Each active repair
+ * process reaches exactly one of these outcomes. Consumers should read
+ * this field rather than inferring the reason from `verified` and
+ * optional field combinations.
+ */
+export type RepairOutcome =
+  | 'verified'
+  | 'qualification-failed'
+  | 'attempts-exhausted'
+  | 'cost-limit'
+  | 'time-limit'
+  | 'output-token-limit'
+  | 'rollback-failed'
+  | 'authority-undecidable'
+  | 'model-unavailable'
+
+/**
  * Durable record of repair sequence completion. Emitted as the
  * `repair/completed` session event. Provides task-level accounting.
  */
@@ -232,4 +258,39 @@ export interface RepairCompletedEventData {
   readonly proAttempts: number
   readonly totalCostUsd: number
   readonly elapsedMs: number
+  /**
+   * Explicit terminal outcome for the repair sequence. Consumers should
+   * read this field rather than inferring the reason from `verified` and
+   * optional field combinations.
+   */
+  readonly outcome?: RepairOutcome
+  /** Present when completion failed qualification holdout verification. Diagnostic verification passed but holdout rejected the result. */
+  readonly qualificationFailure?: {
+    /** Human-readable reason from the holdout verifier. */
+    readonly reason: string
+    /** Evidence lines from the holdout verifier, when provided. */
+    readonly evidence?: readonly string[]
+  }
+}
+
+/**
+ * Durable record of a harness-owned workspace rollback before a repair
+ * attempt. Emitted as the `repair/rollback` session event. Records that the
+ * harness restored workspace state to a known checkpoint, rather than
+ * relying on the model to undo its own changes.
+ */
+export interface RepairRollbackEventData {
+  readonly repairId: string
+  readonly turn: number
+  readonly step: number
+  /** The failed attempt number whose changes are being rolled back. */
+  readonly attempt: number
+  /** The routing decision of the failed attempt. */
+  readonly routingDecisionId: string
+  /** Workspace hash or checkpoint identifier being restored. */
+  readonly rollbackTarget: string
+  /** Whether the rollback succeeded. */
+  readonly success: boolean
+  /** Human-readable reason when rollback failed. */
+  readonly failureReason?: string
 }

@@ -3738,6 +3738,10 @@ importers:
         version: link:../session
 
   packages/core/repair-runtime:
+    dependencies:
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

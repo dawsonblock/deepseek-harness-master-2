@@ -70,7 +70,7 @@ function makeInput(
     currentModel: PRO,
     attempts,
     ...latestFailure !== undefined ? { latestFailure } : {},
-    budget: { totalCostUsd: attempts.length * 0.01, elapsedMs: attempts.length * 1000 },
+    budget: { totalCostUsd: attempts.length * 0.01, elapsedMs: attempts.length * 1000, totalOutputTokens: attempts.length * 500 },
     limits: DEFAULT_REPAIR_LIMITS,
     ...overrides,
   }

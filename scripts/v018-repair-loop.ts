@@ -285,6 +285,7 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
       budget: {
         totalCostUsd,
         elapsedMs: totalLatencyMs,
+        totalOutputTokens: 0,
       },
       limits,
     })

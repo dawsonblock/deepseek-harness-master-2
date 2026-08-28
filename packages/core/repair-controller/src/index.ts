@@ -72,4 +72,6 @@ export type {
   RepairDecisionEventData,
   ModelEscalationEventData,
   RepairCompletedEventData,
+  RepairRollbackEventData,
+  RepairOutcome,
 } from './types.ts'

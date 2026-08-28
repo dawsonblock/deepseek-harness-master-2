@@ -24,15 +24,17 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { claimModelSelection, releaseToAuto } from '@deepseek-ai/dsh-agent'
+import { claimModelSelection, reconstructSelectionState, releaseToAuto } from '@deepseek-ai/dsh-agent'
 import type { GoalRef, GoalVerificationCheck, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { EscalationReason, FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits } from '@deepseek-ai/dsh-repair-controller'
+import type { EscalationReason, FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits, RepairOutcome } from '@deepseek-ai/dsh-repair-controller'
 import { classifyProgress, computeFailureFingerprint, computeFailurePackageId, decideRepair } from '@deepseek-ai/dsh-repair-controller'
 // Import the events module to trigger declaration merging for repair/* and model/escalation events.
 import '@deepseek-ai/dsh-repair-controller/events'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { calculateCost, DEFAULT_PRICING_REGISTRY, lookupPricingAt } from '@deepseek-ai/dsh-token-meter'
+import type { ModelPricing } from '@deepseek-ai/dsh-token-meter'
 
 /** Plugin configuration. */
 export interface RepairRuntimeConfig {
@@ -48,7 +50,122 @@ export interface RepairRuntimeConfig {
   maxProAttempts?: number
   /** Max total attempts. Default: 5. */
   maxTotalAttempts?: number
+  /** Maximum cumulative cost per task in USD. When exceeded, the controller stops with `cost-limit`. */
+  maxTaskCostUsd?: number
+  /** Maximum elapsed time per task in milliseconds. When exceeded, the controller stops with `time-limit`. */
+  maxElapsedMs?: number
+  /** Maximum output tokens per task. Reserved for future token-budget enforcement. */
+  maxOutputTokens?: number
+  /**
+   * Whether the Pro model is available for escalation. When false, the
+   * controller stops with `escalation-model-unavailable` instead of
+   * escalating. Default: true. Set to false when the Pro model is
+   * unconfigured, rate-limited, or otherwise unreachable.
+   */
+  proModelAvailable?: boolean
+  /**
+   * Optional qualification holdout verifier. When present, runs after
+   * diagnostic verification passes. A holdout failure emits
+   * `repair/completed` with `verified: false` and `qualificationFailure: true`
+   * but does NOT trigger another repair attempt. A holdout pass proceeds to
+   * normal completion.
+   */
+  holdoutVerifier?: HoldoutVerifier
+  /**
+   * Optional workspace provenance provider. When present, called before each
+   * `repair/evidence` emission to compute a SHA-256 hash of the workspace
+   * file contents. The hash is stored in the durable event and on the
+   * `RepairAttempt`, enabling replay to verify workspace state consistency.
+   */
+  workspaceProvenanceProvider?: WorkspaceProvenanceProvider
+  /**
+   * Optional workspace rollback provider. When present, called before each
+   * repair attempt to restore the workspace to a known checkpoint. The
+   * rollback is recorded as a durable `repair/rollback` event so replay can
+   * verify the workspace was restored by the harness, not by the model.
+   */
+  rollbackProvider?: RollbackProvider
 }
+
+/** Context passed to a workspace provenance provider. */
+export interface WorkspaceProvenanceContext {
+  /** The session being repaired. */
+  readonly session: Session
+  /** File paths changed in the current turn. */
+  readonly changedFiles: readonly string[]
+}
+
+/**
+ * Computes a SHA-256 hash binding repair evidence to the workspace state
+ * that produced it. The hash should cover the content of the changed files
+ * at the time of verification, so replay after restart can detect workspace
+ * divergence. Must return synchronously — async provenance computation is
+ * not supported in the synchronous repair handler.
+ */
+export type WorkspaceProvenanceProvider = (context: WorkspaceProvenanceContext) => string
+
+/** Context passed to a rollback provider. */
+export interface RollbackContext {
+  /** The session being repaired. */
+  readonly session: Session
+  /** The repair id for this repair sequence. */
+  readonly repairId: string
+  /** The failed attempt number whose changes should be rolled back. */
+  readonly attempt: number
+  /** The routing decision of the failed attempt. */
+  readonly routingDecisionId: string
+  /** Workspace hash of the failed attempt, when provenance is tracked. */
+  readonly workspaceHash?: string
+}
+
+/** Result of a rollback operation. */
+export interface RollbackResult {
+  /** Whether the rollback succeeded. */
+  readonly success: boolean
+  /** The workspace hash or checkpoint identifier restored. */
+  readonly rollbackTarget: string
+  /** Human-readable reason when rollback failed. */
+  readonly failureReason?: string
+}
+
+/**
+ * Harness-owned workspace rollback provider. Called before each repair
+ * attempt to restore the workspace to a known checkpoint. The rollback is
+ * recorded as a durable `repair/rollback` event so replay can verify the
+ * harness performed the restoration, not the model. Must return
+ * synchronously — async rollback is not supported in the synchronous
+ * repair handler.
+ */
+export type RollbackProvider = (context: RollbackContext) => RollbackResult
+
+/** Context passed to a holdout verifier. */
+export interface HoldoutVerifierContext {
+  /** The session being verified. */
+  readonly session: Session
+  /** The repair state for this goal. */
+  readonly state: RepairState
+  /** The routing decision that produced the passing diagnostic verification. */
+  readonly routingDecisionId: string
+  /** The goal id being verified. */
+  readonly goalId: string
+}
+
+/** Result of a holdout verification check. */
+export interface HoldoutVerifierResult {
+  /** Whether the holdout verification passed. */
+  readonly passed: boolean
+  /** Human-readable reason for the result. */
+  readonly reason: string
+  /** Optional evidence lines for the durable event. */
+  readonly evidence?: readonly string[]
+}
+
+/**
+ * Independent qualification verifier that runs after diagnostic verification
+ * passes. Holdout failures never trigger repair — they report qualification
+ * failure and stop the repair loop.
+ */
+export type HoldoutVerifier = (context: HoldoutVerifierContext) => HoldoutVerifierResult | Promise<HoldoutVerifierResult>
 
 /** Per-goal repair state. */
 export interface RepairState {
@@ -59,6 +176,8 @@ export interface RepairState {
   startedAt: number
   flashAttempts: number
   proAttempts: number
+  /** Cumulative output tokens across all attempts, from model/usage events. */
+  totalOutputTokens: number
 }
 
 /**
@@ -122,46 +241,133 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
   }
 }
 
-/** Render a repair prompt for the model from failure evidence. */
-function renderRepairPrompt(failure: FailurePackage, attempt: number): ContentBlock[] {
+/**
+ * Immutable, sanitized projection of a {@link FailurePackage} for model
+ * consumption. Contains only model-relevant failure evidence — no internal
+ * harness metadata (repair IDs, routing decision IDs, fingerprints, session
+ * IDs). The projection is frozen so the model-visible representation cannot
+ * be accidentally mutated by the caller.
+ */
+export interface ModelVisibleFailureProjection {
+  /** Failed acceptance criteria, sanitized to human-readable strings. */
+  readonly failedCriteria: readonly string[]
+  /** Failing test descriptions, sanitized to human-readable strings. */
+  readonly failingTests: readonly string[]
+  /** Type error messages, sanitized to human-readable strings. */
+  readonly typeErrors: readonly string[]
+  /** Build error messages, sanitized to human-readable strings. */
+  readonly buildErrors: readonly string[]
+  /** Changed file paths, sanitized to human-readable strings. */
+  readonly changedFiles: readonly string[]
+}
+
+/**
+ * Sanitize a single evidence string for model consumption. Strips internal
+ * harness identifiers that may appear in verifier output (repair IDs,
+ * routing decision IDs, session IDs) while preserving the diagnostic
+ * content the model needs to repair.
+ *
+ * @param value - the raw evidence string from a verification check.
+ * @returns the sanitized string with internal identifiers and secrets removed.
+ */
+function sanitizeEvidenceString(value: string): string {
+  return value
+    // Internal harness identifiers
+    .replace(/repair:v1:[0-9a-f]+/g, '[repair-id]')
+    .replace(/rd-[a-zA-Z0-9_-]+/g, '[routing-decision]')
+    .replace(/session-[a-zA-Z0-9_-]+/g, '[session]')
+    // Authorization headers and bearer tokens
+    .replace(/[Aa]uthorization:\s*[Bb]earer\s+[a-z0-9._~+=/-]+/g, 'Authorization: Bearer [redacted]')
+    .replace(/[Aa]uthorization:\s*[Bb]asic\s+[A-Za-z0-9+/=]+/g, 'Authorization: Basic [redacted]')
+    // API key patterns (common formats: sk-..., DEEPSEEK_API_KEY=..., OPENAI_API_KEY=...)
+    .replace(/\bsk-[A-Za-z0-9]{20,}\b/g, '[api-key]')
+    .replace(/(?:DEEPSEEK|OPENAI|ANTHROPIC|GEMINI|GOOGLE|AZURE)_API_KEY\s*=\s*[a-z0-9._~+=/-]+/g, '$1_API_KEY=[redacted]')
+    .replace(/\b[A-Z_]*API_KEY\s*=\s*[a-z0-9._~+=/-]+/g, '[api-key]=[redacted]')
+    // Password assignments in connection strings and env vars
+    .replace(/password\s*=\s*[^\s;,)]+/gi, 'password=[redacted]')
+    .replace(/passwd\s*=\s*[^\s;,)]+/gi, 'passwd=[redacted]')
+    .replace(/pwd\s*=\s*[^\s;,)]+/gi, 'pwd=[redacted]')
+    // Database URLs with credentials (postgres://, mysql://, mongodb://, redis://)
+    .replace(/(postgres|postgresql|mysql|mongodb|redis|amqp|amqps):\/\/[^:\s]+:[^@\s]+@[^\s/]+/gi, '$1://[user]:[redacted]@[host]')
+    .replace(/(https?):\/\/[^:\s]+:[^@\s]+@[^\s/]+/gi, '$1://[user]:[redacted]@[host]')
+    // AWS credentials
+    .replace(/\bAWS_ACCESS_KEY_ID\s*=\s*[A-Z0-9]{20}\b/g, 'AWS_ACCESS_KEY_ID=[redacted]')
+    .replace(/\bAWS_SECRET_ACCESS_KEY\s*=\s*[A-Za-z0-9/+=]{40}\b/g, 'AWS_SECRET_ACCESS_KEY=[redacted]')
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[aws-access-key]')
+    // Cookies and session tokens
+    .replace(/[Cc]ookie\s*:\s*[^\n\r]+/g, 'Cookie: [redacted]')
+    .replace(/[Ss]et-[Cc]ookie\s*:\s*[^\n\r]+/g, 'Set-Cookie: [redacted]')
+    .replace(/\bsession[_-]?token\s*=\s*[a-z0-9._~+=/-]+/gi, 'session_token=[redacted]')
+    .replace(/\bcsrf[_-]?token\s*=\s*[a-z0-9._~+=/-]+/gi, 'csrf_token=[redacted]')
+    // JWT tokens
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[jwt]')
+    // Private host paths (Unix home directories with private/secret/.ssh)
+    .replace(/\/(?:Users|home)\/[^/\s]+\/\.ssh\/[^\s]+/g, '[ssh-path]')
+    .replace(/\/(?:Users|home)\/[^/\s]+\/private\/[^\s]+/g, '[private-path]')
+    .replace(/\/(?:Users|home)\/[^/\s]+\/\.env[^\s]*/g, '[env-file]')
+    // Generic token/secret env assignments
+    .replace(/\b(?:SECRET|TOKEN|PRIVATE_KEY|ACCESS_TOKEN|REFRESH_TOKEN)\s*=\s*[a-z0-9._~+=/-]+/gi, '[secret]=[redacted]')
+    .trim()
+}
+
+/**
+ * Create an immutable, sanitized projection of a {@link FailurePackage}
+ * for model consumption. The returned object is frozen and contains only
+ * model-relevant evidence with internal harness identifiers stripped.
+ *
+ * @param failure - the raw failure package from verification.
+ * @returns a frozen, sanitized projection safe for model prompts.
+ */
+export function projectFailureForModel(failure: FailurePackage): ModelVisibleFailureProjection {
+  return Object.freeze({
+    failedCriteria: Object.freeze(failure.failedCriteria.map(sanitizeEvidenceString)),
+    failingTests: Object.freeze(failure.failingTests.map(sanitizeEvidenceString)),
+    typeErrors: Object.freeze(failure.typeErrors.map(sanitizeEvidenceString)),
+    buildErrors: Object.freeze(failure.buildErrors.map(sanitizeEvidenceString)),
+    changedFiles: Object.freeze([...failure.changedFiles]),
+  })
+}
+
+/** Render a repair prompt for the model from a sanitized failure projection. */
+function renderRepairPrompt(projection: ModelVisibleFailureProjection, attempt: number): ContentBlock[] {
   const lines: string[] = [
     `Repair attempt ${attempt}: the previous attempt failed verification.`,
     '',
     'Failed criteria:',
-    ...failure.failedCriteria.map(c => `- ${c}`),
+    ...projection.failedCriteria.map(c => `- ${c}`),
     '',
     'Failing tests:',
-    ...failure.failingTests.map(t => `- ${t}`),
+    ...projection.failingTests.map(t => `- ${t}`),
     '',
     'Type errors:',
-    ...failure.typeErrors.map(e => `- ${e}`),
+    ...projection.typeErrors.map(e => `- ${e}`),
     '',
     'Build errors:',
-    ...failure.buildErrors.map(e => `- ${e}`),
+    ...projection.buildErrors.map(e => `- ${e}`),
     '',
     'Fix the issues above. The workspace state from the previous attempt is preserved.',
   ]
   return [{ type: 'text', text: lines.join('\n') }]
 }
 
-/** Render a Pro escalation prompt with full context. */
-function renderProEscalationPrompt(failure: FailurePackage, flashAttempts: number): ContentBlock[] {
+/** Render a Pro escalation prompt with sanitized context. */
+function renderProEscalationPrompt(projection: ModelVisibleFailureProjection, flashAttempts: number): ContentBlock[] {
   const lines: string[] = [
     `Escalation from Flash after ${flashAttempts} failed attempt(s).`,
     'You are taking over a task that Flash could not complete.',
     'The workspace state from the previous attempts is preserved.',
     '',
     'Failed criteria:',
-    ...failure.failedCriteria.map(c => `- ${c}`),
+    ...projection.failedCriteria.map(c => `- ${c}`),
     '',
     'Failing tests:',
-    ...failure.failingTests.map(t => `- ${t}`),
+    ...projection.failingTests.map(t => `- ${t}`),
     '',
     'Type errors:',
-    ...failure.typeErrors.map(e => `- ${e}`),
+    ...projection.typeErrors.map(e => `- ${e}`),
     '',
     'Build errors:',
-    ...failure.buildErrors.map(e => `- ${e}`),
+    ...projection.buildErrors.map(e => `- ${e}`),
     '',
     'Repair the work. You may rewrite the previous attempts\' changes or start fresh.',
   ]
@@ -183,6 +389,41 @@ function modelFromRoutingDecision(events: readonly SessionEvent[], routingDecisi
   return undefined
 }
 
+/**
+ * Resolved model-selection authority for a session, reconstructed from the
+ * durable `model/selection-authority` event log. Used to determine whether
+ * the repair runtime may transition the model.
+ *
+ * - `manual`: the latest durable state is a deliberate claim. The controller
+ *   does not escalate to a different model unless policy requires it.
+ * - `automatic`: the latest durable state is router/default-owned. The
+ *   controller may escalate normally.
+ * - `absent`: no selection-authority event exists. Treated as automatic.
+ * - `undecidable`: a future-schema or uninterpretable authority record
+ *   exists. The repair runtime MUST fail closed: no model transition occurs.
+ */
+export type SelectionAuthorityResolution =
+  | { readonly kind: 'manual' }
+  | { readonly kind: 'automatic' }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'undecidable' }
+
+/**
+ * Resolve the current model-selection authority for a session from the
+ * durable `model/selection-authority` event log. Follows the fail-closed
+ * principle from v0.15 authority work: a future-schema or uninterpretable
+ * authority record produces `undecidable`, not `automatic`.
+ *
+ * @param events - the full session event log.
+ * @returns the resolved authority kind.
+ */
+export function resolveSelectionAuthority(events: readonly SessionEvent[]): SelectionAuthorityResolution {
+  const state = reconstructSelectionState(events)
+  if (state === undefined) return { kind: 'absent' }
+  if ('undecidable' in state) return { kind: 'undecidable' }
+  return state.mode === 'manual' ? { kind: 'manual' } : { kind: 'automatic' }
+}
+
 /** Find the latest routing decision id for a turn. */
 function latestRoutingDecisionId(events: readonly SessionEvent[], turn: number): string | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -196,6 +437,160 @@ function latestRoutingDecisionId(events: readonly SessionEvent[], turn: number):
     }
   }
   return undefined
+}
+
+/**
+ * Result of validating repair event ordering and idempotency for one repair
+ * sequence. Used to detect duplicate or out-of-order events during replay.
+ */
+export interface RepairEventInvariantResult {
+  /** Whether all invariants hold. */
+  readonly valid: boolean
+  /** Human-readable descriptions of each violation, when any. */
+  readonly violations: readonly string[]
+}
+
+/**
+ * Validate repair event ordering and idempotency for one repair sequence.
+ * Checks that:
+ *
+ * 1. Each `repair/evidence` event has a unique `failurePackageId` within the
+ *    sequence (no duplicate evidence for the same attempt).
+ * 2. Each `repair/decision` event references a unique attempt number (no
+ *    duplicate decisions for the same attempt).
+ * 3. `repair/evidence` for attempt N appears before `repair/decision` for
+ *    attempt N (evidence precedes decision).
+ * 4. At most one `repair/completed` event exists per repair sequence.
+ * 5. `repair/completed` appears after all evidence and decision events.
+ * 6. `repair/rollback` events reference attempts that have evidence.
+ *
+ * @param events - the full session event log.
+ * @param repairId - the repair sequence to validate.
+ * @returns the validation result with any violations.
+ */
+export function validateRepairEventInvariants(
+  events: readonly SessionEvent[],
+  repairId: string,
+): RepairEventInvariantResult {
+  const violations: string[] = []
+  const evidenceAttempts = new Set<number>()
+  const evidencePackageIds = new Set<string>()
+  const decisionAttempts = new Set<number>()
+  let completedCount = 0
+  let lastDecisionSeq = -1
+  let completedSeq = -1
+
+  for (const event of events) {
+    const type = event.type as string
+    if (type !== 'repair/evidence'
+      && type !== 'repair/decision'
+      && type !== 'repair/completed'
+      && type !== 'repair/rollback') continue
+    const data = event.data as Record<string, unknown>
+    if (data.repairId !== repairId) continue
+
+    if (type === 'repair/evidence') {
+      const attempt = data.attempt as number
+      const packageId = data.failurePackageId as string
+      if (evidenceAttempts.has(attempt)) {
+        violations.push(`duplicate repair/evidence for attempt ${attempt}`)
+      }
+      evidenceAttempts.add(attempt)
+      if (typeof packageId === 'string') {
+        if (evidencePackageIds.has(packageId)) {
+          violations.push(`duplicate failurePackageId "${packageId}"`)
+        }
+        evidencePackageIds.add(packageId)
+      }
+    } else if (type === 'repair/decision') {
+      const attempt = data.attempt as number
+      if (decisionAttempts.has(attempt)) {
+        violations.push(`duplicate repair/decision for attempt ${attempt}`)
+      }
+      decisionAttempts.add(attempt)
+      lastDecisionSeq = event.seq
+      // Evidence must precede decision for the same attempt
+      if (!evidenceAttempts.has(attempt)) {
+        violations.push(`repair/decision for attempt ${attempt} without preceding repair/evidence`)
+      }
+    } else if (type === 'repair/completed') {
+      completedCount += 1
+      completedSeq = event.seq
+    } else {
+      // repair/rollback: must reference an attempt that has evidence
+      const attempt = data.attempt as number
+      if (!evidenceAttempts.has(attempt)) {
+        violations.push(`repair/rollback for attempt ${attempt} without preceding repair/evidence`)
+      }
+    }
+  }
+
+  if (completedCount > 1) {
+    violations.push(`multiple repair/completed events (${completedCount})`)
+  }
+  if (completedCount === 1 && completedSeq < lastDecisionSeq) {
+    violations.push('repair/completed appears before a repair/decision event')
+  }
+
+  return { valid: violations.length === 0, violations }
+}
+
+/**
+ * Count provider invocations (model/usage events) for a specific routing
+ * decision. Used to prove side-effect idempotency: after crash and restart,
+ * each logical attempt must have at most one provider invocation.
+ *
+ * @param events - the full session event log.
+ * @param routingDecisionId - the routing decision to count invocations for.
+ * @returns the number of model/usage events referencing this routing decision.
+ */
+export function countProviderInvocations(
+  events: readonly SessionEvent[],
+  routingDecisionId: string,
+): number {
+  let count = 0
+  for (const event of events) {
+    if ((event.type as string) !== 'model/usage') continue
+    const data = event.data as { routingDecisionId?: string }
+    if (data.routingDecisionId === routingDecisionId) count += 1
+  }
+  return count
+}
+
+/**
+ * Check whether a repair decision has been consumed — i.e., whether a
+ * subsequent `model/routing-decision` event exists for the repair followup.
+ * Used during crash recovery to distinguish "decision recorded but request
+ * not issued" from "request already issued."
+ *
+ * @param events - the full session event log.
+ * @param repairId - the repair sequence.
+ * @param attemptNumber - the attempt number of the decision.
+ * @returns true if a routing decision exists after the repair/decision for this attempt.
+ */
+export function isRepairDecisionConsumed(
+  events: readonly SessionEvent[],
+  repairId: string,
+  attemptNumber: number,
+): boolean {
+  // Find the repair/decision event for this attempt
+  let decisionSeq = -1
+  for (const event of events) {
+    if ((event.type as string) !== 'repair/decision') continue
+    const data = event.data as { repairId?: string; attempt?: number }
+    if (data.repairId === repairId && data.attempt === attemptNumber) {
+      decisionSeq = event.seq
+      break
+    }
+  }
+  if (decisionSeq < 0) return false
+
+  // Check if any model/routing-decision event exists after the decision
+  for (const event of events) {
+    if (event.seq <= decisionSeq) continue
+    if ((event.type as string) === 'model/routing-decision') return true
+  }
+  return false
 }
 
 /** Find changed files from tool calls in the current turn. */
@@ -219,6 +614,113 @@ function changedFilesInTurn(events: readonly SessionEvent[], turn: number): stri
 }
 
 /**
+ * Compute the cost and latency for one attempt from the durable `model/usage`
+ * event matching the routing decision. Cost is derived from `TokenUsage` +
+ * `ModelPricing` via the canonical token-meter pricing registry. Latency is
+ * the wall-clock difference between the `model/routing-decision` event and
+ * the `model/usage` event.
+ *
+ * When no `model/usage` event exists (e.g. the provider returned no usage
+ * data), cost and latency are zero — the attempt is still counted, just
+ * unpriced. This preserves the invariant that every attempt is accounted
+ * for, even when pricing data is incomplete.
+ *
+ * @param events - the full session event log.
+ * @param routingDecisionId - the routing decision for this attempt.
+ * @returns the cost in USD and latency in milliseconds.
+ */
+export function computeAttemptAccounting(
+  events: readonly SessionEvent[],
+  routingDecisionId: string,
+  pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
+): { costUsd: number; latencyMs: number; outputTokens: number } {
+  let routingTime: number | undefined
+  let usageTime: number | undefined
+  let costUsd = 0
+  let outputTokens = 0
+
+  for (const event of events) {
+    if ((event.type as string) === 'model/routing-decision') {
+      const data = event.data as { routingDecisionId?: string }
+      if (data.routingDecisionId === routingDecisionId) {
+        routingTime = event.time
+      }
+    }
+    if (event.type === 'model/usage') {
+      const data = event.data as {
+        routingDecisionId?: string
+        turn: number
+        provider: string
+        model: string
+        usage: import('@deepseek-ai/dsh-llm').TokenUsage
+      }
+      // Match by routingDecisionId when present.
+      if (data.routingDecisionId === routingDecisionId) {
+        usageTime = event.time
+        outputTokens = data.usage.outputTokens
+        const pricing = lookupPricingAt(
+          pricingRegistry,
+          data.provider,
+          data.model,
+          new Date(event.time),
+        )
+        if (pricing !== undefined) {
+          costUsd = calculateCost(data.usage, pricing).amount
+        }
+        break
+      }
+    }
+  }
+
+  const latencyMs = routingTime !== undefined && usageTime !== undefined
+    ? Math.max(0, usageTime - routingTime)
+    : 0
+
+  return { costUsd, latencyMs, outputTokens }
+}
+
+/**
+ * Compute cumulative cost across all repair attempts for one goal from the
+ * durable `model/usage` events. Used by `reconstructRepairState` to recover
+ * real cost after restart.
+ *
+ * @param events - the full session event log.
+ * @param routingDecisionIds - the routing decision IDs for each attempt.
+ * @returns the total cost in USD.
+ */
+function computeTotalCost(
+  events: readonly SessionEvent[],
+  routingDecisionIds: readonly string[],
+  pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
+): number {
+  let total = 0
+  for (const rdId of routingDecisionIds) {
+    total += computeAttemptAccounting(events, rdId, pricingRegistry).costUsd
+  }
+  return total
+}
+
+/**
+ * Compute cumulative output tokens across all repair attempts from the
+ * durable `model/usage` events. Used by `reconstructRepairState` to recover
+ * the output-token budget after restart.
+ *
+ * @param events - the full session event log.
+ * @param routingDecisionIds - the routing decision IDs for each attempt.
+ * @returns the total output tokens.
+ */
+function computeTotalOutputTokens(
+  events: readonly SessionEvent[],
+  routingDecisionIds: readonly string[],
+): number {
+  let total = 0
+  for (const rdId of routingDecisionIds) {
+    total += computeAttemptAccounting(events, rdId).outputTokens
+  }
+  return total
+}
+
+/**
  * Reconstruct repair state for one goal from the durable session log.
  *
  * Attempts are reconstructed from real execution events
@@ -237,31 +739,63 @@ function changedFilesInTurn(events: readonly SessionEvent[], turn: number): stri
  *
  * @param events - the full session event log.
  * @param goalId - the goal id to reconstruct state for.
+ * @param pricingRegistry - optional pricing registry for cost recovery. Defaults to {@link DEFAULT_PRICING_REGISTRY}.
  * @returns the reconstructed state, or undefined if no repair or repair completed.
  */
 export function reconstructRepairState(
   events: readonly SessionEvent[],
   goalId: string,
+  pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
 ): RepairState | undefined {
-  // Find the repairId for this goal from repair events.
-  let repairId: string | undefined
-  let completed = false
-  for (const event of events) {
-    if ((event.type as string) === 'repair/completed') {
-      const data = event.data as Record<string, unknown>
-      if (typeof data.repairId === 'string' && data.repairId.includes(goalId)) {
-        completed = true
+  // Find the repairId for this goal by tracing execution events.
+  // goal/verification events reference the goal; the preceding
+  // model/routing-decision has the routingDecisionId; repair/evidence
+  // events reference the same routingDecisionId and carry the repairId.
+  // This works for both legacy timestamp-based IDs (which embed the
+  // goalId) and deterministic `repair:v1:<hash>` IDs (which do not).
+  const routingForGoal = new Set<string>()
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]
+    if (event === undefined) continue
+    if (event.type !== 'goal/verification') continue
+    const vData = event.data as { goal: { id: string } }
+    if (vData.goal.id !== goalId) continue
+    for (let j = i - 1; j >= 0; j--) {
+      const prev = events[j]
+      if (prev === undefined) break
+      if ((prev.type as string) !== 'model/routing-decision') continue
+      const rdData = prev.data as { routingDecisionId?: string }
+      if (rdData.routingDecisionId !== undefined) {
+        routingForGoal.add(rdData.routingDecisionId)
         break
       }
     }
-    if (repairId === undefined && (event.type as string).startsWith('repair/')) {
-      const data = event.data as Record<string, unknown>
-      if (typeof data.repairId === 'string' && data.repairId.includes(goalId)) {
+  }
+
+  let repairId: string | undefined
+  for (const event of events) {
+    if ((event.type as string) !== 'repair/evidence') continue
+    const data = event.data as Record<string, unknown>
+    if (typeof data.routingDecisionId === 'string' && routingForGoal.has(data.routingDecisionId)) {
+      if (typeof data.repairId === 'string') {
         repairId = data.repairId
+        break
       }
     }
   }
-  if (repairId === undefined || completed) return undefined
+
+  if (repairId === undefined) return undefined
+
+  let completed = false
+  for (const event of events) {
+    if ((event.type as string) !== 'repair/completed') continue
+    const data = event.data as Record<string, unknown>
+    if (data.repairId === repairId) {
+      completed = true
+      break
+    }
+  }
+  if (completed) return undefined
 
   // Index repair/evidence events by routingDecisionId for full FailurePackage
   // reconstruction. Each evidence event carries the complete failure data.
@@ -271,6 +805,7 @@ export function reconstructRepairState(
     progress: RepairAttempt['progress']
     failurePackage: FailurePackage
     failurePackageId: string
+    workspaceHash?: string
   }>()
   for (const event of events) {
     if ((event.type as string) !== 'repair/evidence') continue
@@ -290,6 +825,7 @@ export function reconstructRepairState(
       progress: data.progress as RepairAttempt['progress'],
       failurePackage,
       failurePackageId: data.failurePackageId as string,
+      ...data.workspaceHash !== undefined ? { workspaceHash: data.workspaceHash as string } : {},
     })
   }
 
@@ -349,6 +885,9 @@ export function reconstructRepairState(
     const evidence = evidenceByRouting.get(routingDecisionId)
     if (evidence === undefined) continue
 
+    // Compute real cost and latency from the durable model/usage event.
+    const { costUsd, latencyMs } = computeAttemptAccounting(events, routingDecisionId, pricingRegistry)
+
     attempts.push({
       attempt: evidence.attempt,
       model,
@@ -359,22 +898,42 @@ export function reconstructRepairState(
       ...(evidence.progress !== undefined ? { progress: evidence.progress } : {}),
       failurePackage: evidence.failurePackage,
       failurePackageId: evidence.failurePackageId,
-      costUsd: 0,
-      latencyMs: 0,
+      costUsd,
+      latencyMs,
+      ...evidence.workspaceHash !== undefined ? { workspaceHash: evidence.workspaceHash } : {},
     })
   }
 
   // Sort attempts by attempt number for stable reconstruction.
   attempts.sort((a, b) => a.attempt - b.attempt)
 
+  // Recover cumulative cost from durable usage events.
+  const totalCostUsd = computeTotalCost(events, attempts.map(a => a.routingDecisionId), pricingRegistry)
+  const totalOutputTokens = computeTotalOutputTokens(events, attempts.map(a => a.routingDecisionId))
+
+  // Recover the original repair start time from the first repair/evidence
+  // event for this repair sequence. This ensures elapsed time remains
+  // accurate after crash/restart.
+  let startedAt = Date.now()
+  for (const event of events) {
+    if ((event.type as string) === 'repair/evidence') {
+      const data = event.data as { repairId?: string }
+      if (data.repairId === repairId) {
+        startedAt = event.time
+        break
+      }
+    }
+  }
+
   return {
     repairId,
     attempts,
-    totalCostUsd: 0,
-    elapsedMs: 0,
-    startedAt: Date.now(),
+    totalCostUsd,
+    elapsedMs: Date.now() - startedAt,
+    startedAt,
     flashAttempts,
     proAttempts,
+    totalOutputTokens,
   }
 }
 
@@ -392,6 +951,12 @@ export interface RepairHandlerDeps {
   readonly proModelAvailable: boolean
   /** Whether the current model was manually selected. */
   readonly manualModelSelection: boolean
+  /** Pricing registry for cost calculation. Defaults to {@link DEFAULT_PRICING_REGISTRY}. */
+  readonly pricingRegistry?: readonly ModelPricing[]
+  /** Optional workspace provenance provider for SHA-256 file content hashing. */
+  readonly workspaceProvenanceProvider?: WorkspaceProvenanceProvider
+  /** Optional harness-owned rollback provider for workspace restoration. */
+  readonly rollbackProvider?: RollbackProvider
 }
 
 /** Result of handling one verification failure. */
@@ -446,6 +1011,17 @@ export function handleVerificationFailure(
   const fingerprint = computeFailureFingerprint(failure)
   const failurePackageId = computeFailurePackageId(session.id, turn, routingDecisionId)
 
+  // Compute real cost and latency from the durable model/usage event.
+  const { costUsd, latencyMs, outputTokens } = computeAttemptAccounting(
+    session.events, routingDecisionId, deps.pricingRegistry,
+  )
+
+  // Compute workspace provenance hash when a provider is configured.
+  let workspaceHash: string | undefined
+  if (deps.workspaceProvenanceProvider !== undefined) {
+    workspaceHash = deps.workspaceProvenanceProvider({ session, changedFiles })
+  }
+
   const attempt: RepairAttempt = {
     attempt: attemptNumber,
     model,
@@ -456,10 +1032,13 @@ export function handleVerificationFailure(
     progress,
     failurePackage: failure,
     failurePackageId,
-    costUsd: 0,
-    latencyMs: 0,
+    costUsd,
+    latencyMs,
+    ...workspaceHash !== undefined ? { workspaceHash } : {},
   }
   state.attempts.push(attempt)
+  state.totalCostUsd += costUsd
+  state.totalOutputTokens += outputTokens
 
   // Emit repair/evidence
   session.append('repair/evidence', {
@@ -476,6 +1055,7 @@ export function handleVerificationFailure(
     typeErrors: failure.typeErrors,
     buildErrors: failure.buildErrors,
     changedFiles: failure.changedFiles,
+    ...workspaceHash !== undefined ? { workspaceHash } : {},
   }, { ignorable: true })
 
   // Call the repair controller
@@ -490,6 +1070,7 @@ export function handleVerificationFailure(
     budget: {
       totalCostUsd: state.totalCostUsd,
       elapsedMs: Date.now() - state.startedAt,
+      totalOutputTokens: state.totalOutputTokens,
     },
     limits: deps.limits,
     ...(!deps.proModelAvailable ? { proModelAvailable: false } : {}),
@@ -513,6 +1094,59 @@ export function handleVerificationFailure(
   let pendingEscalation: PendingEscalation | undefined
   let claimModel: ModelRef | undefined
 
+  // Perform harness-owned workspace rollback before the next repair attempt
+  // (flash-repair or pro-escalate). Rollback is NOT performed for complete
+  // or stop, since no new attempt will be made. When rollback fails, the
+  // repair MUST fail closed: no new model attempt is issued.
+  if (deps.rollbackProvider !== undefined
+    && (decision.action === 'flash-repair' || decision.action === 'pro-escalate')) {
+    const rollbackResult = deps.rollbackProvider({
+      session,
+      repairId: state.repairId,
+      attempt: attemptNumber,
+      routingDecisionId,
+      ...workspaceHash !== undefined ? { workspaceHash } : {},
+    })
+    session.append('repair/rollback', {
+      repairId: state.repairId,
+      turn,
+      step: 0,
+      attempt: attemptNumber,
+      routingDecisionId,
+      rollbackTarget: rollbackResult.rollbackTarget,
+      success: rollbackResult.success,
+      ...rollbackResult.failureReason !== undefined ? { failureReason: rollbackResult.failureReason } : {},
+    }, { ignorable: true })
+
+    // Fail closed: rollback failure stops repair immediately.
+    // No agent.followup(), no new model/routing-decision, no provider call.
+    if (!rollbackResult.success) {
+      session.append('repair/completed', {
+        repairId: state.repairId,
+        turn,
+        step: 0,
+        finalRoutingDecisionId: routingDecisionId,
+        verified: false,
+        totalAttempts: state.attempts.length,
+        flashAttempts: state.flashAttempts,
+        proAttempts: state.proAttempts,
+        totalCostUsd: state.totalCostUsd,
+        elapsedMs: Date.now() - state.startedAt,
+        outcome: 'rollback-failed',
+      }, { ignorable: true })
+      return {
+        action: 'stop',
+        reason: 'rollback-failed',
+        followupContent: undefined,
+        events: [],
+        repairId: state.repairId,
+        attemptNumber,
+        pendingEscalation: undefined,
+        claimModel: undefined,
+      }
+    }
+  }
+
   switch (decision.action) {
     case 'complete': {
       session.append('repair/completed', {
@@ -526,13 +1160,14 @@ export function handleVerificationFailure(
         proAttempts: state.proAttempts,
         totalCostUsd: state.totalCostUsd,
         elapsedMs: Date.now() - state.startedAt,
+        outcome: 'verified',
       }, { ignorable: true })
       break
     }
     case 'flash-repair': {
       state.flashAttempts += 1
       claimModel = deps.flashModel
-      followupContent = renderRepairPrompt(decision.evidence, state.attempts.length + 1)
+      followupContent = renderRepairPrompt(projectFailureForModel(decision.evidence), state.attempts.length + 1)
       break
     }
     case 'pro-escalate': {
@@ -553,10 +1188,19 @@ export function handleVerificationFailure(
         turn,
       }
       claimModel = deps.proModel
-      followupContent = renderProEscalationPrompt(decision.evidence, state.flashAttempts)
+      followupContent = renderProEscalationPrompt(projectFailureForModel(decision.evidence), state.flashAttempts)
       break
     }
     case 'stop': {
+      const stopOutcome: RepairOutcome = decision.reason === 'cost-limit'
+        ? 'cost-limit'
+        : decision.reason === 'time-limit'
+          ? 'time-limit'
+          : decision.reason === 'output-token-limit'
+            ? 'output-token-limit'
+            : decision.reason === 'escalation-model-unavailable'
+              ? 'model-unavailable'
+              : 'attempts-exhausted'
       session.append('repair/completed', {
         repairId: state.repairId,
         turn,
@@ -568,6 +1212,7 @@ export function handleVerificationFailure(
         proAttempts: state.proAttempts,
         totalCostUsd: state.totalCostUsd,
         elapsedMs: Date.now() - state.startedAt,
+        outcome: stopOutcome,
       }, { ignorable: true })
       break
     }
@@ -591,34 +1236,64 @@ export function handleVerificationFailure(
 }
 
 /**
- * Emit `repair/completed` for an active repair that passes verification.
- * Called when `goal/verification` PASS arrives while a repair is active.
- * Clears the repair state after recording the completion event.
+ * Emit `repair/completed` for an active repair that passes diagnostic
+ * verification. When a holdout verifier is provided, runs it before
+ * completing: a holdout failure emits `repair/completed` with
+ * `verified: false` and `qualificationFailure` but does NOT trigger repair.
  *
  * @param session - the session to append the completion event to.
  * @param state - the mutable repair state for this goal.
  * @param turn - the current turn number.
- * @param routingDecisionId - the routing decision that produced the passing verification.
+ * @param routingDecisionId - the routing decision that produced the passing diagnostic verification.
+ * @param pricingRegistry - optional pricing registry for cost calculation. Defaults to {@link DEFAULT_PRICING_REGISTRY}.
+ * @param holdoutVerifier - optional qualification holdout verifier. When present, must pass before completion.
+ * @param goalId - the goal id being verified, required when holdoutVerifier is present.
  * @returns the completion event, or undefined if no active repair.
  */
-export function handleVerificationPass(
+export async function handleVerificationPass(
   session: Session,
   state: RepairState,
   turn: number,
   routingDecisionId: string,
-): SessionEvent | undefined {
+  pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
+  holdoutVerifier?: HoldoutVerifier,
+  goalId?: string,
+): Promise<SessionEvent | undefined> {
+  // Account for the passing attempt's cost and output tokens from the durable model/usage event.
+  const { costUsd, outputTokens } = computeAttemptAccounting(session.events, routingDecisionId, pricingRegistry)
+  state.totalCostUsd += costUsd
+  state.totalOutputTokens += outputTokens
+
+  // Run holdout verification when configured. Holdout failures do NOT
+  // trigger repair — they report qualification failure and stop.
+  let qualificationFailure: { reason: string; evidence?: readonly string[] } | undefined
+  if (holdoutVerifier !== undefined) {
+    if (goalId === undefined) {
+      throw new Error('handleVerificationPass: goalId is required when holdoutVerifier is provided')
+    }
+    const holdoutResult = await holdoutVerifier({ session, state, routingDecisionId, goalId })
+    if (!holdoutResult.passed) {
+      qualificationFailure = {
+        reason: holdoutResult.reason,
+        ...holdoutResult.evidence !== undefined ? { evidence: holdoutResult.evidence } : {},
+      }
+    }
+  }
+
   const eventsBefore = session.events.length
   session.append('repair/completed', {
     repairId: state.repairId,
     turn,
     step: 0,
     finalRoutingDecisionId: routingDecisionId,
-    verified: true,
+    verified: qualificationFailure === undefined,
     totalAttempts: state.attempts.length,
     flashAttempts: state.flashAttempts,
     proAttempts: state.proAttempts,
     totalCostUsd: state.totalCostUsd,
     elapsedMs: Date.now() - state.startedAt,
+    outcome: qualificationFailure === undefined ? 'verified' : 'qualification-failed',
+    ...qualificationFailure !== undefined ? { qualificationFailure } : {},
   }, { ignorable: true })
   const newEvents = session.events.slice(eventsBefore)
   return newEvents[0]
@@ -659,6 +1334,7 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
       startedAt: Date.now(),
       flashAttempts: 0,
       proAttempts: 0,
+      totalOutputTokens: 0,
     }
     repairStates.set(key, state)
     return state
@@ -687,14 +1363,21 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
       const key = `${agent.id}:${goal.id}`
       const state = repairStates.get(key)
 
-      // PASS with an active repair: emit repair/completed and clear state.
+      // PASS with an active repair: run holdout (if configured) and emit
+      // repair/completed. Holdout failures do NOT trigger repair.
       if (data.passed) {
         if (state === undefined) return
         const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
-        handleVerificationPass(session, state, turn, routingDecisionId)
-        // Release the model selection back to automatic routing.
-        releaseToAuto(session, 'system')
-        repairStates.delete(key)
+        void handleVerificationPass(
+          session, state, turn, routingDecisionId,
+          DEFAULT_PRICING_REGISTRY,
+          config.holdoutVerifier,
+          goal.id,
+        ).then(() => {
+          // Release the model selection back to automatic routing.
+          releaseToAuto(session, 'system')
+          repairStates.delete(key)
+        })
         return
       }
 
@@ -711,6 +1394,36 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
 
       const repairState = stateFor(agent, goal)
 
+      // Fail closed on undecidable model-selection authority. A future-schema
+      // or uninterpretable durable authority record must NOT be treated as
+      // automatic — the repair runtime refuses to transition the model.
+      const authority = resolveSelectionAuthority(session.events)
+      if (authority.kind === 'undecidable') {
+        ctx.logger.warn(
+          `repair-runtime: selection authority undecidable for goal "${goal.id}"; refusing repair model transition`,
+        )
+        const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
+        session.append('repair/completed', {
+          repairId: repairState.repairId,
+          turn,
+          step: 0,
+          finalRoutingDecisionId: routingDecisionId,
+          verified: false,
+          totalAttempts: repairState.attempts.length,
+          flashAttempts: repairState.flashAttempts,
+          proAttempts: repairState.proAttempts,
+          totalCostUsd: repairState.totalCostUsd,
+          elapsedMs: Date.now() - repairState.startedAt,
+          outcome: 'authority-undecidable',
+        }, { ignorable: true })
+        ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+          code: 'selection-authority-undecidable',
+          message: 'Model selection authority cannot be reconstructed from the durable log',
+        })
+        repairStates.delete(`${agent.id}:${goal.id}`)
+        return
+      }
+
       const deps: RepairHandlerDeps = {
         flashModel,
         proModel,
@@ -718,10 +1431,15 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           maxFlashAttempts: config.maxFlashAttempts ?? 3,
           maxProAttempts: config.maxProAttempts ?? 2,
           maxTotalAttempts: config.maxTotalAttempts ?? 5,
+          ...config.maxTaskCostUsd !== undefined ? { maxTaskCostUsd: config.maxTaskCostUsd } : {},
+          ...config.maxElapsedMs !== undefined ? { maxElapsedMs: config.maxElapsedMs } : {},
+          ...config.maxOutputTokens !== undefined ? { maxOutputTokens: config.maxOutputTokens } : {},
         },
         decide: repairController.decide,
-        proModelAvailable: true,
-        manualModelSelection: false,
+        proModelAvailable: config.proModelAvailable ?? true,
+        manualModelSelection: authority.kind === 'manual',
+        ...config.workspaceProvenanceProvider !== undefined ? { workspaceProvenanceProvider: config.workspaceProvenanceProvider } : {},
+        ...config.rollbackProvider !== undefined ? { rollbackProvider: config.rollbackProvider } : {},
       }
 
       const result = handleVerificationFailure(session, repairState, deps, turn, data.checks)

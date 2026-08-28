@@ -180,6 +180,8 @@ Direct dependencies of the `pyproject.toml` manifests, plus `uv` as the developm
 | [`hatchling`](https://github.com/pypa/hatch) | MIT | build backend |
 | [`pydantic`](https://github.com/pydantic/pydantic) | MIT | runtime dependency of `deepseek-harness-sdk` |
 | [`pytest`](https://github.com/pytest-dev/pytest) | MIT | test-only |
+| [`pytest-asyncio`](https://github.com/pytest-dev/pytest-asyncio) | Apache-2.0 | test-only |
+| [`setuptools`](https://github.com/pypa/setuptools) | MIT | build backend |
 | [`uv`](https://github.com/astral-sh/uv) | MIT / Apache-2.0 | development workflow tool |
 
 ## Fetched at build time

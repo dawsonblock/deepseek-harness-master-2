@@ -11,6 +11,7 @@ import type {
   RepairDecisionEventData,
   ModelEscalationEventData,
   RepairCompletedEventData,
+  RepairRollbackEventData,
 } from './types.ts'
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -54,5 +55,18 @@ declare module '@deepseek-ai/dsh-session/types' {
      * @param totalCostUsd - cumulative cost across all attempts.
      */
     'repair/completed': RepairCompletedEventData
+
+    /**
+     * Harness-owned workspace rollback before a repair attempt. Records that
+     * the harness restored workspace state to a known checkpoint before
+     * routing the next repair attempt, rather than relying on the model to
+     * undo its own changes.
+     * @mode durable
+     * @param repairId - the repair sequence this rollback belongs to.
+     * @param attempt - the failed attempt number whose changes are being rolled back.
+     * @param routingDecisionId - the routing decision of the failed attempt.
+     * @param rollbackTarget - the workspace hash or checkpoint being restored.
+     */
+    'repair/rollback': RepairRollbackEventData
   }
 }
