@@ -142,6 +142,7 @@ export async function runTaskTrajectory(
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
 
+  const wallClockStart = Date.now()
   const loopResult = await runRepairLoop({
     taskId: manifest.taskId,
     workspace,
@@ -203,7 +204,7 @@ export async function runTaskTrajectory(
       latencyMs: a.latencyMs,
       repairAction: a.repairAction,
       repairReason: a.repairReason,
-      changedFiles: getChangedFiles(workspace),
+      changedFiles: attemptObservation.filesModified,
       toolCallCount: a.sessionEvents?.filter(e => e.type === 'tool/call').length ?? 0,
       filesInspected: attemptObservation.filesInspected,
       terminalOutcome: a.repairAction === 'complete' && a.repairReason === 'qualification-failed'
@@ -234,7 +235,7 @@ export async function runTaskTrajectory(
     proAttempts: loopResult.proAttempts,
     escalatedToPro: loopResult.escalatedToPro,
     totalCostUsd: loopResult.totalCostUsd,
-    totalLatencyMs: loopResult.totalLatencyMs,
+    totalLatencyMs: Date.now() - wallClockStart,
     totalOutputTokens: attempts.reduce((s, a) => s + a.usage.outputTokens, 0),
     totalCacheReadTokens: attempts.reduce((s, a) => s + a.usage.cacheReadTokens, 0),
     totalCacheMissTokens: attempts.reduce((s, a) => s + a.usage.cacheMissTokens, 0),

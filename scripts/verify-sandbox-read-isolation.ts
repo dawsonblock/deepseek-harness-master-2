@@ -52,6 +52,7 @@ const PLATFORM_BACKENDS: Record<string, readonly BackendSpec[]> = {
 interface TestResult {
   name: string
   passed: boolean
+  skipped: boolean
 }
 
 /** Qualification record for one backend. */
@@ -61,6 +62,7 @@ interface BackendQualification {
   readIsolationModel: string
   testsPassed: string[]
   testsFailed: string[]
+  testsSkipped: string[]
 }
 
 /** Confine a shell command under `policy` and run it for real. */
@@ -122,21 +124,21 @@ function runSuite(
   {
     const t = runConfined(sandbox, `cat '${sentinelPath}'`, policy)
     const passed = assertDenied('sentinel file not readable', t.result.stdout, t.result.status)
-    results.push({ name: 'direct-absolute-protected-read', passed })
+    results.push({ name: 'direct-absolute-protected-read', passed, skipped: false })
   }
 
   // Test 2: Read benchmark runner source by absolute path
   {
     const t = runConfined(sandbox, `head -1 '${join(benchmarkScriptsDir, 'run-v0174-repair-experiment.ts')}'`, policy)
     const passed = assertDenied('benchmark source not readable', t.result.stdout, t.result.status)
-    results.push({ name: 'benchmark-source-read', passed })
+    results.push({ name: 'benchmark-source-read', passed, skipped: false })
   }
 
   // Test 3: Read inside workspace
   {
     const t = runConfined(sandbox, 'cat workspace-file.txt', policy)
     const passed = assertAllowed('workspace file readable', t.result.stdout, 'workspace content')
-    results.push({ name: 'workspace-read', passed })
+    results.push({ name: 'workspace-read', passed, skipped: false })
   }
 
   // Test 4: Write inside workspace
@@ -148,7 +150,7 @@ function runSuite(
     } else {
       console.error(`  FAIL: workspace write failed (exit ${t.result.status})`)
     }
-    results.push({ name: 'workspace-write', passed })
+    results.push({ name: 'workspace-write', passed, skipped: false })
   }
 
   // Test 5: Relative path traversal to protected path
@@ -166,7 +168,7 @@ function runSuite(
     })()
     const t = runConfined(sandbox, `cat '${relPath}'`, policy)
     const passed = assertDenied('traversal read denied', t.result.stdout, t.result.status)
-    results.push({ name: 'relative-traversal', passed })
+    results.push({ name: 'relative-traversal', passed, skipped: false })
   }
 
   // Test 6: Symlink inside workspace → protected file
@@ -178,13 +180,14 @@ function runSuite(
     } catch {
       console.log('  SKIP: cannot create symlink (platform restriction)')
       try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
-      results.push({ name: 'symlink-to-file', passed: true })
-      return results
+      results.push({ name: 'symlink-to-file', passed: false, skipped: true })
     }
-    const t = runConfined(sandbox, 'cat leak-file', policy)
-    const passed = assertDenied('symlink-to-file read denied', t.result.stdout, t.result.status)
-    results.push({ name: 'symlink-to-file', passed })
-    try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+    if (!results.at(-1)?.skipped) {
+      const t = runConfined(sandbox, 'cat leak-file', policy)
+      const passed = assertDenied('symlink-to-file read denied', t.result.stdout, t.result.status)
+      results.push({ name: 'symlink-to-file', passed, skipped: false })
+      try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+    }
   }
 
   // Test 7: Symlink inside workspace → protected directory
@@ -196,27 +199,28 @@ function runSuite(
     } catch {
       console.log('  SKIP: cannot create symlink (platform restriction)')
       try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
-      results.push({ name: 'symlink-to-dir', passed: true })
-      return results
+      results.push({ name: 'symlink-to-dir', passed: false, skipped: true })
     }
-    const t = runConfined(sandbox, 'cat leak-dir/holdout-sentinel.txt', policy)
-    const passed = assertDenied('symlink-to-dir read denied', t.result.stdout, t.result.status)
-    results.push({ name: 'symlink-to-dir', passed })
-    try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+    if (!results.at(-1)?.skipped) {
+      const t = runConfined(sandbox, 'cat leak-dir/holdout-sentinel.txt', policy)
+      const passed = assertDenied('symlink-to-dir read denied', t.result.stdout, t.result.status)
+      results.push({ name: 'symlink-to-dir', passed, skipped: false })
+      try { rmSync(linkPath, { force: true }) } catch { /* ignore */ }
+    }
   }
 
   // Test 8: Child bash process attempts protected read
   {
     const t = runConfined(sandbox, `bash -c "cat '${sentinelPath}'"`, policy)
     const passed = assertDenied('child bash read denied', t.result.stdout, t.result.status)
-    results.push({ name: 'child-bash-read', passed })
+    results.push({ name: 'child-bash-read', passed, skipped: false })
   }
 
   // Test 9: Node child process attempts protected read
   {
     const t = runConfined(sandbox, `node -e "const fs=require('fs');process.stdout.write(fs.readFileSync('${sentinelPath}','utf8'))"`, policy)
     const passed = assertDenied('child node read denied', t.result.stdout, t.result.status)
-    results.push({ name: 'child-node-read', passed })
+    results.push({ name: 'child-node-read', passed, skipped: false })
   }
 
   return results
@@ -271,8 +275,9 @@ async function main(): Promise<void> {
       continue
     }
 
-    const testsPassed = results.filter(r => r.passed).map(r => r.name)
-    const testsFailed = results.filter(r => !r.passed).map(r => r.name)
+    const testsPassed = results.filter(r => r.passed && !r.skipped).map(r => r.name)
+    const testsFailed = results.filter(r => !r.passed && !r.skipped).map(r => r.name)
+    const testsSkipped = results.filter(r => r.skipped).map(r => r.name)
 
     qualifications.push({
       platform,
@@ -280,9 +285,10 @@ async function main(): Promise<void> {
       readIsolationModel: spec.readIsolationModel,
       testsPassed,
       testsFailed,
+      testsSkipped,
     })
 
-    if (testsFailed.length > 0) {
+    if (testsFailed.length > 0 || testsSkipped.length > 0) {
       anyFailed = true
     }
 
@@ -302,7 +308,7 @@ async function main(): Promise<void> {
   }
 
   if (anyFailed) {
-    console.error('\nFAIL: at least one isolation test failed on at least one backend.')
+    console.error('\nFAIL: at least one isolation test failed or was skipped on at least one backend.')
     process.exit(1)
   }
 
