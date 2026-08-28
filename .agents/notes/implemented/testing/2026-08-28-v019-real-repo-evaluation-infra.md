@@ -31,6 +31,11 @@ Every attempt records: taskId, attempt number, model, routingDecisionId, usage t
 - `scripts/v019-task-corpus.ts` — initial 5-task infrastructure validation corpus
 - `scripts/run-v019-evaluation.ts` — main evaluation runner with checkpointing
 - `scripts/v019-evaluation.spec.ts` — 19 tests covering identity, manifests, metrics, taxonomy
+- `scripts/v019-batch-a-corpus.ts` — 25-task Batch A corpus (synthetic, see Audit below)
+- `scripts/v019-batch-a-repos.sh` — generates 7 synthetic TypeScript repositories
+- `scripts/v019-corpus-qualification.ts` — corpus qualification state machine
+- `scripts/v019-qualify-batch-a.ts` — Batch A qualification runner
+- `scripts/run-v019-batch-a-evaluation.ts` — Batch A live evaluation runner
 
 ## Testing
 
@@ -47,3 +52,7 @@ typecheck PASS. 19/19 evaluation infrastructure tests PASS covering experiment i
 ## Consequences
 
 The infrastructure freezes the v0.18.0 policy as experimental control and makes every trajectory auditable. The 5-task validation corpus is synthetic; the full 75-task cohort across 8-15 real open-source repositories is the actual evaluation. The failure taxonomy will determine whether v0.19 targets context acquisition, verifier quality, task decomposition, or latency — not feature additions. The discipline of no tuning during collection is enforced by the frozen limits in the experiment manifest.
+
+### Audit findings (2026-08-28)
+
+An independent source audit found that the v0.19 evaluation path has composition and benchmark-design defects that invalidate its claims as a real-repository, workspace-isolated, unseen-holdout benchmark. The proposed [v0.19 integration correction](../../proposed/architecture/2026-08-28-v019-integration-correction-audit.md) records the full findings and correction plan. Key defects: `fs-local` remains mounted (filesystem tools bypass sandbox), `fs-sandbox` does not fence reads, V3 holdouts are model-visible and included in diagnostic discovery, Batch A is synthetic (not real-repository), task reproduction can false-pass via shared `npm test`, the evaluator uses `v018-repair-loop.ts` instead of production `RepairRuntime`, rollback is not wired, `replayMismatchRate` is hard-coded zero, and `computeMetrics` does not filter by `benchmarkEligible`. Batch A is reclassified as `v019-synthetic-multirepo-validation-v1` pending correction.
