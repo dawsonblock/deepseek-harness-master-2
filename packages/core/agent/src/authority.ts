@@ -350,6 +350,12 @@ export function releaseToAuto(session: Session, source: AuthoritySource = 'web')
     explicitSelections.delete(session)
     return
   }
+  if ('undecidable' in prior) {
+    // The durable state carries a future or unreconstructable authority schema.
+    // Overwriting it with Auto would silently discard unknown authority state;
+    // refuse until the caller explicitly resolves the unknown state.
+    throw new Error('releaseToAuto: cannot release undecidable authority state to auto')
+  }
   const next: ModelSelectionState = {
     mode: 'auto',
     authority: 'router',

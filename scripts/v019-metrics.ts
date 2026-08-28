@@ -42,7 +42,7 @@ export interface MetricsReport {
   readonly sameFailureEscalationRate: number
   readonly rollbackRate: number
   readonly budgetStopRate: number
-  readonly replayMismatchRate: number
+  readonly replayMismatchRate: number | null
   readonly providerFailureRate: number
   readonly referenceFixFileMissRate: number
   readonly referenceFixFileInspectionRate: number
@@ -84,7 +84,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   // floating-point addition is not associative.
   const sorted = [...trajectories].sort((a, b) => a.taskId.localeCompare(b.taskId))
 
-  const evaluated = sorted.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
+  const evaluated = sorted.filter(t => t.benchmarkEligible && t.modelCapabilityStatus !== 'NOT_EVALUATED')
   const evalN = evaluated.length
   const infraFailures = sorted.filter(t => t.taskState === 'FAILED_INFRA')
 
@@ -189,7 +189,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     sameFailureEscalationRate: proEscalations.length > 0 ? sameFailureEscalations.length / proEscalations.length : 0,
     rollbackRate: evalN > 0 ? rollbacks.length / evalN : 0,
     budgetStopRate: evalN > 0 ? budgetStops.length / evalN : 0,
-    replayMismatchRate: 0,
+    replayMismatchRate: null,
     providerFailureRate: evalN > 0 ? providerFailures.length / evalN : 0,
     referenceFixFileMissRate: failedWithReference.length > 0
       ? referenceFixFileMisses.length / failedWithReference.length
@@ -269,7 +269,7 @@ function emptyMetrics(): MetricsReport {
     meanCostPerVerifiedTask: 0, medianCostPerVerifiedTask: 0,
     latencyP50: 0, latencyP75: 0, latencyP90: 0, latencyP95: 0, latencyMax: 0,
     sameFailureEscalationRate: 0, rollbackRate: 0, budgetStopRate: 0,
-    replayMismatchRate: 0, providerFailureRate: 0,
+    replayMismatchRate: null, providerFailureRate: 0,
     referenceFixFileMissRate: 0, referenceFixFileInspectionRate: 0,
     referenceFixFileInspectionRecall: 0,
     flashCostShare: 0, proCostShare: 0, cacheHitPercentage: 0,

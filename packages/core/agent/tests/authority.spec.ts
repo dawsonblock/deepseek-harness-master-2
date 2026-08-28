@@ -129,4 +129,23 @@ describe('model-selection authority', () => {
     const autoEvent = session.events.findLast(event => event.type === 'model/selection-authority')
     expect(autoEvent?.ignorable).toBeUndefined()
   })
+
+  it('refuses to release an undecidable authority state to auto', () => {
+    // A future or unreconstructable authority schema must not be silently
+    // overwritten with Auto. The caller must explicitly resolve the unknown
+    // state before releasing to auto.
+    const session = freshSession()
+    // Inject a future-schema event that reconstructSelectionState cannot parse.
+    session.append('model/selection-authority', {
+      mode: 'auto',
+      authority: 'router',
+      authorityEpoch: 1,
+      source: 'web',
+      authoritySchemaVersion: 99,
+    } as unknown as ModelSelectionAuthorityEventData, { ignorable: true })
+    expect(() => clearExplicitModelSelection(session, 'web')).toThrow(/undecidable/)
+    // No new authority event was appended.
+    const events = authorityEvents(session)
+    expect(events).toHaveLength(1)
+  })
 })

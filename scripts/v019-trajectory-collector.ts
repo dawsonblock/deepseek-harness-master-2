@@ -358,12 +358,13 @@ async function realTurnRunner(
       throw new Error('Provider returned no assistant output or usage')
     }
     const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model.model, new Date(started))
-    const costUsd = pricing === undefined
-      ? 0
-      : calculateCost({
-        inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
-        reasoningTokens, totalTokens, source: 'provider',
-      }, pricing).amount
+    if (pricing === undefined) {
+      throw new Error(`UNPRICED_USAGE: no pricing found for model ${model.model} at ${new Date(started).toISOString()}`)
+    }
+    const costUsd = calculateCost({
+      inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
+      reasoningTokens, totalTokens, source: 'provider',
+    }, pricing).amount
     const routingDecision = events.find(e => e.type === 'model/routing-decision')
     const routingDecisionId = (routingDecision?.data as { routingDecisionId?: string })?.routingDecisionId ?? 'unknown'
     return {
