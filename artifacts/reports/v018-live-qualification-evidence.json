@@ -1,0 +1,229 @@
+{
+  "release": "v0.18.0",
+  "qualificationId": "v018-qualification-v2",
+  "sourceCommit": "2c4c7b4",
+  "manifestHash": "a95c7634efd3ea47ba6e75ba1e6936d09b479ad60175bcf052bec3cec5daa900",
+  "generatedAt": "2026-08-28T02:31:11.988Z",
+  "runStartedAt": "2026-08-28T02:08:20.986Z",
+  "runCompletedAt": "2026-08-28T02:08:20.986Z",
+  "provider": "deepseek-official",
+  "pricingVersion": "2026-08-25",
+  "billingBand": "peak",
+  "sandboxPolicy": "workspace-isolated",
+  "sandboxPolicyVersion": "v1",
+  "fixtureVersion": "v1",
+  "holdoutVersion": "v1",
+  "modelCapability": {
+    "holdoutPasses": 3,
+    "total": 5,
+    "note": "Fixture hashes are in the v018-qualification-v2 manifest, not duplicated here."
+  },
+  "controlPlaneInvariants": {
+    "providerProtocolErrors": 0,
+    "loopViolations": 0,
+    "duplicateLogicalExecutions": 0,
+    "duplicatePaidRequests": 0,
+    "replayMismatches": 0,
+    "accountingMismatches": 0,
+    "authorityViolations": 0,
+    "rollbackViolations": 0,
+    "eventOrderViolations": 0,
+    "holdoutLeakage": 0,
+    "sandboxViolations": 0,
+    "unpricedUsage": 0,
+    "missingTrajectories": 0
+  },
+  "totals": {
+    "totalCostUsd": 0.031860616,
+    "totalLatencyMs": 163589,
+    "totalOutputTokens": 8987,
+    "totalCacheReadTokens": 484864,
+    "totalCacheMissTokens": 30022,
+    "totalFlashAttempts": 5,
+    "totalProAttempts": 0
+  },
+  "fixtures": [
+    {
+      "taskId": "implement-debounce",
+      "category": "code-implement",
+      "description": "Implement a debounce function with cancel",
+      "finalVerified": true,
+      "holdoutPass": true,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
+      "totalCostUsd": 0.00559308,
+      "totalLatencyMs": 23929,
+      "failureFingerprints": [],
+      "progressHistory": [],
+      "attempts": [
+        {
+          "attempt": 1,
+          "model": "deepseek-v4-flash",
+          "routingDecisionId": "unknown",
+          "verified": true,
+          "diagnosticPass": true,
+          "holdoutPass": true,
+          "usage": {
+            "inputTokens": 5323,
+            "outputTokens": 1594,
+            "reasoningTokens": 501,
+            "totalTokens": 88837,
+            "cacheReadTokens": 81920,
+            "cacheMissTokens": 5323
+          },
+          "costUsd": 0.00559308,
+          "latencyMs": 23929,
+          "repairAction": "complete",
+          "terminalOutcome": "verified-complete"
+        }
+      ]
+    },
+    {
+      "taskId": "implement-throttle",
+      "category": "code-implement",
+      "description": "Implement a throttle function with leading edge",
+      "finalVerified": false,
+      "holdoutPass": false,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
+      "totalCostUsd": 0.00420084,
+      "totalLatencyMs": 22781,
+      "failureFingerprints": [],
+      "progressHistory": [],
+      "attempts": [
+        {
+          "attempt": 1,
+          "model": "deepseek-v4-flash",
+          "routingDecisionId": "unknown",
+          "verified": false,
+          "diagnosticPass": true,
+          "holdoutPass": false,
+          "usage": {
+            "inputTokens": 4983,
+            "outputTokens": 992,
+            "reasoningTokens": 123,
+            "totalTokens": 55895,
+            "cacheReadTokens": 49920,
+            "cacheMissTokens": 4983
+          },
+          "costUsd": 0.00420084,
+          "latencyMs": 22781,
+          "repairAction": "complete",
+          "repairReason": "qualification-failed",
+          "terminalOutcome": "qualification-failed"
+        }
+      ]
+    },
+    {
+      "taskId": "implement-memoize",
+      "category": "code-implement",
+      "description": "Implement memoization with custom resolver",
+      "finalVerified": true,
+      "holdoutPass": true,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
+      "totalCostUsd": 0.010802344000000002,
+      "totalLatencyMs": 56080,
+      "failureFingerprints": [],
+      "progressHistory": [],
+      "attempts": [
+        {
+          "attempt": 1,
+          "model": "deepseek-v4-flash",
+          "routingDecisionId": "unknown",
+          "verified": true,
+          "diagnosticPass": true,
+          "holdoutPass": true,
+          "usage": {
+            "inputTokens": 9131,
+            "outputTokens": 3128,
+            "reasoningTokens": 1121,
+            "totalTokens": 201955,
+            "cacheReadTokens": 189696,
+            "cacheMissTokens": 9131
+          },
+          "costUsd": 0.010802344000000002,
+          "latencyMs": 56080,
+          "repairAction": "complete",
+          "terminalOutcome": "verified-complete"
+        }
+      ]
+    },
+    {
+      "taskId": "fix-broken-sort",
+      "category": "code-debug",
+      "description": "Fix a broken numeric sort function",
+      "finalVerified": false,
+      "holdoutPass": false,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
+      "totalCostUsd": 0.004819208,
+      "totalLatencyMs": 25729,
+      "failureFingerprints": [],
+      "progressHistory": [],
+      "attempts": [
+        {
+          "attempt": 1,
+          "model": "deepseek-v4-flash",
+          "routingDecisionId": "unknown",
+          "verified": false,
+          "diagnosticPass": true,
+          "holdoutPass": false,
+          "usage": {
+            "inputTokens": 4776,
+            "outputTokens": 1429,
+            "reasoningTokens": 179,
+            "totalTokens": 65597,
+            "cacheReadTokens": 59392,
+            "cacheMissTokens": 4776
+          },
+          "costUsd": 0.004819208,
+          "latencyMs": 25729,
+          "repairAction": "complete",
+          "repairReason": "qualification-failed",
+          "terminalOutcome": "qualification-failed"
+        }
+      ]
+    },
+    {
+      "taskId": "implement-promise-pool",
+      "category": "code-implement",
+      "description": "Implement a concurrency-limited promise pool",
+      "finalVerified": true,
+      "holdoutPass": true,
+      "flashAttempts": 1,
+      "proAttempts": 0,
+      "escalatedToPro": false,
+      "totalCostUsd": 0.006445144,
+      "totalLatencyMs": 35070,
+      "failureFingerprints": [],
+      "progressHistory": [],
+      "attempts": [
+        {
+          "attempt": 1,
+          "model": "deepseek-v4-flash",
+          "routingDecisionId": "unknown",
+          "verified": true,
+          "diagnosticPass": true,
+          "holdoutPass": true,
+          "usage": {
+            "inputTokens": 5809,
+            "outputTokens": 1844,
+            "reasoningTokens": 449,
+            "totalTokens": 111589,
+            "cacheReadTokens": 103936,
+            "cacheMissTokens": 5809
+          },
+          "costUsd": 0.006445144,
+          "latencyMs": 35070,
+          "repairAction": "complete",
+          "terminalOutcome": "verified-complete"
+        }
+      ]
+    }
+  ]
+}
