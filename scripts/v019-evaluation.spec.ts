@@ -39,6 +39,7 @@ describe('v019-experiment-identity', () => {
       taskCorpusVersion: 'v1',
       taskCount: 75,
       repositoryCount: 10,
+      benchmarkEligible: true,
     })
     const m2 = buildExperimentManifest({
       repairControllerVersion: '0.18.0',
@@ -50,6 +51,7 @@ describe('v019-experiment-identity', () => {
       taskCorpusVersion: 'v1',
       taskCount: 75,
       repositoryCount: 10,
+      benchmarkEligible: true,
     })
     expect(m1.manifestHash).toBe(m2.manifestHash)
     expect(m1.manifestHash).toHaveLength(64)
@@ -66,6 +68,7 @@ describe('v019-experiment-identity', () => {
       taskCorpusVersion: 'v1',
       taskCount: 5,
       repositoryCount: 1,
+      benchmarkEligible: true,
     })
     expect(m.frozenRepairLimits.maxFlashAttempts).toBe(3)
     expect(m.frozenRepairLimits.maxProAttempts).toBe(2)
@@ -178,63 +181,69 @@ describe('v019-task-manifest', () => {
   })
 })
 
-describe('v019-metrics', () => {
-  function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory {
-    return {
-      taskId: 'task-001',
-      taskManifestHash: 'abc',
-      experimentId: 'v019-real-repo-baseline-v1',
-      repository: {
-        name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
-        size: 'small', loc: 100, fileCount: 5, packageCount: 1, testCount: 1,
-      },
-      category: 'bug-fix',
-      taskDescription: 'Fix a bug',
-      controlPlaneStatus: 'PASS',
-      modelCapabilityStatus: 'PASS',
-      finalVerified: true,
+function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory {
+  return {
+    taskId: 'task-001',
+    taskManifestHash: 'abc',
+    experimentId: 'v019-real-repo-baseline-v1',
+    benchmarkEligible: true,
+    repository: {
+      name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
+      size: 'small', loc: 100, fileCount: 5, packageCount: 1, testCount: 1,
+    },
+    category: 'bug-fix',
+    taskDescription: 'Fix a bug',
+    baseCommit: 'abc',
+    referenceFixCommit: undefined,
+    taskState: 'COMPLETED',
+    controlPlaneStatus: 'PASS',
+    modelCapabilityStatus: 'PASS',
+    finalVerified: true,
+    holdoutPass: true,
+    verificationStrength: 'V2',
+    flashAttempts: 1,
+    proAttempts: 0,
+    escalatedToPro: false,
+    totalCostUsd: 0.005,
+    totalLatencyMs: 20000,
+    totalOutputTokens: 1000,
+    totalCacheReadTokens: 5000,
+    totalCacheMissTokens: 500,
+    attempts: [{
+      attempt: 1,
+      model: 'deepseek-v4-flash',
+      routingDecisionId: 'rd-001',
+      verified: true,
+      diagnosticPass: true,
       holdoutPass: true,
-      verificationStrength: 'V2',
-      flashAttempts: 1,
-      proAttempts: 0,
-      escalatedToPro: false,
-      totalCostUsd: 0.005,
-      totalLatencyMs: 20000,
-      totalOutputTokens: 1000,
-      totalCacheReadTokens: 5000,
-      totalCacheMissTokens: 500,
-      attempts: [{
-        attempt: 1,
-        model: 'deepseek-v4-flash',
-        routingDecisionId: 'rd-001',
-        verified: true,
-        diagnosticPass: true,
-        holdoutPass: true,
-        failureFingerprint: undefined,
-        progress: undefined,
-        usage: {
-          inputTokens: 500, outputTokens: 1000, reasoningTokens: 100,
-          totalTokens: 6500, cacheReadTokens: 5000, cacheMissTokens: 500,
-        },
-        costUsd: 0.005,
-        latencyMs: 20000,
-        repairAction: 'complete',
-        repairReason: undefined,
-        changedFiles: ['src/index.ts'],
-        toolCallCount: 3,
-        filesInspected: ['src/index.ts'],
-        terminalOutcome: 'verified-complete',
-      }],
+      failureFingerprint: undefined,
+      progress: undefined,
+      usage: {
+        inputTokens: 500, outputTokens: 1000, reasoningTokens: 100,
+        totalTokens: 6500, cacheReadTokens: 5000, cacheMissTokens: 500,
+      },
+      costUsd: 0.005,
+      latencyMs: 20000,
+      repairAction: 'complete',
+      repairReason: undefined,
       changedFiles: ['src/index.ts'],
-      rollbackUsed: false,
-      aborted: false,
-      abortReason: undefined,
+      toolCallCount: 3,
+      filesInspected: ['src/index.ts'],
       terminalOutcome: 'verified-complete',
-      failureCategory: undefined,
-      timestamp: '2026-08-28T00:00:00.000Z',
-      ...overrides,
-    }
+    }],
+    changedFiles: ['src/index.ts'],
+    referenceFixFilesInspected: [],
+    rollbackUsed: false,
+    aborted: false,
+    abortReason: undefined,
+    terminalOutcome: 'verified-complete',
+    failureCategory: undefined,
+    timestamp: '2026-08-28T00:00:00.000Z',
+    ...overrides,
   }
+}
+
+describe('v019-metrics', () => {
 
   it('computes metrics for an empty cohort', () => {
     const metrics = computeMetrics([])
@@ -281,12 +290,16 @@ describe('v019-failure-taxonomy', () => {
       taskId: 'fail-001',
       taskManifestHash: 'abc',
       experimentId: 'v019-real-repo-baseline-v1',
+      benchmarkEligible: true,
       repository: {
         name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
         size: 'small', loc: 100, fileCount: 5, packageCount: 1, testCount: 1,
       },
       category: 'bug-fix',
       taskDescription: 'Fix a bug',
+      baseCommit: 'abc',
+      referenceFixCommit: undefined,
+      taskState: 'COMPLETED',
       controlPlaneStatus: 'PASS',
       modelCapabilityStatus: 'FAIL',
       finalVerified: false,
@@ -307,6 +320,7 @@ describe('v019-failure-taxonomy', () => {
       abortReason: undefined,
       terminalOutcome: 'failed-no-rescue',
       failureCategory: undefined,
+      referenceFixFilesInspected: [],
       timestamp: '2026-08-28T00:00:00.000Z',
       ...overrides,
     }
@@ -371,5 +385,136 @@ describe('v019-failure-taxonomy', () => {
     const classifications = classifyAllFailures(trajectories)
     const summary = failureCategorySummary(classifications)
     expect(summary['F11-budget-exhaustion']).toBe(2)
+  })
+
+  it('classifies NOT_EVALUATED tasks as F6 build/environment', () => {
+    const t = makeFailedTrajectory({
+      taskState: 'FAILED_INFRA',
+      controlPlaneStatus: 'NOT_EVALUATED',
+      modelCapabilityStatus: 'NOT_EVALUATED',
+      aborted: true,
+      abortReason: 'npm install failed',
+    })
+    const classification = classifyFailure(t)
+    expect(classification?.category).toBe('F6-build-environment')
+  })
+})
+
+describe('v019 B0 vs benchmark separation', () => {
+  it('B0 manifest is not benchmark-eligible', () => {
+    const m = buildExperimentManifest({
+      repairControllerVersion: '0.18.0',
+      repairRuntimeVersion: '0.18.0',
+      eventSchemaVersion: 0,
+      pricingVersion: '2026-08-25',
+      sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'test',
+      taskCorpusVersion: 'v1',
+      taskCount: 5,
+      repositoryCount: 5,
+      benchmarkEligible: false,
+    })
+    expect(m.benchmarkEligible).toBe(false)
+    expect(m.experimentId).toBe('v019-infra-validation-v1')
+  })
+
+  it('benchmark manifest is benchmark-eligible', () => {
+    const m = buildExperimentManifest({
+      repairControllerVersion: '0.18.0',
+      repairRuntimeVersion: '0.18.0',
+      eventSchemaVersion: 0,
+      pricingVersion: '2026-08-25',
+      sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'test',
+      taskCorpusVersion: 'v1',
+      taskCount: 75,
+      repositoryCount: 10,
+      benchmarkEligible: true,
+    })
+    expect(m.benchmarkEligible).toBe(true)
+    expect(m.experimentId).toBe('v019-real-repo-baseline-v1')
+  })
+
+  it('B0 and benchmark produce different experiment IDs', () => {
+    const b0 = buildExperimentManifest({
+      repairControllerVersion: '0.18.0',
+      repairRuntimeVersion: '0.18.0',
+      eventSchemaVersion: 0,
+      pricingVersion: '2026-08-25',
+      sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'test',
+      taskCorpusVersion: 'v1',
+      taskCount: 5,
+      repositoryCount: 5,
+      benchmarkEligible: false,
+    })
+    const bench = buildExperimentManifest({
+      repairControllerVersion: '0.18.0',
+      repairRuntimeVersion: '0.18.0',
+      eventSchemaVersion: 0,
+      pricingVersion: '2026-08-25',
+      sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'test',
+      taskCorpusVersion: 'v1',
+      taskCount: 75,
+      repositoryCount: 10,
+      benchmarkEligible: true,
+    })
+    expect(b0.experimentId).not.toBe(bench.experimentId)
+    expect(b0.manifestHash).not.toBe(bench.manifestHash)
+  })
+})
+
+describe('v019 metrics reproducibility', () => {
+  it('metrics are deterministically reproducible from trajectories', () => {
+    const trajectories = [
+      makeTrajectory({ taskId: 't1' }),
+      makeTrajectory({ taskId: 't2', finalVerified: false, modelCapabilityStatus: 'FAIL' }),
+    ]
+    const m1 = computeMetrics(trajectories)
+    const m2 = computeMetrics(trajectories)
+    expect(JSON.stringify(m1)).toBe(JSON.stringify(m2))
+  })
+
+  it('NOT_EVALUATED tasks are excluded from capability metrics', () => {
+    const trajectories = [
+      makeTrajectory({ taskId: 't1', finalVerified: true }),
+      makeTrajectory({
+        taskId: 't2',
+        taskState: 'FAILED_INFRA',
+        controlPlaneStatus: 'NOT_EVALUATED',
+        modelCapabilityStatus: 'NOT_EVALUATED',
+        finalVerified: false,
+        aborted: true,
+        abortReason: 'checkout failed',
+        attempts: [],
+      }),
+    ]
+    const metrics = computeMetrics(trajectories)
+    expect(metrics.taskCount).toBe(2)
+    expect(metrics.evaluatedTaskCount).toBe(1)
+    expect(metrics.infraFailureCount).toBe(1)
+    expect(metrics.verifiedTaskRate).toBe(1.0)
+  })
+
+  it('context discovery failure rate is computed', () => {
+    const trajectories = [
+      makeTrajectory({
+        taskId: 't1',
+        finalVerified: false,
+        modelCapabilityStatus: 'FAIL',
+        referenceFixCommit: 'def456',
+        referenceFixFilesInspected: [],
+      }),
+      makeTrajectory({
+        taskId: 't2',
+        finalVerified: false,
+        modelCapabilityStatus: 'FAIL',
+        referenceFixCommit: 'def789',
+        referenceFixFilesInspected: ['src/index.ts'],
+      }),
+    ]
+    const metrics = computeMetrics(trajectories)
+    expect(metrics.contextDiscoveryFailureRate).toBe(0.5)
   })
 })

@@ -47,6 +47,14 @@ export interface FailureClassification {
  */
 export function classifyFailure(trajectory: TaskTrajectory): FailureClassification | undefined {
   if (trajectory.finalVerified) return undefined
+  if (trajectory.controlPlaneStatus === 'NOT_EVALUATED') {
+    return {
+      taskId: trajectory.taskId,
+      category: 'F6-build-environment',
+      reason: `Infrastructure failure: ${trajectory.abortReason ?? 'unknown'}`,
+      evidence: `taskState=${trajectory.taskState}, controlPlaneStatus=NOT_EVALUATED, abortReason=${trajectory.abortReason}`,
+    }
+  }
   if (trajectory.controlPlaneStatus === 'FAIL') {
     return classifyControlPlaneFailure(trajectory)
   }

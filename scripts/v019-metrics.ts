@@ -2,6 +2,13 @@
  * v0.19 metrics computation pipeline.
  *
  * Computes all pre-registered metrics from the trajectory dataset.
+ * Metrics are derived entirely from trajectory records — no hidden counters
+ * in the runner. `metrics.json` can be deleted and regenerated deterministically
+ * from the trajectory artifacts plus task manifests.
+ *
+ * `NOT_EVALUATED` tasks (infrastructure failures) are excluded from capability
+ * metrics but counted in infrastructure integrity metrics.
+ *
  * Metrics are computed only after the cohort is complete — no incremental
  * tuning during collection.
  *
@@ -14,6 +21,8 @@ import type { TaskTrajectory } from './v019-trajectory-collector.ts'
 export interface MetricsReport {
   readonly experimentId: string
   readonly taskCount: number
+  readonly evaluatedTaskCount: number
+  readonly infraFailureCount: number
   readonly verifiedTaskRate: number
   readonly oneShotFlashRate: number
   readonly repairRescueRate: number
@@ -35,6 +44,7 @@ export interface MetricsReport {
   readonly budgetStopRate: number
   readonly replayMismatchRate: number
   readonly providerFailureRate: number
+  readonly contextDiscoveryFailureRate: number
   readonly flashCostShare: number
   readonly proCostShare: number
   readonly cacheHitPercentage: number
@@ -45,55 +55,86 @@ export interface MetricsReport {
 export interface CategoryMetric {
   readonly category: string
   readonly count: number
+  readonly evaluated: number
   readonly verified: number
   readonly oneShotFlash: number
   readonly flashRepair: number
   readonly proRescue: number
   readonly failed: number
+  readonly infraFailed: number
   readonly meanCost: number
   readonly meanLatency: number
 }
 
-/** Compute the full metrics report from a set of task trajectories. */
+/**
+ * Compute the full metrics report from a set of task trajectories.
+ *
+ * Only `benchmarkEligible` trajectories with `modelCapabilityStatus !== 'NOT_EVALUATED'`
+ * contribute to capability metrics. Infrastructure failures are reported separately.
+ */
 export function computeMetrics(trajectories: readonly TaskTrajectory[]): MetricsReport {
   const n = trajectories.length
   if (n === 0) return emptyMetrics()
 
-  const verified = trajectories.filter(t => t.finalVerified)
+  const evaluated = trajectories.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
+  const evalN = evaluated.length
+  const infraFailures = trajectories.filter(t => t.taskState === 'FAILED_INFRA')
+
+  const verified = evaluated.filter(t => t.finalVerified)
   const verifiedCount = verified.length
-  const oneShotFlash = trajectories.filter(t => t.attempts.length === 1 && t.attempts[0]?.model === 'deepseek-v4-flash' && t.finalVerified)
-  const initialFailures = trajectories.filter(t => !(t.attempts.length === 1 && t.attempts[0]?.verified))
-  const rescued = trajectories.filter(t => t.attempts.length > 1 && t.finalVerified)
-  const flashSelfRepaired = trajectories.filter(t =>
+  const oneShotFlash = evaluated.filter(t =>
+    t.attempts.length === 1 &&
+    t.attempts[0]?.model === 'deepseek-v4-flash' &&
+    t.finalVerified,
+  )
+  const initialFailures = evaluated.filter(t =>
+    !(t.attempts.length === 1 && t.attempts[0]?.verified),
+  )
+  const rescued = evaluated.filter(t => t.attempts.length > 1 && t.finalVerified)
+  const flashSelfRepaired = evaluated.filter(t =>
     t.attempts.length > 1 &&
     t.finalVerified &&
     t.proAttempts === 0,
   )
-  const proEscalations = trajectories.filter(t => t.proAttempts > 0)
+  const proEscalations = evaluated.filter(t => t.proAttempts > 0)
   const proRescued = proEscalations.filter(t => t.finalVerified)
-  const budgetStops = trajectories.filter(t => t.terminalOutcome === 'budget-stop')
-  const rollbacks = trajectories.filter(t => t.rollbackUsed)
-  const providerFailures = trajectories.filter(t => t.aborted && t.abortReason !== undefined)
+  const budgetStops = evaluated.filter(t => t.terminalOutcome === 'budget-stop')
+  const rollbacks = evaluated.filter(t => t.rollbackUsed)
+  const providerFailures = evaluated.filter(t => t.aborted && t.abortReason !== undefined)
   const sameFailureEscalations = proEscalations.filter((t) => {
-    const flashFingerprints = t.attempts.filter(a => a.model === 'deepseek-v4-flash').map(a => a.failureFingerprint).filter(f => f !== undefined)
+    const flashFingerprints = t.attempts
+      .filter(a => a.model === 'deepseek-v4-flash')
+      .map(a => a.failureFingerprint)
+      .filter(f => f !== undefined)
     const unique = new Set(flashFingerprints)
     return flashFingerprints.length > 1 && unique.size === 1
   })
 
-  const totalCost = trajectories.reduce((s, t) => s + t.totalCostUsd, 0)
+  // Context discovery failure: failed task with a reference fix where the
+  // agent never inspected any file from the reference fix.
+  const failedWithReference = evaluated.filter(t =>
+    !t.finalVerified &&
+    t.referenceFixCommit !== undefined &&
+    t.referenceFixFilesInspected !== undefined,
+  )
+  const contextDiscoveryFailures = failedWithReference.filter(t =>
+    t.referenceFixFilesInspected.length === 0,
+  )
+
+  const totalCost = evaluated.reduce((s, t) => s + t.totalCostUsd, 0)
   const verifiedCost = verified.reduce((s, t) => s + t.totalCostUsd, 0)
-  const flashCost = trajectories.reduce((s, t) =>
+  const flashCost = evaluated.reduce((s, t) =>
     s + t.attempts.filter(a => a.model === 'deepseek-v4-flash').reduce((a, x) => a + x.costUsd, 0), 0)
-  const proCost = trajectories.reduce((s, t) =>
+  const proCost = evaluated.reduce((s, t) =>
     s + t.attempts.filter(a => a.model === 'deepseek-v4-pro').reduce((a, x) => a + x.costUsd, 0), 0)
   const oneShotFlashCost = oneShotFlash.reduce((s, t) => s + t.totalCostUsd, 0)
 
-  const latencies = trajectories.map(t => t.totalLatencyMs).sort((a, b) => a - b)
-  const costs = trajectories.map(t => t.totalCostUsd).sort((a, b) => a - b)
+  const latencies = evaluated.map(t => t.totalLatencyMs).sort((a, b) => a - b)
+  const costs = evaluated.map(t => t.totalCostUsd).sort((a, b) => a - b)
   const verifiedCosts = verified.map(t => t.totalCostUsd).sort((a, b) => a - b)
 
-  const totalCacheRead = trajectories.reduce((s, t) => s + t.totalCacheReadTokens, 0)
-  const totalCacheMiss = trajectories.reduce((s, t) => s + t.totalCacheMissTokens, 0)
+  const totalCacheRead = evaluated.reduce((s, t) => s + t.totalCacheReadTokens, 0)
+  const totalCacheMiss = evaluated.reduce((s, t) => s + t.totalCacheMissTokens, 0)
   const totalInputTokens = totalCacheRead + totalCacheMiss
 
   const categories = groupByCategory(trajectories)
@@ -101,14 +142,16 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   return {
     experimentId: trajectories[0]?.experimentId ?? '',
     taskCount: n,
-    verifiedTaskRate: verifiedCount / n,
-    oneShotFlashRate: oneShotFlash.length / n,
+    evaluatedTaskCount: evalN,
+    infraFailureCount: infraFailures.length,
+    verifiedTaskRate: evalN > 0 ? verifiedCount / evalN : 0,
+    oneShotFlashRate: evalN > 0 ? oneShotFlash.length / evalN : 0,
     repairRescueRate: initialFailures.length > 0 ? rescued.length / initialFailures.length : 0,
     flashSelfRepairRate: initialFailures.length > 0 ? flashSelfRepaired.length / initialFailures.length : 0,
-    proEscalationRate: proEscalations.length / n,
+    proEscalationRate: evalN > 0 ? proEscalations.length / evalN : 0,
     proRescueRate: proEscalations.length > 0 ? proRescued.length / proEscalations.length : 0,
-    meanAttemptsPerTask: trajectories.reduce((s, t) => s + t.attempts.length, 0) / n,
-    meanCostPerTask: totalCost / n,
+    meanAttemptsPerTask: evalN > 0 ? evaluated.reduce((s, t) => s + t.attempts.length, 0) / evalN : 0,
+    meanCostPerTask: evalN > 0 ? totalCost / evalN : 0,
     medianCostPerTask: median(costs),
     meanCostPerVerifiedTask: verifiedCount > 0 ? verifiedCost / verifiedCount : 0,
     medianCostPerVerifiedTask: verifiedCount > 0 ? median(verifiedCosts) : 0,
@@ -118,10 +161,13 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     latencyP95: percentile(latencies, 0.95),
     latencyMax: latencies.at(-1) ?? 0,
     sameFailureEscalationRate: proEscalations.length > 0 ? sameFailureEscalations.length / proEscalations.length : 0,
-    rollbackRate: rollbacks.length / n,
-    budgetStopRate: budgetStops.length / n,
+    rollbackRate: evalN > 0 ? rollbacks.length / evalN : 0,
+    budgetStopRate: evalN > 0 ? budgetStops.length / evalN : 0,
     replayMismatchRate: 0,
-    providerFailureRate: providerFailures.length / n,
+    providerFailureRate: evalN > 0 ? providerFailures.length / evalN : 0,
+    contextDiscoveryFailureRate: failedWithReference.length > 0
+      ? contextDiscoveryFailures.length / failedWithReference.length
+      : 0,
     flashCostShare: totalCost > 0 ? flashCost / totalCost : 0,
     proCostShare: totalCost > 0 ? proCost / totalCost : 0,
     cacheHitPercentage: totalInputTokens > 0 ? totalCacheRead / totalInputTokens : 0,
@@ -137,17 +183,32 @@ function groupByCategory(trajectories: readonly TaskTrajectory[]): CategoryMetri
     list.push(t)
     categories.set(t.category, list)
   }
-  return [...categories.entries()].map(([category, tasks]) => ({
-    category,
-    count: tasks.length,
-    verified: tasks.filter(t => t.finalVerified).length,
-    oneShotFlash: tasks.filter(t => t.attempts.length === 1 && t.attempts[0]?.model === 'deepseek-v4-flash' && t.finalVerified).length,
-    flashRepair: tasks.filter(t => t.attempts.length > 1 && t.finalVerified && t.proAttempts === 0).length,
-    proRescue: tasks.filter(t => t.proAttempts > 0 && t.finalVerified).length,
-    failed: tasks.filter(t => !t.finalVerified).length,
-    meanCost: tasks.reduce((s, t) => s + t.totalCostUsd, 0) / tasks.length,
-    meanLatency: tasks.reduce((s, t) => s + t.totalLatencyMs, 0) / tasks.length,
-  })).sort((a, b) => a.category.localeCompare(b.category))
+  return [...categories.entries()].map(([category, tasks]) => {
+    const evalTasks = tasks.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
+    return {
+      category,
+      count: tasks.length,
+      evaluated: evalTasks.length,
+      verified: evalTasks.filter(t => t.finalVerified).length,
+      oneShotFlash: evalTasks.filter(t =>
+        t.attempts.length === 1 &&
+        t.attempts[0]?.model === 'deepseek-v4-flash' &&
+        t.finalVerified,
+      ).length,
+      flashRepair: evalTasks.filter(t =>
+        t.attempts.length > 1 && t.finalVerified && t.proAttempts === 0,
+      ).length,
+      proRescue: evalTasks.filter(t => t.proAttempts > 0 && t.finalVerified).length,
+      failed: evalTasks.filter(t => !t.finalVerified).length,
+      infraFailed: tasks.filter(t => t.taskState === 'FAILED_INFRA').length,
+      meanCost: evalTasks.length > 0
+        ? evalTasks.reduce((s, t) => s + t.totalCostUsd, 0) / evalTasks.length
+        : 0,
+      meanLatency: evalTasks.length > 0
+        ? evalTasks.reduce((s, t) => s + t.totalLatencyMs, 0) / evalTasks.length
+        : 0,
+    }
+  }).sort((a, b) => a.category.localeCompare(b.category))
 }
 
 function median(sorted: number[]): number {
@@ -169,13 +230,14 @@ function percentile(sorted: number[], p: number): number {
 
 function emptyMetrics(): MetricsReport {
   return {
-    experimentId: '', taskCount: 0, verifiedTaskRate: 0, oneShotFlashRate: 0,
+    experimentId: '', taskCount: 0, evaluatedTaskCount: 0, infraFailureCount: 0,
+    verifiedTaskRate: 0, oneShotFlashRate: 0,
     repairRescueRate: 0, flashSelfRepairRate: 0, proEscalationRate: 0, proRescueRate: 0,
     meanAttemptsPerTask: 0, meanCostPerTask: 0, medianCostPerTask: 0,
     meanCostPerVerifiedTask: 0, medianCostPerVerifiedTask: 0,
     latencyP50: 0, latencyP75: 0, latencyP90: 0, latencyP95: 0, latencyMax: 0,
     sameFailureEscalationRate: 0, rollbackRate: 0, budgetStopRate: 0,
-    replayMismatchRate: 0, providerFailureRate: 0,
+    replayMismatchRate: 0, providerFailureRate: 0, contextDiscoveryFailureRate: 0,
     flashCostShare: 0, proCostShare: 0, cacheHitPercentage: 0,
     incrementalRepairCost: 0, categoryBreakdown: [],
   }

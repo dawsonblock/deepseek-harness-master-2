@@ -36,16 +36,33 @@ import {
 import type { TaskManifest, VerificationCommand } from './v019-task-manifest.ts'
 import type { RepoMetadata } from './v019-repo-checkout.ts'
 
+/** Checkpoint state for one task during evaluation. */
+export type TaskState =
+  | 'PENDING'
+  | 'CHECKOUT'
+  | 'SETUP'
+  | 'RUNNING'
+  | 'VERIFYING'
+  | 'COMPLETED'
+  | 'FAILED_INFRA'
+
+/** Control-plane status distinguishes runtime correctness from model capability. */
+export type ControlPlaneStatus = 'PASS' | 'FAIL' | 'NOT_EVALUATED'
+
 /** Full trajectory record for one task. */
 export interface TaskTrajectory {
   readonly taskId: string
   readonly taskManifestHash: string
   readonly experimentId: string
+  readonly benchmarkEligible: boolean
   readonly repository: RepoMetadata
   readonly category: string
   readonly taskDescription: string
-  readonly controlPlaneStatus: 'PASS' | 'FAIL'
-  readonly modelCapabilityStatus: 'PASS' | 'FAIL'
+  readonly baseCommit: string
+  readonly referenceFixCommit: string | undefined
+  readonly taskState: TaskState
+  readonly controlPlaneStatus: ControlPlaneStatus
+  readonly modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED'
   readonly finalVerified: boolean
   readonly holdoutPass: boolean | undefined
   readonly verificationStrength: string
@@ -59,6 +76,8 @@ export interface TaskTrajectory {
   readonly totalCacheMissTokens: number
   readonly attempts: readonly AttemptTrajectory[]
   readonly changedFiles: readonly string[]
+  /** Files from the reference fix commit that the agent inspected. Empty if no reference fix exists. */
+  readonly referenceFixFilesInspected: readonly string[]
   readonly rollbackUsed: boolean
   readonly aborted: boolean
   readonly abortReason: string | undefined
@@ -107,7 +126,9 @@ export async function runTaskTrajectory(
   manifest: TaskManifest,
   workspace: string,
   experimentId: string,
+  benchmarkEligible: boolean,
   repoMetadata: RepoMetadata,
+  referenceFixFiles: readonly string[],
 ): Promise<TaskTrajectory> {
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
@@ -136,8 +157,12 @@ export async function runTaskTrajectory(
     lastAttempt?.repairAction,
     lastAttempt?.repairReason,
   )
-  const controlPlaneStatus: 'PASS' | 'FAIL' = loopResult.aborted ? 'FAIL' : 'PASS'
-  const modelCapabilityStatus: 'PASS' | 'FAIL' = loopResult.finalVerified ? 'PASS' : 'FAIL'
+  const controlPlaneStatus: ControlPlaneStatus = loopResult.aborted ? 'FAIL' : 'PASS'
+  const modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED' =
+    loopResult.aborted ? 'NOT_EVALUATED' : loopResult.finalVerified ? 'PASS' : 'FAIL'
+
+  const allFilesInspected = collectFilesInspected(workspace)
+  const referenceFixFilesInspected = referenceFixFiles.filter(f => allFilesInspected.includes(f))
 
   const attempts: AttemptTrajectory[] = loopResult.attempts.map(a => ({
     attempt: a.attempt,
@@ -174,9 +199,13 @@ export async function runTaskTrajectory(
     taskId: manifest.taskId,
     taskManifestHash: manifest.manifestHash,
     experimentId,
+    benchmarkEligible,
     repository: repoMetadata,
     category: manifest.category,
     taskDescription: manifest.task.description,
+    baseCommit: manifest.repository.baseCommit,
+    referenceFixCommit: manifest.repository.referenceFixCommit,
+    taskState: 'COMPLETED',
     controlPlaneStatus,
     modelCapabilityStatus,
     finalVerified: loopResult.finalVerified,
@@ -192,11 +221,62 @@ export async function runTaskTrajectory(
     totalCacheMissTokens: attempts.reduce((s, a) => s + a.usage.cacheMissTokens, 0),
     attempts,
     changedFiles,
+    referenceFixFilesInspected,
     rollbackUsed: false,
     aborted: loopResult.aborted,
     abortReason: loopResult.abortReason?.kind,
     terminalOutcome,
     failureCategory: undefined,
+    timestamp: new Date().toISOString(),
+  }
+}
+
+/** Build a FAILED_INFRA trajectory for tasks that failed before reaching the repair loop. */
+export function buildInfraFailureTrajectory(
+  manifest: TaskManifest,
+  experimentId: string,
+  benchmarkEligible: boolean,
+  repoMetadata: RepoMetadata | undefined,
+  failureReason: string,
+): TaskTrajectory {
+  return {
+    taskId: manifest.taskId,
+    taskManifestHash: manifest.manifestHash,
+    experimentId,
+    benchmarkEligible,
+    repository: repoMetadata ?? {
+      name: manifest.repository.name,
+      url: manifest.repository.url,
+      baseCommit: manifest.repository.baseCommit,
+      size: manifest.repoSize,
+      loc: 0, fileCount: 0, packageCount: 0, testCount: 0,
+    },
+    category: manifest.category,
+    taskDescription: manifest.task.description,
+    baseCommit: manifest.repository.baseCommit,
+    referenceFixCommit: manifest.repository.referenceFixCommit,
+    taskState: 'FAILED_INFRA',
+    controlPlaneStatus: 'NOT_EVALUATED',
+    modelCapabilityStatus: 'NOT_EVALUATED',
+    finalVerified: false,
+    holdoutPass: undefined,
+    verificationStrength: manifest.verification.strength,
+    flashAttempts: 0,
+    proAttempts: 0,
+    escalatedToPro: false,
+    totalCostUsd: 0,
+    totalLatencyMs: 0,
+    totalOutputTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheMissTokens: 0,
+    attempts: [],
+    changedFiles: [],
+    referenceFixFilesInspected: [],
+    rollbackUsed: false,
+    aborted: true,
+    abortReason: failureReason,
+    terminalOutcome: 'infra-failure',
+    failureCategory: 'F6-build-environment',
     timestamp: new Date().toISOString(),
   }
 }
@@ -366,6 +446,13 @@ function getChangedFiles(workspace: string): string[] {
   } catch {
     return []
   }
+}
+
+function collectFilesInspected(_workspace: string): string[] {
+  // The harness session log records file reads/inspections. For the initial
+  // infrastructure, this returns an empty list; the full implementation will
+  // extract file-read tool calls from the session event stream.
+  return []
 }
 
 function computeTerminalOutcome(

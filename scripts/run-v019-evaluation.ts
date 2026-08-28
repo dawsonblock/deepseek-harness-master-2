@@ -9,7 +9,9 @@
  * Self-skips without DEEPSEEK_API_KEY.
  *
  * Usage:
- *   npx tsx scripts/run-v019-evaluation.ts [--max-tasks N] [--checkpoint]
+ *   npx tsx scripts/run-v019-evaluation.ts [--max-tasks N] [--b0]
+ *
+ * --b0: Run as B0 infrastructure validation (not benchmark-eligible).
  *
  * @module v019-evaluation-runner
  */
@@ -17,6 +19,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execSync } from 'node:child_process'
 
 import {
   buildExperimentManifest,
@@ -31,7 +34,9 @@ import {
   installDependencies,
 } from './v019-repo-checkout.ts'
 import {
+  type TaskState,
   type TaskTrajectory,
+  buildInfraFailureTrajectory,
   runTaskTrajectory,
 } from './v019-trajectory-collector.ts'
 import { computeMetrics } from './v019-metrics.ts'
@@ -88,6 +93,8 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const maxTasksIdx = args.indexOf('--max-tasks')
   const maxTasks = maxTasksIdx >= 0 ? parseInt(args[maxTasksIdx + 1] ?? '75', 10) : 75
+  const isB0 = args.includes('--b0')
+  const benchmarkEligible = !isB0
 
   if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === '') {
     process.stderr.write('DEEPSEEK_API_KEY is not set; skipping v0.19 real-repository evaluation.\n')
@@ -97,6 +104,11 @@ async function main(): Promise<void> {
 
   process.stderr.write('\nv0.19 Real-Repository Evaluation\n')
   process.stderr.write(`${'='.repeat(60)}\n`)
+  if (isB0) {
+    process.stderr.write('MODE: B0 Infrastructure Validation (NOT benchmark-eligible)\n')
+  } else {
+    process.stderr.write('MODE: Baseline Cohort (benchmark-eligible)\n')
+  }
 
   // Build and verify experiment manifest
   const experimentManifest = buildExperimentManifest({
@@ -109,12 +121,14 @@ async function main(): Promise<void> {
     taskCorpusVersion: 'v1',
     taskCount: Math.min(TASK_CORPUS.length, maxTasks),
     repositoryCount: new Set(TASK_CORPUS.slice(0, maxTasks).map(t => t.repository.name)).size,
+    benchmarkEligible,
   })
 
   process.stderr.write(`Experiment ID: ${experimentManifest.experimentId}\n`)
   process.stderr.write(`Source commit: ${experimentManifest.sourceCommit.slice(0, 12)}\n`)
   process.stderr.write(`Frozen v0.18 tag: ${experimentManifest.frozenV018Tag}\n`)
   process.stderr.write(`Manifest hash: ${experimentManifest.manifestHash}\n`)
+  process.stderr.write(`Benchmark eligible: ${experimentManifest.benchmarkEligible}\n`)
   process.stderr.write(`Tasks: ${experimentManifest.taskCount}\n`)
   process.stderr.write(`Repositories: ${experimentManifest.repositoryCount}\n\n`)
 
@@ -142,9 +156,11 @@ async function main(): Promise<void> {
     process.stderr.write(`  Category: ${taskManifest.category}\n`)
 
     let workspace: string | undefined
+    let taskState: TaskState = 'PENDING'
     try {
       // Checkout repository at base commit
-      process.stderr.write('  Checking out repository...\n')
+      taskState = 'CHECKOUT'
+      process.stderr.write('  [CHECKOUT] Checking out repository...\n')
       workspace = await checkoutRepo(
         taskManifest.repository.url,
         taskManifest.repository.baseCommit,
@@ -152,7 +168,8 @@ async function main(): Promise<void> {
       )
 
       // Install dependencies
-      process.stderr.write('  Installing dependencies...\n')
+      taskState = 'SETUP'
+      process.stderr.write('  [SETUP] Installing dependencies...\n')
       await installDependencies(workspace)
 
       // Compute repo metadata
@@ -164,9 +181,22 @@ async function main(): Promise<void> {
       })
       process.stderr.write(`  Repo: ${repoMetadata.loc} LOC, ${repoMetadata.fileCount} files, ${repoMetadata.testCount} tests\n`)
 
+      // Get reference fix files for context discovery tracking
+      const referenceFixFiles = taskManifest.repository.referenceFixCommit !== undefined
+        ? getReferenceFixFiles(workspace, taskManifest.repository.referenceFixCommit)
+        : []
+
       // Run the task trajectory
-      process.stderr.write('  Running repair loop...\n')
-      const trajectory = await runTaskTrajectory(taskManifest, workspace, experimentManifest.experimentId, repoMetadata)
+      taskState = 'RUNNING'
+      process.stderr.write('  [RUNNING] Running repair loop...\n')
+      const trajectory = await runTaskTrajectory(
+        taskManifest,
+        workspace,
+        experimentManifest.experimentId,
+        benchmarkEligible,
+        repoMetadata,
+        referenceFixFiles,
+      )
 
       // Save trajectory
       const trajectoryPath = join(TRAJECTORIES_DIR, `${taskManifest.taskId}.json`)
@@ -179,6 +209,7 @@ async function main(): Promise<void> {
       process.stderr.write(`  Cost: $${trajectory.totalCostUsd.toFixed(6)}\n`)
       process.stderr.write(`  Latency: ${trajectory.totalLatencyMs}ms\n`)
       process.stderr.write(`  Terminal: ${trajectory.terminalOutcome}\n`)
+      process.stderr.write(`  Control: ${trajectory.controlPlaneStatus}, Capability: ${trajectory.modelCapabilityStatus}\n`)
 
       // Checkpoint after each task
       await saveCheckpoint({
@@ -189,43 +220,15 @@ async function main(): Promise<void> {
         trajectories,
       })
     } catch (error: unknown) {
-      process.stderr.write(`  ERROR: ${error instanceof Error ? error.message : String(error)}\n`)
-      // Record as aborted trajectory
-      const failedTrajectory: TaskTrajectory = {
-        taskId: taskManifest.taskId,
-        taskManifestHash: taskManifest.manifestHash,
-        experimentId: experimentManifest.experimentId,
-        repository: {
-          name: taskManifest.repository.name,
-          url: taskManifest.repository.url,
-          baseCommit: taskManifest.repository.baseCommit,
-          size: taskManifest.repoSize,
-          loc: 0, fileCount: 0, packageCount: 0, testCount: 0,
-        },
-        category: taskManifest.category,
-        taskDescription: taskManifest.task.description,
-        controlPlaneStatus: 'FAIL',
-        modelCapabilityStatus: 'FAIL',
-        finalVerified: false,
-        holdoutPass: undefined,
-        verificationStrength: taskManifest.verification.strength,
-        flashAttempts: 0,
-        proAttempts: 0,
-        escalatedToPro: false,
-        totalCostUsd: 0,
-        totalLatencyMs: 0,
-        totalOutputTokens: 0,
-        totalCacheReadTokens: 0,
-        totalCacheMissTokens: 0,
-        attempts: [],
-        changedFiles: [],
-        rollbackUsed: false,
-        aborted: true,
-        abortReason: 'evaluation-error',
-        terminalOutcome: 'evaluation-error',
-        failureCategory: undefined,
-        timestamp: new Date().toISOString(),
-      }
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      process.stderr.write(`  [FAILED_INFRA] ${taskState}: ${errorMsg}\n`)
+      const failedTrajectory = buildInfraFailureTrajectory(
+        taskManifest,
+        experimentManifest.experimentId,
+        benchmarkEligible,
+        undefined,
+        `${taskState}: ${errorMsg}`,
+      )
       trajectories.push(failedTrajectory)
       completedTaskIds.add(taskManifest.taskId)
       await saveCheckpoint({
@@ -340,6 +343,19 @@ async function generateReport(
   ]
   await writeFile(REPORT_PATH, lines.join('\n') + '\n', 'utf8')
   process.stderr.write(`Report written to ${REPORT_PATH}\n`)
+}
+
+/** Get files changed by the reference fix commit (verifier-only, never model-visible). */
+function getReferenceFixFiles(workspace: string, referenceFixCommit: string): string[] {
+  try {
+    const output = execSync(
+      `git --git-dir="${workspace}/.git" diff --name-only ${referenceFixCommit}~1 ${referenceFixCommit}`,
+      { encoding: 'utf8', timeout: 10000 },
+    )
+    return output.trim().split('\n').filter(f => f.length > 0)
+  } catch {
+    return []
+  }
 }
 
 void main()

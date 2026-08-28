@@ -6,6 +6,9 @@
  * model routes, repair limits, and task corpus identity so every trajectory
  * points back to a single experiment identity.
  *
+ * B0 infrastructure validation runs are marked `benchmarkEligible: false`
+ * so they cannot accidentally enter the baseline cohort.
+ *
  * @module v019-experiment-identity
  */
 
@@ -14,6 +17,9 @@ import { execSync } from 'node:child_process'
 
 /** Experiment identity for the v0.19 baseline cohort. */
 export const EXPERIMENT_ID = 'v019-real-repo-baseline-v1'
+
+/** Experiment identity for the B0 infrastructure validation shakedown. */
+export const B0_EXPERIMENT_ID = 'v019-infra-validation-v1'
 
 /** v0.18.0 tag that this experiment freezes as experimental control. */
 export const FROZEN_V018_TAG = 'v0.18.0'
@@ -41,6 +47,8 @@ export interface ExperimentManifest {
   readonly taskCorpusVersion: string
   readonly taskCount: number
   readonly repositoryCount: number
+  /** False for B0 infrastructure validation; true for the baseline cohort. */
+  readonly benchmarkEligible: boolean
   readonly manifestHash: string
 }
 
@@ -55,8 +63,10 @@ export function buildExperimentManifest(params: {
   taskCorpusVersion: string
   taskCount: number
   repositoryCount: number
+  benchmarkEligible: boolean
 }): ExperimentManifest {
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
+  const experimentId = params.benchmarkEligible ? EXPERIMENT_ID : B0_EXPERIMENT_ID
   const modelRoutes = [
     { alias: 'flash', provider: 'deepseek', model: 'deepseek-v4-flash' },
     { alias: 'pro', provider: 'deepseek', model: 'deepseek-v4-pro' },
@@ -70,7 +80,7 @@ export function buildExperimentManifest(params: {
     maxOutputTokens: undefined as number | undefined,
   }
   const manifestHash = computeExperimentManifestHash({
-    experimentId: EXPERIMENT_ID,
+    experimentId,
     sourceCommit,
     frozenV018Tag: FROZEN_V018_TAG,
     repairControllerVersion: params.repairControllerVersion,
@@ -84,9 +94,10 @@ export function buildExperimentManifest(params: {
     taskCorpusVersion: params.taskCorpusVersion,
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
+    benchmarkEligible: params.benchmarkEligible,
   })
   return {
-    experimentId: EXPERIMENT_ID,
+    experimentId,
     sourceCommit,
     frozenV018Tag: FROZEN_V018_TAG,
     repairControllerVersion: params.repairControllerVersion,
@@ -100,6 +111,7 @@ export function buildExperimentManifest(params: {
     taskCorpusVersion: params.taskCorpusVersion,
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
+    benchmarkEligible: params.benchmarkEligible,
     manifestHash,
   }
 }
@@ -125,6 +137,7 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     fields.taskCorpusVersion,
     String(fields.taskCount),
     String(fields.repositoryCount),
+    String(fields.benchmarkEligible),
   ].join(':')
   return createHash('sha256').update(manifestContent).digest('hex')
 }
