@@ -18,7 +18,6 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
      * Failure evidence collected after one verified-failed repair attempt.
-     * @mode durable
      * @param repairId - the repair sequence this evidence belongs to.
      * @param attempt - 1-based attempt number within the repair sequence.
      * @param routingDecisionId - joins to the `model/routing-decision` for this attempt.
@@ -29,7 +28,6 @@ declare module '@deepseek-ai/dsh-session/types' {
 
     /**
      * One repair controller decision after verification.
-     * @mode durable
      * @param repairId - the repair sequence this decision belongs to.
      * @param action - what the controller decided: flash-repair, pro-escalate, complete, or stop.
      */
@@ -38,7 +36,6 @@ declare module '@deepseek-ai/dsh-session/types' {
     /**
      * Model escalation from Flash to Pro within a repair sequence. Gives
      * `RoutingOutcome` explicit repair provenance instead of inference.
-     * @mode durable
      * @param repairId - the repair sequence this escalation belongs to.
      * @param fromRoutingDecisionId - the Flash routing decision being repaired.
      * @param toRoutingDecisionId - the Pro routing decision taking over.
@@ -48,7 +45,6 @@ declare module '@deepseek-ai/dsh-session/types' {
 
     /**
      * Repair sequence completion with task-level accounting.
-     * @mode durable
      * @param repairId - the repair sequence that completed.
      * @param verified - whether the final attempt passed verification.
      * @param totalAttempts - total attempts across Flash and Pro.
@@ -61,7 +57,6 @@ declare module '@deepseek-ai/dsh-session/types' {
      * the harness restored workspace state to a known checkpoint before
      * routing the next repair attempt, rather than relying on the model to
      * undo its own changes.
-     * @mode durable
      * @param repairId - the repair sequence this rollback belongs to.
      * @param attempt - the failed attempt number whose changes are being rolled back.
      * @param routingDecisionId - the routing decision of the failed attempt.

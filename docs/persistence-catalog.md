@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:561`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:568`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:597`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:638`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:565`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:572`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:601`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:642`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -413,7 +413,7 @@ Source: [`packages/compaction/compaction/src/types.ts:33`](../packages/compactio
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:390`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:394`](../packages/core/session/src/types.ts)
 
 ### `feedback/*`
 
@@ -580,6 +580,10 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
   contextWindowTokens: number
   remainingTokens: number
   usageRatio: number
+  /** Context budget status: `normal`, `warning`, `compact`, or `reject`.
+   * When `reject` and enforcement is enabled, the agent loop stops before
+   * `model/request` — no provider invocation, no billing. */
+  status: 'normal' | 'warning' | 'compact' | 'reject'
   estimatorId: string
   estimatorVersion: string
   /** Joins to the routing decision that selected this model, when a router was active. */
@@ -588,6 +592,24 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 ```
 
 Source: [`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts)
+
+<a id="modelescalation--log-only"></a>
+
+#### `model/escalation` — log-only
+
+```ts persistence-catalog
+/**
+ * Model escalation from Flash to Pro within a repair sequence. Gives
+ * `RoutingOutcome` explicit repair provenance instead of inference.
+ * @param repairId - the repair sequence this escalation belongs to.
+ * @param fromRoutingDecisionId - the Flash routing decision being repaired.
+ * @param toRoutingDecisionId - the Pro routing decision taking over.
+ * @param repairOf - the routing decision being repaired (same as fromRoutingDecisionId for the first escalation).
+ */
+'model/escalation': ModelEscalationEventData
+```
+
+Source: [`packages/core/repair-controller/src/events.ts:44`](../packages/core/repair-controller/src/events.ts)
 
 <a id="modelrequest--log-only"></a>
 
@@ -724,6 +746,78 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 
 Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
 
+### `repair/*`
+
+<a id="repaircompleted--log-only"></a>
+
+#### `repair/completed` — log-only
+
+```ts persistence-catalog
+/**
+ * Repair sequence completion with task-level accounting.
+ * @param repairId - the repair sequence that completed.
+ * @param verified - whether the final attempt passed verification.
+ * @param totalAttempts - total attempts across Flash and Pro.
+ * @param totalCostUsd - cumulative cost across all attempts.
+ */
+'repair/completed': RepairCompletedEventData
+```
+
+Source: [`packages/core/repair-controller/src/events.ts:53`](../packages/core/repair-controller/src/events.ts)
+
+<a id="repairdecision--log-only"></a>
+
+#### `repair/decision` — log-only
+
+```ts persistence-catalog
+/**
+ * One repair controller decision after verification.
+ * @param repairId - the repair sequence this decision belongs to.
+ * @param action - what the controller decided: flash-repair, pro-escalate, complete, or stop.
+ */
+'repair/decision': RepairDecisionEventData
+```
+
+Source: [`packages/core/repair-controller/src/events.ts:34`](../packages/core/repair-controller/src/events.ts)
+
+<a id="repairevidence--log-only"></a>
+
+#### `repair/evidence` — log-only
+
+```ts persistence-catalog
+/**
+ * Failure evidence collected after one verified-failed repair attempt.
+ * @param repairId - the repair sequence this evidence belongs to.
+ * @param attempt - 1-based attempt number within the repair sequence.
+ * @param routingDecisionId - joins to the `model/routing-decision` for this attempt.
+ * @param failureFingerprint - deterministic hash of the failure evidence.
+ * @param progress - progress classification relative to the prior failed attempt.
+ */
+'repair/evidence': RepairEvidenceEventData
+```
+
+Source: [`packages/core/repair-controller/src/events.ts:27`](../packages/core/repair-controller/src/events.ts)
+
+<a id="repairrollback--log-only"></a>
+
+#### `repair/rollback` — log-only
+
+```ts persistence-catalog
+/**
+ * Harness-owned workspace rollback before a repair attempt. Records that
+ * the harness restored workspace state to a known checkpoint before
+ * routing the next repair attempt, rather than relying on the model to
+ * undo its own changes.
+ * @param repairId - the repair sequence this rollback belongs to.
+ * @param attempt - the failed attempt number whose changes are being rolled back.
+ * @param routingDecisionId - the routing decision of the failed attempt.
+ * @param rollbackTarget - the workspace hash or checkpoint being restored.
+ */
+'repair/rollback': RepairRollbackEventData
+```
+
+Source: [`packages/core/repair-controller/src/events.ts:65`](../packages/core/repair-controller/src/events.ts)
+
 ### `request/*`
 
 <a id="requestcontext--log-only"></a>
@@ -738,7 +832,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:505`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:509`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -752,7 +846,7 @@ Source: [`packages/core/session/src/types.ts:505`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:500`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:504`](../packages/core/session/src/types.ts)
 
 ### `runtime/*`
 
@@ -774,7 +868,7 @@ Source: [`packages/core/session/src/types.ts:500`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:415`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:419`](../packages/core/session/src/types.ts)
 
 <a id="runtimeperformance-sample--log-only"></a>
 
@@ -798,7 +892,7 @@ Source: [`packages/core/session/src/types.ts:415`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:401`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:405`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -861,7 +955,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:535`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:539`](../packages/core/session/src/types.ts)
 
 <a id="sessionend-seed--log-only"></a>
 
@@ -893,7 +987,7 @@ Source: [`packages/core/session/src/types.ts:535`](../packages/core/session/src/
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:528`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:532`](../packages/core/session/src/types.ts)
 
 <a id="sessionrecovery--log-only"></a>
 
@@ -922,7 +1016,7 @@ Source: [`packages/core/session/src/types.ts:528`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:545`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:549`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -1018,7 +1112,7 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:427`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:431`](../packages/core/session/src/types.ts)
 
 ### `team/*`
 
@@ -1099,7 +1193,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experi
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:442`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:446`](../packages/core/session/src/types.ts)
 
 ### `todo/*`
 
@@ -1114,7 +1208,7 @@ Source: [`packages/core/session/src/types.ts:442`](../packages/core/session/src/
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:495`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:499`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -1214,7 +1308,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:453`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:457`](../packages/core/session/src/types.ts)
 
 <a id="toolreconciliation--log-only"></a>
 
@@ -1234,7 +1328,7 @@ Source: [`packages/core/session/src/types.ts:453`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:468`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:472`](../packages/core/session/src/types.ts)
 
 <a id="toolresult--surface"></a>
 
@@ -1261,7 +1355,7 @@ Source: [`packages/core/session/src/types.ts:468`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:487`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:491`](../packages/core/session/src/types.ts)
 
 <a id="toolsettled--log-only"></a>
 
@@ -1285,7 +1379,7 @@ Source: [`packages/core/session/src/types.ts:487`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:459`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:463`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

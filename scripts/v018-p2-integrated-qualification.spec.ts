@@ -108,8 +108,8 @@ function fakeVerifier(
 }
 
 /** Count provider invocations by counting turn results. */
-function countProviderInvocations(result: { attempts: { repairAction: string }[] }): number {
-  return result.attempts.filter(a => a.repairAction !== 'stop' || a.attempt > 0).length
+function countProviderInvocations(result: { attempts: readonly { repairAction: string }[] }): number {
+  return result.attempts.length
 }
 
 // ---------------------------------------------------------------------------
