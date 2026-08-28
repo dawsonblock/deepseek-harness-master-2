@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * v0.19 real-repository evaluation runner.
+ * v0.19 synthetic multi-repository evaluation runner.
  *
  * Runs the frozen v0.18.0 repair controller policy against real coding tasks
  * from multiple open-source repositories. Captures full trajectory data,
@@ -47,7 +47,7 @@ import {
 import { SANDBOX_QUALIFICATION_ID } from './v018-sandbox-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-real-repo-baseline-v1')
+const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v1')
 const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
 const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
 const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
@@ -56,7 +56,7 @@ const MANIFEST_PATH = join(EVAL_DIR, 'manifest.json')
 const REPORT_PATH = join(EVAL_DIR, 'README.md')
 
 // ---------------------------------------------------------------------------
-// Task corpus: real-repository tasks
+// Task corpus: synthetic multi-repository tasks
 // ---------------------------------------------------------------------------
 
 import { TASK_CORPUS } from './v019-task-corpus.ts'
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   const benchmarkEligible = !isB0
 
   if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === '') {
-    process.stderr.write('DEEPSEEK_API_KEY is not set; skipping v0.19 real-repository evaluation.\n')
+    process.stderr.write('DEEPSEEK_API_KEY is not set; skipping v0.19 synthetic multi-repository evaluation.\n')
     process.stderr.write('Provide a key to run the evaluation cohort.\n')
     return
   }

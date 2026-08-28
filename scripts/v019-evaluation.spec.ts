@@ -21,7 +21,7 @@ import type { TaskTrajectory } from './v019-trajectory-collector.ts'
 
 describe('v019-experiment-identity', () => {
   it('exports the correct experiment ID', () => {
-    expect(EXPERIMENT_ID).toBe('v019-real-repo-baseline-v1')
+    expect(EXPERIMENT_ID).toBe('v019-synthetic-multirepo-validation-v1')
   })
 
   it('freezes the v0.18.0 tag', () => {
@@ -189,7 +189,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
   return {
     taskId: 'task-001',
     taskManifestHash: 'abc',
-    experimentId: 'v019-real-repo-baseline-v1',
+    experimentId: 'v019-synthetic-multirepo-validation-v1',
     benchmarkEligible: true,
     repository: {
       name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
@@ -295,7 +295,7 @@ describe('v019-failure-taxonomy', () => {
     return {
       taskId: 'fail-001',
       taskManifestHash: 'abc',
-      experimentId: 'v019-real-repo-baseline-v1',
+      experimentId: 'v019-synthetic-multirepo-validation-v1',
       benchmarkEligible: true,
       repository: {
         name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
@@ -440,7 +440,7 @@ describe('v019 B0 vs benchmark separation', () => {
       benchmarkEligible: true,
     })
     expect(m.benchmarkEligible).toBe(true)
-    expect(m.experimentId).toBe('v019-real-repo-baseline-v1')
+    expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v1')
   })
 
   it('B0 and benchmark produce different experiment IDs', () => {

@@ -1,8 +1,8 @@
 /**
- * v0.19 real-repository evaluation experiment identity and manifest.
+ * v0.19 synthetic multi-repository evaluation experiment identity and manifest.
  *
  * Freezes the v0.18.0 control policy as the experimental control for the
- * first real-repository evaluation cohort. Records all version stamps,
+ * synthetic multi-repository evaluation cohort. Records all version stamps,
  * model routes, repair limits, and task corpus identity so every trajectory
  * points back to a single experiment identity.
  *
@@ -15,8 +15,8 @@
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 
-/** Experiment identity for the v0.19 baseline cohort. */
-export const EXPERIMENT_ID = 'v019-real-repo-baseline-v1'
+/** Experiment identity for the v0.19 synthetic multi-repo cohort. */
+export const EXPERIMENT_ID = 'v019-synthetic-multirepo-validation-v1'
 
 /** Experiment identity for the B0 infrastructure validation shakedown. */
 export const B0_EXPERIMENT_ID = 'v019-infra-validation-v1'

@@ -1,4 +1,4 @@
-# Agent Note: v0.19 real-repository evaluation infrastructure
+# Agent Note: v0.19 synthetic multi-repository evaluation infrastructure
 
 Status: implemented
 
@@ -8,11 +8,11 @@ v0.18.0 qualified the durable verified self-repair control plane with 318 tests,
 
 ## Decision
 
-Build the v0.19 real-repository evaluation infrastructure as scripts that wrap the frozen v0.18.0 repair controller policy for real-repository tasks. The infrastructure records full trajectory data, computes pre-registered metrics, and classifies failures into a taxonomy that will determine v0.19 architecture changes.
+Build the v0.19 evaluation infrastructure as scripts that wrap the frozen v0.18.0 repair controller policy for multi-repository tasks. The infrastructure records full trajectory data, computes pre-registered metrics, and classifies failures into a taxonomy that will determine v0.19 architecture changes.
 
 The v0.18.0 repair controller policy is the experimental control: `maxFlashAttempts=3`, `maxProAttempts=2`, `maxTotalAttempts=5`, same/no progress → Pro, partial progress → another Flash attempt, Flash exhausted → Pro, Pro exhausted → stop. No threshold tuning, limit changes, or policy modifications during the first cohort.
 
-Experiment identity `v019-real-repo-baseline-v1` records all version stamps, model routes, repair limits, and task corpus identity so every trajectory points back to a single experiment identity.
+Experiment identity `v019-synthetic-multirepo-validation-v1` records all version stamps, model routes, repair limits, and task corpus identity so every trajectory points back to a single experiment identity.
 
 Pre-registered metrics: VerifiedTaskRate, OneShotFlashRate, RepairRescueRate, FlashSelfRepairRate, ProEscalationRate, ProRescueRate, MeanAttemptsPerTask, MeanCostPerTask, MedianCostPerTask, MeanCostPerVerifiedTask, MedianCostPerVerifiedTask, LatencyP50/P75/P90/P95/Max, SameFailureEscalationRate, RollbackRate, BudgetStopRate, ReplayMismatchRate, ProviderFailureRate.
 

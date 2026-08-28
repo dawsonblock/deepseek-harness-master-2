@@ -1,5 +1,5 @@
 /**
- * v0.19 task corpus for the real-repository baseline evaluation.
+ * v0.19 task corpus for the synthetic multi-repository baseline evaluation.
  *
  * Initial cohort: 5 tasks across 5 small TypeScript repositories.
  * This is the infrastructure validation set. The full 75-task cohort

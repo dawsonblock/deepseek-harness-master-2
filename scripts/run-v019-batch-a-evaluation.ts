@@ -43,7 +43,7 @@ import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-batch-a-baseline-v1')
+const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v1')
 const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
 const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
 const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
@@ -82,9 +82,9 @@ async function main(): Promise<void> {
     return
   }
 
-  process.stderr.write('\nv0.19 Batch A Live Evaluation\n')
+  process.stderr.write('\nv0.19 Synthetic Multi-Repository Validation\n')
   process.stderr.write(`${'='.repeat(60)}\n`)
-  process.stderr.write('MODE: Batch A Baseline (benchmark-eligible, no controller tuning)\n')
+  process.stderr.write('MODE: Synthetic Multi-Repo Validation (benchmark-eligible, no controller tuning)\n')
 
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
   const benchmarkEligible = true
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
     sandboxQualificationId: SANDBOX_QUALIFICATION_ID,
-    taskCorpusVersion: 'v019-batch-a-v1',
+    taskCorpusVersion: 'v019-synthetic-multirepo-v1',
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,
     benchmarkEligible,

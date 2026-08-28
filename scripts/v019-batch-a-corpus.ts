@@ -1,5 +1,5 @@
 /**
- * v0.19 Batch A task corpus — 25 real-repository benchmark tasks.
+ * v0.19 Batch A task corpus — 25 synthetic multi-repository benchmark tasks.
  *
  * Category quotas:
  *   Bug fixes          4

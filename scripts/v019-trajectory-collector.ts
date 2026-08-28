@@ -1,12 +1,12 @@
 /**
  * v0.19 trajectory collector.
  *
- * Wraps the v018 repair loop to run real-repository tasks. Captures full
+ * Wraps the v018 repair loop to run synthetic multi-repository tasks. Captures full
  * trajectory data including repository context, tool calls, changed files,
  * and verification results for each attempt.
  *
  * The repair loop itself (RepairController.decide) is unchanged from v0.18.0.
- * Only the turn runner and verifier are adapted for real repositories.
+ * Only the turn runner and verifier are adapted for synthetic repositories.
  *
  * @module v019-trajectory-collector
  */
@@ -126,10 +126,10 @@ export interface AttemptTrajectory {
 const REPO_ROOT = join(import.meta.dirname, '..')
 
 /**
- * Run one real-repository task through the v0.18 repair loop.
+ * Run one synthetic multi-repository task through the v0.18 repair loop.
  *
  * The repair controller policy is frozen from v0.18.0. Only the turn runner
- * and verifier are adapted for real repository workspaces.
+ * and verifier are adapted for synthetic repository workspaces.
  */
 export async function runTaskTrajectory(
   manifest: TaskManifest,
@@ -306,7 +306,7 @@ export function buildInfraFailureTrajectory(
 }
 
 // ---------------------------------------------------------------------------
-// Turn runner: boots the harness against a real repository workspace
+// Turn runner: boots the harness against a synthetic repository workspace
 // ---------------------------------------------------------------------------
 
 async function realTurnRunner(
