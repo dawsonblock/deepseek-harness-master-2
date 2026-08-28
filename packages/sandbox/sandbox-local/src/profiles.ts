@@ -72,8 +72,13 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
  */
 export function landlockProfileArgs(policy: SandboxPolicy): string[] {
   const readWrite = ['/dev/null']
-  if (policy.mode === 'workspace-write' || policy.mode === 'workspace-isolated') {
+  if (policy.mode === 'workspace-write') {
     readWrite.push('/tmp', policy.workspaceRoot)
+  } else if (policy.mode === 'workspace-isolated') {
+    // workspace-isolated: only the workspace root is read-write.
+    // Host /tmp is NOT granted — verifier-owned secrets stored outside
+    // the workspace (holdouts, fixtures) must be unreachable.
+    readWrite.push(policy.workspaceRoot)
   }
   if (policy.mode === 'workspace-isolated') {
     return landlockGrantArgs({

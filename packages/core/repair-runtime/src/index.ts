@@ -276,13 +276,13 @@ function sanitizeEvidenceString(value: string): string {
     .replace(/repair:v1:[0-9a-f]+/g, '[repair-id]')
     .replace(/rd-[a-zA-Z0-9_-]+/g, '[routing-decision]')
     .replace(/session-[a-zA-Z0-9_-]+/g, '[session]')
-    // Authorization headers and bearer tokens
-    .replace(/[Aa]uthorization:\s*[Bb]earer\s+[a-z0-9._~+=/-]+/g, 'Authorization: Bearer [redacted]')
-    .replace(/[Aa]uthorization:\s*[Bb]asic\s+[A-Za-z0-9+/=]+/g, 'Authorization: Basic [redacted]')
+    // Authorization headers and bearer tokens (case-insensitive)
+    .replace(/authorization:\s*bearer\s+[a-z0-9._~+=/-]+/gi, 'Authorization: Bearer [redacted]')
+    .replace(/authorization:\s*basic\s+[a-z0-9+/=]+/gi, 'Authorization: Basic [redacted]')
     // API key patterns (common formats: sk-..., DEEPSEEK_API_KEY=..., OPENAI_API_KEY=...)
-    .replace(/\bsk-[A-Za-z0-9]{20,}\b/g, '[api-key]')
-    .replace(/(?:DEEPSEEK|OPENAI|ANTHROPIC|GEMINI|GOOGLE|AZURE)_API_KEY\s*=\s*[a-z0-9._~+=/-]+/g, '$1_API_KEY=[redacted]')
-    .replace(/\b[A-Z_]*API_KEY\s*=\s*[a-z0-9._~+=/-]+/g, '[api-key]=[redacted]')
+    .replace(/\bsk-[a-z0-9]{20,}\b/gi, '[api-key]')
+    .replace(/\b(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI|GOOGLE|AZURE)_API_KEY\s*=\s*[a-z0-9._~+=/-]+/gi, '$1_API_KEY=[redacted]')
+    .replace(/\b[A-Z_]*API_KEY\s*=\s*[a-z0-9._~+=/-]+/gi, '[api-key]=[redacted]')
     // Password assignments in connection strings and env vars
     .replace(/password\s*=\s*[^\s;,)]+/gi, 'password=[redacted]')
     .replace(/passwd\s*=\s*[^\s;,)]+/gi, 'passwd=[redacted]')
@@ -295,12 +295,12 @@ function sanitizeEvidenceString(value: string): string {
     .replace(/\bAWS_SECRET_ACCESS_KEY\s*=\s*[A-Za-z0-9/+=]{40}\b/g, 'AWS_SECRET_ACCESS_KEY=[redacted]')
     .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[aws-access-key]')
     // Cookies and session tokens
-    .replace(/[Cc]ookie\s*:\s*[^\n\r]+/g, 'Cookie: [redacted]')
-    .replace(/[Ss]et-[Cc]ookie\s*:\s*[^\n\r]+/g, 'Set-Cookie: [redacted]')
+    .replace(/cookie\s*:\s*[^\n\r]+/gi, 'Cookie: [redacted]')
+    .replace(/set-cookie\s*:\s*[^\n\r]+/gi, 'Set-Cookie: [redacted]')
     .replace(/\bsession[_-]?token\s*=\s*[a-z0-9._~+=/-]+/gi, 'session_token=[redacted]')
     .replace(/\bcsrf[_-]?token\s*=\s*[a-z0-9._~+=/-]+/gi, 'csrf_token=[redacted]')
     // JWT tokens
-    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[jwt]')
+    .replace(/\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g, '[jwt]')
     // Private host paths (Unix home directories with private/secret/.ssh)
     .replace(/\/(?:Users|home)\/[^/\s]+\/\.ssh\/[^\s]+/g, '[ssh-path]')
     .replace(/\/(?:Users|home)\/[^/\s]+\/private\/[^\s]+/g, '[private-path]')
@@ -1040,7 +1040,12 @@ export function handleVerificationFailure(
   state.totalCostUsd += costUsd
   state.totalOutputTokens += outputTokens
 
-  // Emit repair/evidence
+  // Emit repair/evidence — sanitized before persistence so the durable
+  // ledger cannot retain credentials or internal identifiers from raw
+  // verifier output. The same sanitized projection is used for both the
+  // durable event and the model prompt, so the ledger and the model see
+  // identical evidence.
+  const sanitized = projectFailureForModel(failure)
   session.append('repair/evidence', {
     repairId: state.repairId,
     turn,
@@ -1050,11 +1055,11 @@ export function handleVerificationFailure(
     failureFingerprint: fingerprint,
     failurePackageId,
     progress,
-    failedCriteria: failure.failedCriteria,
-    failingTests: failure.failingTests,
-    typeErrors: failure.typeErrors,
-    buildErrors: failure.buildErrors,
-    changedFiles: failure.changedFiles,
+    failedCriteria: sanitized.failedCriteria,
+    failingTests: sanitized.failingTests,
+    typeErrors: sanitized.typeErrors,
+    buildErrors: sanitized.buildErrors,
+    changedFiles: sanitized.changedFiles,
     ...workspaceHash !== undefined ? { workspaceHash } : {},
   }, { ignorable: true })
 
@@ -1363,13 +1368,15 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
       const key = `${agent.id}:${goal.id}`
       const state = repairStates.get(key)
 
-      // PASS with an active repair: run holdout (if configured) and emit
-      // repair/completed. Holdout failures do NOT trigger repair.
+      // PASS: run holdout (if configured) and emit repair/completed.
+      // Holdout failures do NOT trigger repair. On a one-shot success
+      // (no prior repair state), create fresh state so the same completion
+      // pipeline owns one-shot success, repair success, and Pro success.
       if (data.passed) {
-        if (state === undefined) return
+        const passState = state ?? stateFor(agent, goal)
         const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
         void handleVerificationPass(
-          session, state, turn, routingDecisionId,
+          session, passState, turn, routingDecisionId,
           DEFAULT_PRICING_REGISTRY,
           config.holdoutVerifier,
           goal.id,

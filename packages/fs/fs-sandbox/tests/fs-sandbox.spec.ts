@@ -234,3 +234,64 @@ describe('FsError identity', () => {
     expect((error as FsError).code).toBe('FS_SANDBOX_DENIED')
   })
 })
+
+describe('workspace-isolated read fence', () => {
+  beforeEach(() => boot('workspace-isolated'))
+
+  it('denies readText of a file outside the workspace', async () => {
+    const path = join(outside, 'secret.txt')
+    await writeFile(path, 'secret')
+    await expect(fs.readText(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('denies stat of a file outside the workspace', async () => {
+    const path = join(outside, 'secret.txt')
+    await writeFile(path, 'secret')
+    await expect(fs.stat(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('denies listDir of a directory outside the workspace', async () => {
+    await expect(fs.listDir(await target(outside))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('denies readBytes of a file outside the workspace', async () => {
+    const path = join(outside, 'secret.bin')
+    await writeFile(path, Buffer.from([0, 1, 2]))
+    await expect(fs.readBytes(await target(path), undefined, 1024)).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('allows readText of a file inside the workspace', async () => {
+    const path = join(workspace, 'readable.txt')
+    await writeFile(path, 'hello')
+    expect(await fs.readText(await target(path))).toBe('hello')
+  })
+
+  it('allows listDir of the workspace root', async () => {
+    await writeFile(join(workspace, 'a.txt'), 'a')
+    const entries = await fs.listDir(await target(workspace))
+    expect(entries.some(e => e.name === 'a.txt')).toBe(true)
+  })
+
+  it('denies traversal via .. to a parent directory', async () => {
+    const path = join(workspace, '..', 'out', 'secret.txt')
+    await writeFile(join(outside, 'secret.txt'), 'secret')
+    await expect(fs.readText(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('denies absolute path to /etc/passwd', async () => {
+    await expect(fs.readText(await target('/etc/passwd'))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('denies symlink escape from workspace to outside', async () => {
+    const linkPath = join(workspace, 'escape.link')
+    const targetPath = join(outside, 'secret.txt')
+    await writeFile(targetPath, 'secret')
+    await symlink(targetPath, linkPath)
+    await expect(fs.readText(await target(linkPath))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('denies write to host /tmp under workspace-isolated', async () => {
+    const path = join(tmpdir(), 'dsh-iso-escape.txt')
+    await expect(fs.writeText(await target(path), 'escape')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+})

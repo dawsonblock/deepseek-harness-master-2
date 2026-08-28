@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO_ROOT="/tmp/v019-batch-a-repos"
-HOLDOUT_ROOT="$REPO_ROOT/holdouts"
+HOLDOUT_ROOT="$HOME/.dsh-v019-holdouts"
 mkdir -p "$REPO_ROOT" "$HOLDOUT_ROOT"
 
 # Common package.json template

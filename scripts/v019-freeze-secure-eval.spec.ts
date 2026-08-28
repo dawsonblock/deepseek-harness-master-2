@@ -34,9 +34,9 @@ describe('v019 secure evaluation freeze', () => {
     expect(record.securityQualificationPassed).toBe(true)
   })
 
-  it('all 20 security properties passed', () => {
-    expect(record.securityPropertyCount).toBe(20)
-    expect(record.securityPassedCount).toBe(20)
+  it('all 30 security properties passed', () => {
+    expect(record.securityPropertyCount).toBe(30)
+    expect(record.securityPassedCount).toBe(30)
     expect(record.securityFailedCount).toBe(0)
   })
 

@@ -38,7 +38,8 @@ import {
   classifyAllFailures,
   failureCategorySummary,
 } from './v019-failure-taxonomy.ts'
-import { SANDBOX_QUALIFICATION_ID } from './v018-sandbox-qualification.ts'
+import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
+import { generateFreezeRecord, FREEZE_ID } from './v019-freeze-secure-eval.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
@@ -86,6 +87,28 @@ async function main(): Promise<void> {
   process.stderr.write(`${'='.repeat(60)}\n`)
   process.stderr.write('MODE: Synthetic Multi-Repo Validation (benchmark-eligible, no controller tuning)\n')
 
+  // Enforce the secure-eval freeze gate before any provider execution.
+  // The security qualification must pass and the freeze record must be ready.
+  const securityRecord = runSecurityQualification()
+  if (!securityRecord.passed) {
+    process.stderr.write(`\nSECURITY QUALIFICATION FAILED: ${securityRecord.failedCount} properties failed\n`)
+    for (const check of securityRecord.checks) {
+      if (check.status === 'fail') {
+        process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+      }
+    }
+    process.stderr.write('\nCannot proceed to live evaluation. Fix the security qualification first.\n')
+    process.exit(1)
+  }
+  const freezeRecord = generateFreezeRecord()
+  if (!freezeRecord.ready) {
+    process.stderr.write(`\nSECURE EVAL FREEZE NOT READY: ${FREEZE_ID}\n`)
+    process.stderr.write('Cannot proceed to live evaluation. Fix the freeze record first.\n')
+    process.exit(1)
+  }
+  process.stderr.write(`Security qualification: ${SECURITY_QUALIFICATION_ID} (${securityRecord.passedCount} properties passed)\n`)
+  process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (ready)\n\n`)
+
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
   const benchmarkEligible = true
 
@@ -95,7 +118,7 @@ async function main(): Promise<void> {
     eventSchemaVersion: 0,
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
-    sandboxQualificationId: SANDBOX_QUALIFICATION_ID,
+    sandboxQualificationId: SECURITY_QUALIFICATION_ID,
     taskCorpusVersion: 'v019-synthetic-multirepo-v1',
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,

@@ -457,6 +457,48 @@ describe('E2E: holdout failure is terminal', () => {
   })
 })
 
+describe('E2E: one-shot PASS lifecycle', () => {
+  it('Flash → diagnostic PASS (no prior repair) → holdout PASS → repair/completed emitted', async () => {
+    const session = Session.create(SessionId('one-shot-pass'))
+    setupTurn(session, 1, FLASH)
+    appendUsage(session, 1, FLASH, {
+      input: 100, output: 50, reasoning: 0, total: 150, cacheRead: 0, cacheMiss: 100,
+    })
+
+    const state = freshState('repair-one-shot')
+    const holdoutVerifier = async () => ({ passed: true, reason: '' })
+    const completedEvent = await handleVerificationPass(
+      session, state, 1, 'rd-1', undefined, holdoutVerifier, 'goal-one-shot',
+    )
+
+    expect(completedEvent).toBeDefined()
+    expect(completedEvent!.type).toBe('repair/completed')
+    const data = completedEvent!.data as { verified: boolean; outcome: string }
+    expect(data.verified).toBe(true)
+    expect(data.outcome).toBe('verified')
+  })
+
+  it('Flash → diagnostic PASS (no prior repair) → holdout FAIL → repair/completed with qualification-failed', async () => {
+    const session = Session.create(SessionId('one-shot-holdout-fail'))
+    setupTurn(session, 1, FLASH)
+    appendUsage(session, 1, FLASH, {
+      input: 100, output: 50, reasoning: 0, total: 150, cacheRead: 0, cacheMiss: 100,
+    })
+
+    const state = freshState('repair-one-shot-holdout-fail')
+    const holdoutVerifier = async () => ({ passed: false, reason: 'holdout test failed' })
+    const completedEvent = await handleVerificationPass(
+      session, state, 1, 'rd-1', undefined, holdoutVerifier, 'goal-one-shot-holdout-fail',
+    )
+
+    expect(completedEvent).toBeDefined()
+    expect(completedEvent!.type).toBe('repair/completed')
+    const data = completedEvent!.data as { verified: boolean; outcome: string }
+    expect(data.verified).toBe(false)
+    expect(data.outcome).toBe('qualification-failed')
+  })
+})
+
 describe('E2E: manual model authority — manual Flash blocks Pro escalation', () => {
   it('manual Flash → Flash fails repeatedly → stop, not Pro escalation', () => {
     const session = Session.create(SessionId('manual-flash'))

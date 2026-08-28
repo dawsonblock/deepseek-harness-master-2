@@ -19,14 +19,14 @@
 import { execSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, rmSync as rmSyncFn, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 
 import type { TaskManifest, VerificationCommand } from './v019-task-manifest.ts'
 
 /** Copy external holdout files into the workspace for holdout verification. */
 function stageHoldouts(workspace: string, manifest: TaskManifest): void {
   if (manifest.verification.holdout.length === 0) return
-  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+  const holdoutDir = join(homedir(), '.dsh-v019-holdouts', manifest.repository.name)
   if (!existsSync(holdoutDir)) return
   const testsDir = join(workspace, 'tests')
   mkdirSync(testsDir, { recursive: true })
@@ -40,7 +40,7 @@ function stageHoldouts(workspace: string, manifest: TaskManifest): void {
 /** Remove staged holdout files from the workspace after verification. */
 function unstageHoldouts(workspace: string, manifest: TaskManifest): void {
   if (manifest.verification.holdout.length === 0) return
-  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+  const holdoutDir = join(homedir(), '.dsh-v019-holdouts', manifest.repository.name)
   if (!existsSync(holdoutDir)) return
   const testsDir = join(workspace, 'tests')
   for (const entry of readdirSync(holdoutDir)) {

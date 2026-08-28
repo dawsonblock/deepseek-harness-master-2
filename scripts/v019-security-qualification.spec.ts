@@ -30,8 +30,8 @@ describe('v019 security qualification gate', () => {
     expect(record.platform).toBe(process.platform)
   })
 
-  it('runs all 20 security property checks', () => {
-    expect(record.checks).toHaveLength(20)
+  it('runs all 30 security property checks (20 source + 10 behavioral)', () => {
+    expect(record.checks).toHaveLength(30)
   })
 
   it('every check has a unique id', () => {

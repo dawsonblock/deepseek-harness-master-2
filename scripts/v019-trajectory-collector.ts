@@ -17,6 +17,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 
@@ -382,7 +383,7 @@ function createHoldoutVerifier(workspace: string, manifest: TaskManifest): repai
       return { passed: true, reason: 'no holdout configured' }
     }
     // Stage holdout files synchronously.
-    const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+    const holdoutDir = join(homedir(), '.dsh-v019-holdouts', manifest.repository.name)
     try {
       const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
       for (const entry of entries) {
@@ -518,7 +519,9 @@ function buildTrajectoryFromEvents(
 
     // Fail loud on unpriced model usage: unknown pricing must not silently
     // become $0, which would make economic metrics look artificially better.
-    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date())
+    // Use the event's actual timestamp for historical pricing accuracy.
+    const eventTimestamp = new Date(usageEvent.time)
+    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, eventTimestamp)
     if (pricing === undefined) {
       throw new Error(`UNPRICED_USAGE: no pricing found for model ${model}`)
     }
@@ -528,11 +531,15 @@ function buildTrajectoryFromEvents(
     }, pricing)
     const costUsd = cost.amount
 
-    // Find repair decision for this attempt.
+    // Find repair evidence and decision for this attempt.
+    const repairEvidence = allEvents.find(e => e.type === 'repair/evidence' && (e.data as { attempt?: number }).attempt === i + 1) as
+      | Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
     const repairDecision = allEvents.find(e => e.type === 'repair/decision' && (e.data as { attempt?: number }).attempt === i + 1) as
       | Extract<SessionEvent, { type: 'repair/decision' }> | undefined
     const repairAction = repairDecision?.data.action ?? 'complete'
     const repairReason = repairDecision?.data.reason
+    const failureFingerprint = repairEvidence?.data.failureFingerprint as string | undefined
+    const progress = repairEvidence?.data.progress as string | undefined
 
     // Extract per-attempt session events for repository observation.
     const turnEvents = allEvents.filter((e) => {
@@ -548,11 +555,16 @@ function buildTrajectoryFromEvents(
       verified: repairAction === 'complete' && finalVerified,
       diagnosticPass: repairAction === 'complete',
       holdoutPass: repairAction === 'complete' ? holdoutPass : undefined,
-      failureFingerprint: undefined,
-      progress: undefined,
+      failureFingerprint,
+      progress,
       usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens },
       costUsd,
-      latencyMs: 0,
+      // Per-attempt model latency: time from turn/start to model/usage event.
+      latencyMs: (() => {
+        const turnStart = allEvents.find(e => e.type === 'turn/start' && (e.data as { turn?: number }).turn === turn)
+        if (turnStart === undefined) return 0
+        return Math.max(0, usageEvent.time - turnStart.time)
+      })(),
       repairAction,
       repairReason,
       changedFiles: attemptObservation.filesModified,
@@ -571,13 +583,22 @@ function buildTrajectoryFromEvents(
   const terminalOutcome = outcome === 'verified' ? 'verified-complete'
     : outcome === 'qualification-failed' ? 'qualification-failed'
       : outcome === 'attempts-exhausted' ? 'attempts-exhausted'
-        : outcome === 'cost-limit' ? 'cost-limit'
-          : outcome === 'time-limit' ? 'time-limit'
-            : outcome === 'authority-undecidable' ? 'authority-undecidable'
-              : outcome === 'model-unavailable' ? 'model-unavailable'
-                : 'failed-no-rescue'
+        : outcome === 'cost-limit' ? 'budget-stop'
+          : outcome === 'time-limit' ? 'budget-stop'
+            : outcome === 'output-token-limit' ? 'budget-stop'
+              : outcome === 'authority-undecidable' ? 'authority-undecidable'
+                : outcome === 'model-unavailable' ? 'model-unavailable'
+                  : outcome === 'rollback-failed' ? 'rollback-failed'
+                    : 'failed-no-rescue'
 
-  const controlPlaneStatus: ControlPlaneStatus = outcome === 'verified' ? 'PASS' : 'FAIL'
+  // Control plane status measures whether the harness itself behaved
+  // correctly: routing, verification, repair, rollback, and event emission
+  // all worked as designed. A model capability failure (couldn't solve the
+  // task, failed holdout) is NOT a control plane failure.
+  const controlPlaneStatus: ControlPlaneStatus =
+    outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed'
+      ? 'FAIL'
+      : 'PASS'
   const modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED' =
     outcome === 'authority-undecidable' || outcome === 'model-unavailable' ? 'NOT_EVALUATED' : finalVerified ? 'PASS' : 'FAIL'
 
@@ -610,7 +631,7 @@ function buildTrajectoryFromEvents(
     referenceFixFiles,
     referenceFixFilesInspected,
     referenceFixFilesModified,
-    rollbackUsed: true,
+    rollbackUsed: allEvents.some(e => e.type === 'repair/rollback'),
     aborted: outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed',
     abortReason: outcome === 'authority-undecidable' ? 'authority-undecidable' : outcome === 'model-unavailable' ? 'model-unavailable' : undefined,
     terminalOutcome,
