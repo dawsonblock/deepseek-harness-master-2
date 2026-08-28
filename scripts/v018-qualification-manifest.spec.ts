@@ -11,6 +11,7 @@ import {
   type SmokeResult,
   buildManifest,
   verifyManifest,
+  computeManifestHash,
   checkRepoClean,
   resolveEffectiveModel,
   prerequisiteGate,
@@ -18,107 +19,149 @@ import {
   shouldProceedWithLiveQualification,
 } from './v018-qualification-manifest.ts'
 
+/** Default manifest params for tests. */
+const testParams = {
+  repairControllerVersion: '0.18.0',
+  repairRuntimeVersion: '0.18.0',
+  eventSchemaVersion: 0,
+  pricingVersion: '2026-08-25',
+  sandboxPolicyVersion: 'v1',
+  sandboxQualificationId: 'v018-sandbox-v1',
+  fixtureVersion: 'v1',
+  holdoutVersion: 'v1',
+  modelRoutes: [
+    { alias: 'flash', provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { alias: 'pro', provider: 'deepseek', model: 'deepseek-v4-pro' },
+  ],
+  defaultRepairLimits: {
+    maxFlashAttempts: 3,
+    maxProAttempts: 2,
+    maxTotalAttempts: 5,
+    maxTaskCostUsd: undefined,
+    maxElapsedMs: undefined,
+    maxOutputTokens: undefined,
+  },
+  fixtures: [
+    {
+      fixtureId: 'fixture-1',
+      taskHash: 'a'.repeat(16),
+      initialWorkspaceHash: 'b'.repeat(16),
+      diagnosticSuiteHash: 'c'.repeat(16),
+      holdoutSuiteHash: 'd'.repeat(16),
+      fixtureVersion: 'v1',
+    },
+  ],
+} as const
+
 // ---------------------------------------------------------------------------
 // E21-E23: Manifest
 // ---------------------------------------------------------------------------
 
 describe('qualification manifest', () => {
-  it('builds a manifest with qualification identity v018-qualification-v1', async () => {
-    const manifest = await buildManifest({
-      repairControllerVersion: '0.18.0',
-      repairRuntimeVersion: '0.18.0',
-      eventSchemaVersion: 0,
-      pricingVersion: '2026-08-25',
-      sandboxPolicyVersion: 'v1',
-      fixtureVersion: 'v1',
-      holdoutVersion: 'v1',
-    })
-    expect(manifest.qualificationId).toBe('v018-qualification-v1')
+  it('builds a manifest with qualification identity v018-qualification-v2', async () => {
+    const manifest = buildManifest(testParams)
+    expect(manifest.qualificationId).toBe('v018-qualification-v2')
     expect(manifest.sourceCommit).toMatch(/^[0-9a-f]{40}$/)
-    expect(manifest.manifestHash).toHaveLength(16)
+    expect(manifest.manifestHash).toHaveLength(64)
   })
 
   it('produces deterministic manifest hash for same inputs', async () => {
-    const params = {
-      repairControllerVersion: '0.18.0',
-      repairRuntimeVersion: '0.18.0',
-      eventSchemaVersion: 0,
-      pricingVersion: '2026-08-25',
-      sandboxPolicyVersion: 'v1',
-      fixtureVersion: 'v1',
-      holdoutVersion: 'v1',
-    }
-    const m1 = await buildManifest(params)
-    const m2 = await buildManifest(params)
+    const m1 = buildManifest(testParams)
+    const m2 = buildManifest(testParams)
     expect(m1.manifestHash).toBe(m2.manifestHash)
   })
 
   it('different versions produce different hashes', async () => {
-    const m1 = await buildManifest({
-      repairControllerVersion: '0.18.0',
-      repairRuntimeVersion: '0.18.0',
-      eventSchemaVersion: 0,
-      pricingVersion: '2026-08-25',
-      sandboxPolicyVersion: 'v1',
-      fixtureVersion: 'v1',
-      holdoutVersion: 'v1',
+    const m1 = buildManifest(testParams)
+    const m2 = buildManifest({ ...testParams, repairControllerVersion: '0.18.1' })
+    expect(m1.manifestHash).not.toBe(m2.manifestHash)
+  })
+
+  it('different fixtures produce different hashes', async () => {
+    const m1 = buildManifest(testParams)
+    const m2 = buildManifest({
+      ...testParams,
+      fixtures: [
+        {
+          fixtureId: 'fixture-1',
+          taskHash: 'e'.repeat(16),
+          initialWorkspaceHash: 'b'.repeat(16),
+          diagnosticSuiteHash: 'c'.repeat(16),
+          holdoutSuiteHash: 'd'.repeat(16),
+          fixtureVersion: 'v1',
+        },
+      ],
     })
-    const m2 = await buildManifest({
-      repairControllerVersion: '0.18.1',
-      repairRuntimeVersion: '0.18.0',
-      eventSchemaVersion: 0,
-      pricingVersion: '2026-08-25',
-      sandboxPolicyVersion: 'v1',
-      fixtureVersion: 'v1',
-      holdoutVersion: 'v1',
+    expect(m1.manifestHash).not.toBe(m2.manifestHash)
+  })
+
+  it('different model routes produce different hashes', async () => {
+    const m1 = buildManifest(testParams)
+    const m2 = buildManifest({
+      ...testParams,
+      modelRoutes: [
+        { alias: 'flash', provider: 'deepseek', model: 'deepseek-v4-flash' },
+        { alias: 'pro', provider: 'deepseek', model: 'deepseek-v4-pro-v2' },
+      ],
+    })
+    expect(m1.manifestHash).not.toBe(m2.manifestHash)
+  })
+
+  it('different repair limits produce different hashes', async () => {
+    const m1 = buildManifest(testParams)
+    const m2 = buildManifest({
+      ...testParams,
+      defaultRepairLimits: {
+        ...testParams.defaultRepairLimits,
+        maxFlashAttempts: 5,
+      },
     })
     expect(m1.manifestHash).not.toBe(m2.manifestHash)
   })
 
   it('verifyManifest detects tampered hash', async () => {
-    const manifest = await buildManifest({
-      repairControllerVersion: '0.18.0',
-      repairRuntimeVersion: '0.18.0',
-      eventSchemaVersion: 0,
-      pricingVersion: '2026-08-25',
-      sandboxPolicyVersion: 'v1',
-      fixtureVersion: 'v1',
-      holdoutVersion: 'v1',
-    })
-    const tampered = { ...manifest, manifestHash: '0000000000000000' }
+    const manifest = buildManifest(testParams)
+    const tampered = { ...manifest, manifestHash: '0'.repeat(64) }
     const violations = verifyManifest(tampered, {})
     expect(violations).toContain('manifestHash: tampered or stale')
   })
 
   it('verifyManifest detects mismatched versions', async () => {
-    const manifest = await buildManifest({
-      repairControllerVersion: '0.18.0',
-      repairRuntimeVersion: '0.18.0',
-      eventSchemaVersion: 0,
-      pricingVersion: '2026-08-25',
-      sandboxPolicyVersion: 'v1',
-      fixtureVersion: 'v1',
-      holdoutVersion: 'v1',
-    })
+    const manifest = buildManifest(testParams)
     const violations = verifyManifest(manifest, { repairControllerVersion: '0.19.0' })
     expect(violations.some(v => v.includes('repairControllerVersion'))).toBe(true)
   })
 
   it('verifyManifest passes for consistent manifest', async () => {
-    const manifest = await buildManifest({
+    const manifest = buildManifest(testParams)
+    const violations = verifyManifest(manifest, {
+      qualificationId: 'v018-qualification-v2',
+      repairControllerVersion: '0.18.0',
+    })
+    expect(violations).toHaveLength(0)
+  })
+
+  it('computeManifestHash is pure and deterministic', () => {
+    const manifest = {
+      qualificationId: 'v018-qualification-v2',
+      sourceCommit: 'a'.repeat(40),
       repairControllerVersion: '0.18.0',
       repairRuntimeVersion: '0.18.0',
       eventSchemaVersion: 0,
       pricingVersion: '2026-08-25',
       sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'v018-sandbox-v1',
       fixtureVersion: 'v1',
       holdoutVersion: 'v1',
-    })
-    const violations = verifyManifest(manifest, {
-      qualificationId: 'v018-qualification-v1',
-      repairControllerVersion: '0.18.0',
-    })
-    expect(violations).toHaveLength(0)
+      modelRoutes: testParams.modelRoutes,
+      defaultRepairLimits: testParams.defaultRepairLimits,
+      fixtures: testParams.fixtures,
+    }
+    const h1 = computeManifestHash(manifest)
+    const h2 = computeManifestHash(manifest)
+    expect(h1).toBe(h2)
+    expect(h1).toHaveLength(64)
+    expect(h1).toMatch(/^[0-9a-f]{64}$/)
   })
 })
 

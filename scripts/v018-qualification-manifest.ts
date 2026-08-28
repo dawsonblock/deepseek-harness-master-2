@@ -17,9 +17,9 @@ import { execSync } from 'node:child_process'
 // E21-E23: Manifest and qualification identity
 // ---------------------------------------------------------------------------
 
-/** Qualification manifest recording all version stamps. */
+/** Qualification manifest recording all version stamps and fixture bindings. */
 export interface QualificationManifest {
-  /** Qualification identity, e.g. v018-qualification-v1. */
+  /** Qualification identity, e.g. v018-qualification-v2. */
   readonly qualificationId: string
   /** Git commit hash of the source tree. */
   readonly sourceCommit: string
@@ -33,38 +33,67 @@ export interface QualificationManifest {
   readonly pricingVersion: string
   /** Sandbox policy version. */
   readonly sandboxPolicyVersion: string
+  /** Sandbox qualification identity bound into this manifest. */
+  readonly sandboxQualificationId: string
   /** Fixture content version. */
   readonly fixtureVersion: string
   /** Holdout test content version. */
   readonly holdoutVersion: string
-  /** Manifest content hash for tamper detection. */
+  /** Model alias/route bindings (provider:model pairs). */
+  readonly modelRoutes: ReadonlyArray<{ alias: string; provider: string; model: string }>
+  /** Default repair limits frozen at qualification. */
+  readonly defaultRepairLimits: Readonly<{
+    maxFlashAttempts: number
+    maxProAttempts: number
+    maxTotalAttempts: number
+    maxTaskCostUsd: number | undefined
+    maxElapsedMs: number | undefined
+    maxOutputTokens: number | undefined
+  }>
+  /** Per-fixture hash bindings. */
+  readonly fixtures: ReadonlyArray<{
+    readonly fixtureId: string
+    readonly taskHash: string
+    readonly initialWorkspaceHash: string
+    readonly diagnosticSuiteHash: string
+    readonly holdoutSuiteHash: string
+    readonly fixtureVersion: string
+  }>
+  /** SHA-256 of the complete manifest content (full 64 hex chars). */
   readonly manifestHash: string
 }
 
 /** Build a qualification manifest from the current repository state. */
-export async function buildManifest(params: {
+export function buildManifest(params: {
   repairControllerVersion: string
   repairRuntimeVersion: string
   eventSchemaVersion: number
   pricingVersion: string
   sandboxPolicyVersion: string
+  sandboxQualificationId: string
   fixtureVersion: string
   holdoutVersion: string
-}): Promise<QualificationManifest> {
+  modelRoutes: ReadonlyArray<{ alias: string; provider: string; model: string }>
+  defaultRepairLimits: QualificationManifest['defaultRepairLimits']
+  fixtures: QualificationManifest['fixtures']
+}): QualificationManifest {
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
-  const qualificationId = 'v018-qualification-v1'
-  const manifestContent = [
+  const qualificationId = 'v018-qualification-v2'
+  const manifestHash = computeManifestHash({
     qualificationId,
     sourceCommit,
-    params.repairControllerVersion,
-    params.repairRuntimeVersion,
-    String(params.eventSchemaVersion),
-    params.pricingVersion,
-    params.sandboxPolicyVersion,
-    params.fixtureVersion,
-    params.holdoutVersion,
-  ].join(':')
-  const manifestHash = createHash('sha256').update(manifestContent).digest('hex').slice(0, 16)
+    repairControllerVersion: params.repairControllerVersion,
+    repairRuntimeVersion: params.repairRuntimeVersion,
+    eventSchemaVersion: params.eventSchemaVersion,
+    pricingVersion: params.pricingVersion,
+    sandboxPolicyVersion: params.sandboxPolicyVersion,
+    sandboxQualificationId: params.sandboxQualificationId,
+    fixtureVersion: params.fixtureVersion,
+    holdoutVersion: params.holdoutVersion,
+    modelRoutes: params.modelRoutes,
+    defaultRepairLimits: params.defaultRepairLimits,
+    fixtures: params.fixtures,
+  })
   return {
     qualificationId,
     sourceCommit,
@@ -73,10 +102,43 @@ export async function buildManifest(params: {
     eventSchemaVersion: params.eventSchemaVersion,
     pricingVersion: params.pricingVersion,
     sandboxPolicyVersion: params.sandboxPolicyVersion,
+    sandboxQualificationId: params.sandboxQualificationId,
     fixtureVersion: params.fixtureVersion,
     holdoutVersion: params.holdoutVersion,
+    modelRoutes: params.modelRoutes,
+    defaultRepairLimits: params.defaultRepairLimits,
+    fixtures: params.fixtures,
     manifestHash,
   }
+}
+
+/** Compute the full SHA-256 manifest hash from all binding fields. */
+export function computeManifestHash(fields: Omit<QualificationManifest, 'manifestHash'>): string {
+  const fixtureLines = fields.fixtures
+    .map(f => `${f.fixtureId}:${f.taskHash}:${f.initialWorkspaceHash}:${f.diagnosticSuiteHash}:${f.holdoutSuiteHash}:${f.fixtureVersion}`)
+    .sort()
+    .join('|')
+  const routeLines = fields.modelRoutes
+    .map(r => `${r.alias}=${r.provider}:${r.model}`)
+    .sort()
+    .join('|')
+  const limitLine = `${fields.defaultRepairLimits.maxFlashAttempts}:${fields.defaultRepairLimits.maxProAttempts}:${fields.defaultRepairLimits.maxTotalAttempts}:${fields.defaultRepairLimits.maxTaskCostUsd ?? 'none'}:${fields.defaultRepairLimits.maxElapsedMs ?? 'none'}:${fields.defaultRepairLimits.maxOutputTokens ?? 'none'}`
+  const manifestContent = [
+    fields.qualificationId,
+    fields.sourceCommit,
+    fields.repairControllerVersion,
+    fields.repairRuntimeVersion,
+    String(fields.eventSchemaVersion),
+    fields.pricingVersion,
+    fields.sandboxPolicyVersion,
+    fields.sandboxQualificationId,
+    fields.fixtureVersion,
+    fields.holdoutVersion,
+    routeLines,
+    limitLine,
+    fixtureLines,
+  ].join(':')
+  return createHash('sha256').update(manifestContent).digest('hex')
 }
 
 /**
@@ -89,29 +151,28 @@ export function verifyManifest(
 ): string[] {
   const violations: string[] = []
   for (const key of Object.keys(expected) as Array<keyof QualificationManifest>) {
-    if (expected[key] !== undefined && manifest[key] !== expected[key]) {
-      violations.push(`${key}: expected ${expected[key]}, got ${manifest[key]}`)
+    const expectedValue = expected[key]
+    if (expectedValue === undefined) continue
+    const actualValue = manifest[key]
+    if (!deepEqual(actualValue, expectedValue)) {
+      violations.push(`${key}: expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`)
     }
   }
-  // Verify manifest hash is deterministic
-  const recomputed = createHash('sha256')
-    .update([
-      manifest.qualificationId,
-      manifest.sourceCommit,
-      manifest.repairControllerVersion,
-      manifest.repairRuntimeVersion,
-      String(manifest.eventSchemaVersion),
-      manifest.pricingVersion,
-      manifest.sandboxPolicyVersion,
-      manifest.fixtureVersion,
-      manifest.holdoutVersion,
-    ].join(':'))
-    .digest('hex')
-    .slice(0, 16)
+  const recomputed = computeManifestHash(manifest)
   if (recomputed !== manifest.manifestHash) {
     violations.push('manifestHash: tampered or stale')
   }
   return violations
+}
+
+/** Structural equality for manifest field values. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== typeof b) return false
+  if (typeof a === 'object' && a !== null && b !== null) {
+    return JSON.stringify(a) === JSON.stringify(b)
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------

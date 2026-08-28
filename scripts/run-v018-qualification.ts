@@ -54,6 +54,8 @@ import {
   formatPrerequisiteSummary,
   prerequisiteGate,
 } from './v018-qualification-manifest.ts'
+import { SANDBOX_QUALIFICATION_ID } from './v018-sandbox-qualification.ts'
+import { hashFixtureContent } from './v018-verification-security.ts'
 import { classifyProviderFailure } from '@deepseek-ai/dsh-repair-controller'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
@@ -1016,14 +1018,35 @@ async function main(): Promise<void> {
   process.stderr.write('\nv0.18 Repair Controller Qualification\n')
   process.stderr.write(`${'='.repeat(60)}\n`)
 
-  const manifest = await buildManifest({
+  const manifest = buildManifest({
     repairControllerVersion: '0.18.0',
     repairRuntimeVersion: '0.18.0',
     eventSchemaVersion: 0,
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
+    sandboxQualificationId: SANDBOX_QUALIFICATION_ID,
     fixtureVersion: 'v1',
     holdoutVersion: 'v1',
+    modelRoutes: [
+      { alias: 'flash', provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { alias: 'pro', provider: 'deepseek', model: 'deepseek-v4-pro' },
+    ],
+    defaultRepairLimits: {
+      maxFlashAttempts: DEFAULT_REPAIR_LIMITS.maxFlashAttempts,
+      maxProAttempts: DEFAULT_REPAIR_LIMITS.maxProAttempts,
+      maxTotalAttempts: DEFAULT_REPAIR_LIMITS.maxTotalAttempts,
+      maxTaskCostUsd: DEFAULT_REPAIR_LIMITS.maxTaskCostUsd,
+      maxElapsedMs: DEFAULT_REPAIR_LIMITS.maxElapsedMs,
+      maxOutputTokens: DEFAULT_REPAIR_LIMITS.maxOutputTokens,
+    },
+    fixtures: FIXTURES.map(f => ({
+      fixtureId: f.id,
+      taskHash: hashFixtureContent(f.task),
+      initialWorkspaceHash: hashFixtureContent(f.setup.toString()),
+      diagnosticSuiteHash: hashFixtureContent(f.diagnosticTest),
+      holdoutSuiteHash: hashFixtureContent(f.holdoutTest),
+      fixtureVersion: 'v1',
+    })),
   })
   process.stderr.write(`Qualification ID: ${manifest.qualificationId}\n`)
   process.stderr.write(`Source commit: ${manifest.sourceCommit.slice(0, 12)}\n`)
