@@ -405,6 +405,13 @@ async function generateRepoConfig(model: string, workspace: string): Promise<str
 - id: bash
   name: '@deepseek-ai/dsh-bash-sandbox'`,
   )
+  // Replace fs-local with fs-sandbox so model-facing file tools are fenced
+  // by the sandbox policy (read+write containment under workspace-isolated).
+  base = base.replace(
+    /- id: fs-local\n  name: '@deepseek-ai\/dsh-fs-local'/,
+    `- id: fs-sandbox
+  name: '@deepseek-ai/dsh-fs-sandbox'`,
+  )
   const configPath = join(workspace, '.v019-cordis.yml')
   await writeFile(configPath, base, 'utf8')
   return configPath

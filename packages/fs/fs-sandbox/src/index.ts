@@ -3,9 +3,10 @@
  * `@deepseek-ai/dsh-fs` Service Definition. It extends `LocalFileSystem` so all
  * text-storage mechanics — resolve, stat, read/stream, list, the atomic
  * write and the read-match-write edit critical section — are the local
- * implementation's, verbatim; this package adds only the per-call POLICY fence
- * on the two mutations. Reads pass through untouched: every mode permits
- * reading.
+ * implementation's, verbatim; this package adds the per-call POLICY fence
+ * on reads and mutations. Under `workspace-isolated` mode, reads are fenced
+ * to the workspace root; under other confined modes, reads pass through and
+ * only mutations are fenced.
  *
  * The fence is a policy check in TRUSTED code over a MODEL-CONTROLLED path,
  * NOT a kernel boundary — the operations are the seam's own (open, rename),
@@ -21,6 +22,7 @@
  * a mutation only when the target canonicalizes under the policy's workspace
  * root or a platform temp area (the SAME writable-root set Seatbelt grants,
  * derived from the one `writableRoots` function so bash and fs cannot drift);
+ * `workspace-isolated` fences both reads and writes to the workspace root;
  * `danger-full-access` delegates unfenced. A denial throws the structured
  * `FS_SANDBOX_DENIED` — no text inference is needed (unlike bash's kernel
  * stderr), because an in-process fence knows exactly what it refused. The
@@ -34,8 +36,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-fs-local'
 import { FsError } from '@deepseek-ai/dsh-fs'
-import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
-import { writableRoots } from '@deepseek-ai/dsh-sandbox'
+import type { FsDirEntry, FsEditOutcome, FsEditRequest, FsInfo, FsPathInfo, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
+import { readableRoots, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { isPathUnder } from './containment.ts'
@@ -68,6 +70,102 @@ export class SandboxedFileSystem extends LocalFileSystem {
   /** The deployment default mode — the capability fact the tool layer reads to advertise escalation. */
   override get sandboxMode(): SandboxMode {
     return this.defaultMode
+  }
+
+  /**
+   * Fence reads by the per-call policy under `workspace-isolated` mode, then
+   * delegate to the inherited read. See {@link checkedReadTarget}.
+   * @param target - the resolved target to stat.
+   * @param signal - aborts before the read takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
+   *   the deployment fallback.
+   * @returns the stat result from the inherited backend, or `undefined` for absent targets.
+   */
+  override async stat(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<FsInfo | undefined> {
+    return super.stat(await this.checkedReadTarget(target, sandboxPolicy), signal)
+  }
+
+  /**
+   * Fence path metadata reads by the per-call policy under `workspace-isolated`
+   * mode, then delegate to the inherited lstat.
+   * @param path - the path to stat (does not follow symlinks).
+   * @param opts - optional cwd for relative path resolution.
+   * @param signal - aborts before the read takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
+   *   the deployment fallback.
+   * @returns the path info from the inherited backend, or `undefined` for absent paths.
+   */
+  override async lstat(
+    path: string,
+    opts?: { cwd?: string },
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsPathInfo | undefined> {
+    const target = await this.resolveTarget(path, opts?.cwd)
+    const checked = await this.checkedReadTarget(target, sandboxPolicy)
+    return super.lstat(checked.displayPath, undefined, signal)
+  }
+
+  /**
+   * Fence reads by the per-call policy under `workspace-isolated` mode, then
+   * delegate to the inherited read. See {@link checkedReadTarget}.
+   * @param target - the resolved target to read.
+   * @param signal - aborts before the read takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
+   *   the deployment fallback.
+   * @returns the file content from the inherited backend.
+   */
+  override async readText(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<string> {
+    return super.readText(await this.checkedReadTarget(target, sandboxPolicy), signal)
+  }
+
+  /**
+   * Fence reads by the per-call policy under `workspace-isolated` mode, then
+   * delegate to the inherited stream. See {@link checkedReadTarget}.
+   * @param target - the resolved target to stream.
+   * @param signal - aborts before the stream takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
+   *   the deployment fallback.
+   * @returns the chunk iterable from the inherited backend.
+   */
+  override async streamText(
+    target: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<AsyncIterable<string>> {
+    return super.streamText(await this.checkedReadTarget(target, sandboxPolicy), signal)
+  }
+
+  /**
+   * Fence reads by the per-call policy under `workspace-isolated` mode, then
+   * delegate to the inherited read. See {@link checkedReadTarget}.
+   * @param target - the resolved target to read.
+   * @param signal - aborts before the read takes effect.
+   * @param maxBytes - the maximum number of bytes to read.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
+   *   the deployment fallback.
+   * @returns the byte array from the inherited backend.
+   */
+  override async readBytes(
+    target: FsTarget,
+    signal: AbortSignal | undefined,
+    maxBytes: number,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<Uint8Array> {
+    return super.readBytes(await this.checkedReadTarget(target, sandboxPolicy), signal, maxBytes)
+  }
+
+  /**
+   * Fence directory listing by the per-call policy under `workspace-isolated`
+   * mode, then delegate to the inherited list. See {@link checkedReadTarget}.
+   * @param target - the resolved target to list.
+   * @param signal - aborts before the listing takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
+   *   the deployment fallback.
+   * @returns the directory entries from the inherited backend.
+   */
+  override async listDir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<FsDirEntry[]> {
+    return super.listDir(await this.checkedReadTarget(target, sandboxPolicy), signal)
   }
 
   /**
@@ -130,9 +228,10 @@ export class SandboxedFileSystem extends LocalFileSystem {
     if (mode === 'read-only') {
       throw new FsError(`cannot write "${target.displayPath}": file access denied under read-only mode`, 'FS_SANDBOX_DENIED')
     }
-    // workspace-write: containment on the FRESH canonical path (catches a
-    // symlink ancestor swapped since the tool resolved this target), and the
-    // mutation delegates with THIS fresh target — never the stale one.
+    // workspace-write and workspace-isolated: containment on the FRESH canonical
+    // path (catches a symlink ancestor swapped since the tool resolved this
+    // target), and the mutation delegates with THIS fresh target — never the
+    // stale one.
     const fresh = await this.resolve(target.displayPath)
     let contained = false
     for (const root of writableRoots(policy)) {
@@ -142,9 +241,45 @@ export class SandboxedFileSystem extends LocalFileSystem {
       }
     }
     if (!contained) {
-      throw new FsError(`cannot write "${target.displayPath}": file access denied under workspace-write mode`, 'FS_SANDBOX_DENIED')
+      throw new FsError(`cannot write "${target.displayPath}": file access denied under ${mode} mode`, 'FS_SANDBOX_DENIED')
     }
     return fresh
+  }
+
+  /**
+   * Enforce the per-call read policy against `target` and return the resolved
+   * target. Under `workspace-isolated` mode, reads are allowed only within the
+   * workspace root; everything else is denied. Under other modes, reads pass
+   * through unfenced. Throws `FS_SANDBOX_DENIED` on refusal.
+   */
+  private async checkedReadTarget(target: FsTarget, sandboxPolicy?: SandboxExecutionPolicy): Promise<FsTarget> {
+    const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
+    const { mode } = policy
+    // read-only, workspace-write, and danger-full-access do not fence reads.
+    if (mode !== 'workspace-isolated') return target
+    // workspace-isolated: containment on the FRESH canonical path.
+    const fresh = await this.resolve(target.displayPath)
+    const roots = readableRoots(policy)
+    if (roots.length === 0) return target
+    let contained = false
+    for (const root of roots) {
+      if (await isPathUnder(fresh.targetKey, root)) {
+        contained = true
+        break
+      }
+    }
+    if (!contained) {
+      throw new FsError(`cannot read "${target.displayPath}": file access denied under workspace-isolated mode`, 'FS_SANDBOX_DENIED')
+    }
+    return fresh
+  }
+
+  /**
+   * Resolve a raw path string (from `lstat`) into an `FsTarget` for read
+   * fencing. Uses the filesystem's resolve to get the canonical target.
+   */
+  private async resolveTarget(path: string, cwd?: string): Promise<FsTarget> {
+    return cwd !== undefined ? this.resolve(path, { cwd }) : this.resolve(path)
   }
 }
 

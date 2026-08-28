@@ -1,8 +1,8 @@
 /**
- * The writable-root derivation shared by every enforcement dialect that
- * expresses a mode as a canonical allow-list: `workspace-write` means "the
- * workspace root plus the platform temp areas", and this module is that
- * meaning's one home. The Seatbelt profile
+ * The writable-root and readable-root derivation shared by every enforcement
+ * dialect that expresses a mode as a canonical allow-list: `workspace-write`
+ * means "the workspace root plus the platform temp areas", and this module is
+ * that meaning's one home. The Seatbelt profile
  * (`@deepseek-ai/dsh-sandbox-local`) and the in-process filesystem fence
  * (`@deepseek-ai/dsh-fs-sandbox`) both derive their allow-list here, so "the
  * write tool cannot write /tmp but bash can" asymmetries cannot arise between
@@ -53,4 +53,18 @@ export function canonicalPath(path: string): string {
 export function writableRoots(policy: SandboxExecutionPolicy): string[] {
   if (policy.mode !== 'workspace-write' && policy.mode !== 'workspace-isolated') return []
   return [...new Set([policy.workspaceRoot, '/tmp', tmpdir()].map(canonicalPath))]
+}
+
+/**
+ * The roots one confined execution may READ under — the mode's meaning as a
+ * canonical, deduplicated allow-list. `workspace-isolated` allows only the
+ * policy's workspace root: model-facing file tools cannot reach host paths
+ * outside the workspace. Other modes return empty, meaning reads are
+ * unfenced (the mode does not claim read isolation).
+ * @param policy - the file-effect policy to derive the allow-list from.
+ * @returns the canonical readable roots; empty when reads are unfenced.
+ */
+export function readableRoots(policy: SandboxExecutionPolicy): string[] {
+  if (policy.mode !== 'workspace-isolated') return []
+  return [...new Set([policy.workspaceRoot].map(canonicalPath))]
 }
