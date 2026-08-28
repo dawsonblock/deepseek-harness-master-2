@@ -5,17 +5,20 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   type DiagnosticVerificationResult,
   type HoldoutVerificationResult,
+  type VerifierControlledFiles,
   isDiagnosticResult,
   isHoldoutResult,
   detectHoldoutLeakage,
   extractHoldoutStrings,
   checkAntiCheating,
+  recordVerifierSnapshot,
+  verifyVerifierSnapshot,
   snapshotWorkspace,
   diffSnapshots,
   sanitizeSecrets,
@@ -163,6 +166,110 @@ describe('anti-cheating checks', () => {
     await writeFile(join(workspace, 'tsconfig.json'), JSON.stringify({ compilerOptions: {} }))
     await writeFile(join(workspace, 'required.ts'), 'export {}')
     const violations = await checkAntiCheating(workspace, initialPkg, '{}', ['required.ts'])
+    expect(violations).toHaveLength(0)
+  })
+
+  it('detects --passWithNoTests disabling test discovery', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'anti-cheat-6'))
+    const initialPkg = JSON.stringify({ name: 'test', scripts: { test: 'vitest' } })
+    await writeFile(join(workspace, 'package.json'), JSON.stringify({
+      name: 'test',
+      scripts: { test: 'vitest --passWithNoTests' },
+    }))
+    const violations = await checkAntiCheating(workspace, initialPkg, '{}', [])
+    expect(violations.some(v => v.kind === 'test-discovery-disabled')).toBe(true)
+  })
+
+  it('detects required source excluded by tsconfig', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'anti-cheat-7'))
+    await writeFile(join(workspace, 'package.json'), '{}')
+    await writeFile(join(workspace, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: {},
+      exclude: ['src/impl.ts'],
+    }))
+    const violations = await checkAntiCheating(workspace, '{}', '{}', ['src/impl.ts'])
+    expect(violations.some(v => v.kind === 'required-source-excluded')).toBe(true)
+  })
+})
+
+describe('verifier-controlled snapshot', () => {
+  it('records immutable hashes of verifier-controlled files', () => {
+    const controlled: VerifierControlledFiles = {
+      packageJson: '{"name":"test"}',
+      tsconfig: '{"compilerOptions":{}}',
+      diagnosticVerifier: 'export const verify = () => true',
+      holdoutVerifier: 'export const holdout = () => true',
+      requiredSources: [{ path: 'src/impl.ts', content: 'export const x = 1' }],
+    }
+    const snapshot = recordVerifierSnapshot(controlled)
+    expect(snapshot.files.length).toBeGreaterThanOrEqual(5)
+    expect(snapshot.files.every(f => f.hash.length === 16)).toBe(true)
+  })
+
+  it('detects when verifier-controlled file is modified', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'verifier-snap-1'))
+    const originalContent = 'export const verify = () => true'
+    await writeFile(join(workspace, '__diagnostic_verifier__.ts'), originalContent)
+    await writeFile(join(workspace, 'package.json'), '{"name":"test"}')
+    await writeFile(join(workspace, 'tsconfig.json'), '{}')
+    await writeFile(join(workspace, '__holdout_verifier__.ts'), 'export const h = () => true')
+    await mkdir(join(workspace, 'src'), { recursive: true }).then(() => writeFile(join(workspace, 'src/impl.ts'), 'export const x = 1'))
+
+    const snapshot = recordVerifierSnapshot({
+      packageJson: '{"name":"test"}',
+      tsconfig: '{}',
+      diagnosticVerifier: originalContent,
+      holdoutVerifier: 'export const h = () => true',
+      requiredSources: [{ path: 'src/impl.ts', content: 'export const x = 1' }],
+    })
+
+    // Model modifies the diagnostic verifier
+    await writeFile(join(workspace, '__diagnostic_verifier__.ts'), 'export const verify = () => false')
+
+    const violations = await verifyVerifierSnapshot(workspace, snapshot)
+    expect(violations.some(v => v.kind === 'verifier-file-modified')).toBe(true)
+  })
+
+  it('detects when verifier-controlled file is deleted', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'verifier-snap-2'))
+    await writeFile(join(workspace, 'package.json'), '{"name":"test"}')
+    await writeFile(join(workspace, 'tsconfig.json'), '{}')
+    await writeFile(join(workspace, '__diagnostic_verifier__.ts'), 'export const verify = () => true')
+    await writeFile(join(workspace, '__holdout_verifier__.ts'), 'export const h = () => true')
+    await mkdir(join(workspace, 'src'), { recursive: true }).then(() => writeFile(join(workspace, 'src/impl.ts'), 'export const x = 1'))
+
+    const snapshot = recordVerifierSnapshot({
+      packageJson: '{"name":"test"}',
+      tsconfig: '{}',
+      diagnosticVerifier: 'export const verify = () => true',
+      holdoutVerifier: 'export const h = () => true',
+      requiredSources: [{ path: 'src/impl.ts', content: 'export const x = 1' }],
+    })
+
+    const { unlink } = await import('node:fs/promises')
+    await unlink(join(workspace, '__diagnostic_verifier__.ts'))
+
+    const violations = await verifyVerifierSnapshot(workspace, snapshot)
+    expect(violations.some(v => v.kind === 'required-source-deleted')).toBe(true)
+  })
+
+  it('no violations when verifier-controlled files are unchanged', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'verifier-snap-3'))
+    await writeFile(join(workspace, 'package.json'), '{"name":"test"}')
+    await writeFile(join(workspace, 'tsconfig.json'), '{}')
+    await writeFile(join(workspace, '__diagnostic_verifier__.ts'), 'export const verify = () => true')
+    await writeFile(join(workspace, '__holdout_verifier__.ts'), 'export const h = () => true')
+    await mkdir(join(workspace, 'src'), { recursive: true }).then(() => writeFile(join(workspace, 'src/impl.ts'), 'export const x = 1'))
+
+    const snapshot = recordVerifierSnapshot({
+      packageJson: '{"name":"test"}',
+      tsconfig: '{}',
+      diagnosticVerifier: 'export const verify = () => true',
+      holdoutVerifier: 'export const h = () => true',
+      requiredSources: [{ path: 'src/impl.ts', content: 'export const x = 1' }],
+    })
+
+    const violations = await verifyVerifierSnapshot(workspace, snapshot)
     expect(violations).toHaveLength(0)
   })
 })
