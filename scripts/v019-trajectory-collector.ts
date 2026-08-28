@@ -1,44 +1,46 @@
 /**
  * v0.19 trajectory collector.
  *
- * Wraps the v018 repair loop to run synthetic multi-repository tasks. Captures full
- * trajectory data including repository context, tool calls, changed files,
- * and verification results for each attempt.
+ * Runs synthetic multi-repository tasks through the production RepairRuntime
+ * plugin. Captures full trajectory data including repository context, tool
+ * calls, changed files, and verification results for each attempt.
  *
- * The repair loop itself (RepairController.decide) is unchanged from v0.18.0.
- * Only the turn runner and verifier are adapted for synthetic repositories.
+ * The production RepairRuntime hooks into goal/verification events, uses the
+ * durable routing authority for model selection, and emits durable repair
+ * events (repair/evidence, repair/decision, repair/completed, model/escalation).
+ * Holdout verification, workspace provenance, and rollback are injected via
+ * plugin config.
  *
  * @module v019-trajectory-collector
  */
 
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
+import type { GoalCompletionVerifier } from '@deepseek-ai/dsh-goal'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { calculateCost, DEFAULT_PRICING_REGISTRY, lookupPricingAt } from '@deepseek-ai/dsh-token-meter'
 
 import {
   type ModelRef,
   type RepairDecision,
-  DEFAULT_REPAIR_LIMITS,
 } from '@deepseek-ai/dsh-repair-controller'
+
+import * as repairRuntimePlugin from '@deepseek-ai/dsh-repair-runtime'
+import type { RepairRuntimeConfig } from '@deepseek-ai/dsh-repair-runtime'
 
 import {
   extractRepositoryObservation,
   intersectPaths,
 } from './v019-session-extraction.ts'
 
-import {
-  type TurnResult,
-  type VerifyResult,
-  runRepairLoop,
-} from './v018-repair-loop.ts'
-
-import type { TaskManifest, VerificationCommand } from './v019-task-manifest.ts'
+import type { TaskManifest } from './v019-task-manifest.ts'
 import type { RepoMetadata } from './v019-repo-checkout.ts'
 
 /** Checkpoint state for one task during evaluation. */
@@ -126,10 +128,15 @@ export interface AttemptTrajectory {
 const REPO_ROOT = join(import.meta.dirname, '..')
 
 /**
- * Run one synthetic multi-repository task through the v0.18 repair loop.
+ * Run one synthetic multi-repository task through the production RepairRuntime.
  *
- * The repair controller policy is frozen from v0.18.0. Only the turn runner
- * and verifier are adapted for synthetic repository workspaces.
+ * Boots a Cordis context with the repair-controller, goal, and tool-goal
+ * plugins, then mounts the repair-runtime plugin programmatically with full
+ * config (including holdout verifier, rollback, and provenance providers that
+ * cannot be expressed in YAML). A goal completion verifier runs the task's
+ * diagnostic commands. After each agent turn, verification is triggered
+ * programmatically; the repair-runtime plugin handles repair decisions,
+ * model escalation, and holdout verification.
  */
 export async function runTaskTrajectory(
   manifest: TaskManifest,
@@ -143,114 +150,103 @@ export async function runTaskTrajectory(
   const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
 
   const wallClockStart = Date.now()
-  const loopResult = await runRepairLoop({
-    taskId: manifest.taskId,
-    workspace,
-    initialTask: manifest.task.description,
-    flashModel,
-    proModel,
-    runTurn: (task, model) => realTurnRunner(task, model, workspace, manifest),
-    verify: (_ws, _model) => realVerifier(workspace, manifest),
-    limits: {
-      ...DEFAULT_REPAIR_LIMITS,
+  const allEvents: SessionEvent[] = []
+  let uninstallFailLoud: (() => void) | undefined
+  let ctx: Context | undefined
+
+  try {
+    const configPath = await generateRepoConfig(flashModel.model, workspace)
+    await mkdir(join(workspace, 'sessions'), { recursive: true })
+    loadEnv('v019-evaluation')
+    uninstallFailLoud = installFailLoud('v019-evaluation')
+    ctx = await boot('v019-evaluation', resolveConfigPath(configPath, undefined))
+
+    // Mount the repair-runtime plugin programmatically with full config,
+    // including function-type fields that cannot be expressed in YAML.
+    const repairConfig: RepairRuntimeConfig = {
+      enabled: true,
+      flashModel: { provider: flashModel.provider, model: flashModel.model },
+      proModel: { provider: proModel.provider, model: proModel.model },
       maxFlashAttempts: manifest.limits.maxFlashAttempts,
       maxProAttempts: manifest.limits.maxProAttempts,
       maxTotalAttempts: manifest.limits.maxTotalAttempts,
-    },
-  })
-
-  const changedFiles = getChangedFiles(workspace)
-  const lastAttempt = loopResult.attempts.at(-1)
-  const terminalOutcome = computeTerminalOutcome(
-    loopResult.finalVerified,
-    loopResult.holdoutPass,
-    lastAttempt?.repairAction,
-    lastAttempt?.repairReason,
-  )
-  const controlPlaneStatus: ControlPlaneStatus = loopResult.aborted ? 'FAIL' : 'PASS'
-  const modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED' =
-    loopResult.aborted ? 'NOT_EVALUATED' : loopResult.finalVerified ? 'PASS' : 'FAIL'
-
-  // Extract repository observations from all attempt session events.
-  const allSessionEvents = loopResult.attempts
-    .filter(a => a.sessionEvents !== undefined)
-    .flatMap(a => a.sessionEvents ?? [])
-  const observation = extractRepositoryObservation(allSessionEvents, workspace)
-  const referenceFixFilesInspected = intersectPaths(observation.filesInspected, referenceFixFiles)
-  const referenceFixFilesModified = intersectPaths(observation.filesModified, referenceFixFiles)
-
-  const attempts: AttemptTrajectory[] = loopResult.attempts.map((a) => {
-    const attemptObservation = a.sessionEvents !== undefined
-      ? extractRepositoryObservation(a.sessionEvents, workspace)
-      : { filesInspected: [] as string[], filesModified: [] as string[], commandsExecuted: [] as string[], testsExecuted: [] as string[] }
-    return {
-      attempt: a.attempt,
-      model: a.model,
-      routingDecisionId: a.routingDecisionId,
-      verified: a.verified,
-      diagnosticPass: a.diagnosticPass,
-      holdoutPass: a.holdoutPass,
-      failureFingerprint: a.failureFingerprint,
-      progress: a.progress,
-      usage: {
-        inputTokens: a.inputTokens,
-        outputTokens: a.outputTokens,
-        reasoningTokens: a.reasoningTokens,
-        totalTokens: a.totalTokens,
-        cacheReadTokens: a.cacheReadTokens,
-        cacheMissTokens: a.cacheMissTokens,
-      },
-      costUsd: a.costUsd,
-      latencyMs: a.latencyMs,
-      repairAction: a.repairAction,
-      repairReason: a.repairReason,
-      changedFiles: attemptObservation.filesModified,
-      toolCallCount: a.sessionEvents?.filter(e => e.type === 'tool/call').length ?? 0,
-      filesInspected: attemptObservation.filesInspected,
-      terminalOutcome: a.repairAction === 'complete' && a.repairReason === 'qualification-failed'
-        ? 'qualification-failed'
-        : a.repairAction === 'complete' && a.verified
-          ? 'verified-complete'
-          : a.repairAction,
+      holdoutVerifier: createHoldoutVerifier(workspace, manifest),
+      workspaceProvenanceProvider: createProvenanceProvider(workspace),
+      rollbackProvider: createRollbackProvider(workspace),
     }
-  })
+    await ctx.plugin(repairRuntimePlugin, repairConfig)
 
-  return {
-    taskId: manifest.taskId,
-    taskManifestHash: manifest.manifestHash,
-    experimentId,
-    benchmarkEligible,
-    repository: repoMetadata,
-    category: manifest.category,
-    taskDescription: manifest.task.description,
-    baseCommit: manifest.repository.baseCommit,
-    referenceFixCommit: manifest.repository.referenceFixCommit,
-    taskState: 'COMPLETED',
-    controlPlaneStatus,
-    modelCapabilityStatus,
-    finalVerified: loopResult.finalVerified,
-    holdoutPass: loopResult.holdoutPass,
-    verificationStrength: manifest.verification.strength,
-    flashAttempts: loopResult.flashAttempts,
-    proAttempts: loopResult.proAttempts,
-    escalatedToPro: loopResult.escalatedToPro,
-    totalCostUsd: loopResult.totalCostUsd,
-    totalLatencyMs: Date.now() - wallClockStart,
-    totalOutputTokens: attempts.reduce((s, a) => s + a.usage.outputTokens, 0),
-    totalCacheReadTokens: attempts.reduce((s, a) => s + a.usage.cacheReadTokens, 0),
-    totalCacheMissTokens: attempts.reduce((s, a) => s + a.usage.cacheMissTokens, 0),
-    attempts,
-    changedFiles,
-    referenceFixFiles,
-    referenceFixFilesInspected,
-    referenceFixFilesModified,
-    rollbackUsed: false,
-    aborted: loopResult.aborted,
-    abortReason: loopResult.abortReason?.kind,
-    terminalOutcome,
-    failureCategory: undefined,
-    timestamp: new Date().toISOString(),
+    // Register a goal completion verifier that runs the task's diagnostic
+    // commands. The repair-runtime plugin watches goal/verification events
+    // emitted by verifyCompletion() and handles repair decisions.
+    const diagnosticVerifier: GoalCompletionVerifier = {
+      name: 'v019-diagnostic',
+      version: '1',
+      verify: () => {
+        const passed = runDiagnosticSync(workspace, manifest)
+        return {
+          name: 'v019-diagnostic',
+          role: 'acceptance',
+          passed,
+          reason: passed ? '' : 'diagnostic verification commands failed',
+          evidence: [],
+        }
+      },
+    }
+    const goalsService = ctx.get('goals')
+    if (goalsService === undefined) throw new Error('goals service not available')
+    goalsService.registerAcceptanceVerifier(diagnosticVerifier)
+
+    // Get the root agent and create a goal for this task.
+    const agents = ctx.get('agents')?.roots() ?? []
+    const agent = agents[0]
+    if (agent === undefined || agents.length !== 1) {
+      throw new Error(`trajectory collector requires exactly one root agent, found ${agents.length}`)
+    }
+
+    goalsService.create(agent, { objective: manifest.task.description })
+
+    // Capture all session events for trajectory extraction.
+    const disposeListener = ctx.on('session/event', (_session, event) => {
+      allEvents.push(event)
+    })
+
+    try {
+      // Send the task to the agent. The agent works on it and becomes idle.
+      await runFixtureTurn(ctx, { task: manifest.task.description })
+
+      // After each agent idle, trigger goal verification. The repair-runtime
+      // plugin handles repair decisions: flash-repair sends a followup, pro-
+      // escalate sends a followup with a different model, stop blocks the goal.
+      // Loop until the goal is no longer active.
+      let verificationRounds = 0
+      const maxVerificationRounds = manifest.limits.maxTotalAttempts + 2
+      while (verificationRounds < maxVerificationRounds) {
+        verificationRounds += 1
+        const currentGoal = goalsService.get(agent)
+        if (currentGoal === undefined || currentGoal.phase !== 'active') break
+
+        await goalsService.verifyCompletion(agent, { id: currentGoal.id, revision: currentGoal.revision })
+        await agent.whenIdle()
+
+        // Check if the repair-runtime plugin completed or blocked the goal.
+        const postGoal = goalsService.get(agent)
+        if (postGoal === undefined || postGoal.phase !== 'active') break
+      }
+    } finally {
+      disposeListener()
+    }
+
+    await ctx.sessions.flush(agent.session)
+  } finally {
+    uninstallFailLoud?.()
   }
+
+  // Extract trajectory from session events.
+  return buildTrajectoryFromEvents(
+    allEvents, manifest, workspace, experimentId, benchmarkEligible,
+    repoMetadata, referenceFixFiles, wallClockStart,
+  )
 }
 
 /** Build a FAILED_INFRA trajectory for tasks that failed before reaching the repair loop. */
@@ -305,80 +301,6 @@ export function buildInfraFailureTrajectory(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Turn runner: boots the harness against a synthetic repository workspace
-// ---------------------------------------------------------------------------
-
-async function realTurnRunner(
-  task: string,
-  model: ModelRef,
-  workspace: string,
-  _manifest: TaskManifest,
-): Promise<TurnResult> {
-  const configPath = await generateRepoConfig(model.model, workspace)
-  const events: SessionEvent[] = []
-  let uninstallFailLoud: (() => void) | undefined
-  let ctx: Context | undefined
-
-  try {
-    await mkdir(join(workspace, 'sessions'), { recursive: true })
-    loadEnv('v019-evaluation')
-    uninstallFailLoud = installFailLoud('v019-evaluation')
-    ctx = await boot('v019-evaluation', resolveConfigPath(configPath, undefined))
-    const started = Date.now()
-    const turnResult = await runFixtureTurn(ctx, { task, onEvent: (_sid, event) => events.push(event) })
-    const latencyMs = Date.now() - started
-
-    let inputTokens = 0
-    let outputTokens = 0
-    let reasoningTokens = 0
-    let totalTokens = 0
-    let cacheReadTokens = 0
-    let cacheMissTokens = 0
-    for (const event of events) {
-      if (event.type === 'model/usage') {
-        type UsageData = { usage: {
-          inputTokens?: number
-          outputTokens?: number
-          reasoningTokens?: number
-          totalTokens?: number
-          cacheReadTokens?: number
-          cacheMissTokens?: number
-        } }
-        const u = (event.data as unknown as UsageData).usage
-        inputTokens += u.inputTokens ?? 0
-        outputTokens += u.outputTokens ?? 0
-        reasoningTokens += u.reasoningTokens ?? 0
-        totalTokens += u.totalTokens ?? 0
-        cacheReadTokens += u.cacheReadTokens ?? 0
-        cacheMissTokens += u.cacheMissTokens ?? 0
-      }
-    }
-    const output = turnResult.output
-    if (output === '' && totalTokens === 0) {
-      throw new Error('Provider returned no assistant output or usage')
-    }
-    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model.model, new Date(started))
-    if (pricing === undefined) {
-      throw new Error(`UNPRICED_USAGE: no pricing found for model ${model.model} at ${new Date(started).toISOString()}`)
-    }
-    const costUsd = calculateCost({
-      inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
-      reasoningTokens, totalTokens, source: 'provider',
-    }, pricing).amount
-    const routingDecision = events.find(e => e.type === 'model/routing-decision')
-    const routingDecisionId = (routingDecision?.data as { routingDecisionId?: string })?.routingDecisionId ?? 'unknown'
-    return {
-      output, costUsd, latencyMs, inputTokens, outputTokens, reasoningTokens,
-      totalTokens, cacheReadTokens, cacheMissTokens, routingDecisionId,
-      sessionEvents: events,
-    }
-  } finally {
-    if (uninstallFailLoud !== undefined) uninstallFailLoud()
-    if (ctx !== undefined) await ctx.fiber.dispose()
-  }
-}
-
 async function generateRepoConfig(model: string, workspace: string): Promise<string> {
   const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
   let base = await readFile(basePath, 'utf8')
@@ -414,6 +336,20 @@ async function generateRepoConfig(model: string, workspace: string): Promise<str
     `- id: fs-sandbox
   name: '@deepseek-ai/dsh-fs-sandbox'`,
   )
+  // Add goal, tool-goal, and repair-controller plugins so the production
+  // RepairRuntime can hook into goal/verification events. The repair-runtime
+  // plugin itself is mounted programmatically after boot with full config
+  // (including function-type fields that cannot be expressed in YAML).
+  base = base.replace(
+    /- id: persistence/,
+    `- id: goal
+  name: '@deepseek-ai/dsh-goal'
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+- id: repair-controller
+  name: '@deepseek-ai/dsh-repair-controller'
+- id: persistence`,
+  )
   const configPath = join(workspace, '.v019-cordis.yml')
   await writeFile(configPath, base, 'utf8')
   return configPath
@@ -423,88 +359,262 @@ async function generateRepoConfig(model: string, workspace: string): Promise<str
 // Verifier: runs the repository's own build and test commands
 // ---------------------------------------------------------------------------
 
-/**
- * Copy external holdout files into the workspace's `tests/` directory so the
- * holdout verification commands can run them. Holdouts are stored outside the
- * model workspace to prevent model-visible discovery; they are copied in only
- * during holdout verification and removed afterward.
- */
-async function stageHoldouts(workspace: string, manifest: TaskManifest): Promise<void> {
-  if (manifest.verification.holdout.length === 0) return
-  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
-  try {
-    const entries = await readdir(holdoutDir)
-    await mkdir(join(workspace, 'tests'), { recursive: true })
-    for (const entry of entries) {
-      if (entry.endsWith('.holdout.test.ts')) {
-        await copyFile(join(holdoutDir, entry), join(workspace, 'tests', entry))
-      }
-    }
-  } catch {
-    // No external holdout directory — holdouts may be in-repo (legacy mode).
-  }
-}
+// ---------------------------------------------------------------------------
+// Production RepairRuntime helpers: holdout, provenance, rollback, trajectory
+// ---------------------------------------------------------------------------
 
-/** Remove staged holdout files from the workspace after verification. */
-async function unstageHoldouts(workspace: string, manifest: TaskManifest): Promise<void> {
-  if (manifest.verification.holdout.length === 0) return
-  const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
-  try {
-    const entries = await readdir(holdoutDir)
-    for (const entry of entries) {
-      if (entry.endsWith('.holdout.test.ts')) {
-        await rm(join(workspace, 'tests', entry), { force: true })
-      }
-    }
-  } catch {
-    // No external holdout directory — nothing to clean up.
-  }
-}
-
-async function realVerifier(workspace: string, manifest: TaskManifest): Promise<VerifyResult> {
-  const diagnosticPass = await runVerificationCommands(workspace, manifest.verification.diagnostic)
-  let holdoutPass: boolean | undefined
-  if (diagnosticPass) {
-    if (manifest.verification.holdout.length > 0) {
-      await stageHoldouts(workspace, manifest)
-      try {
-        holdoutPass = await runVerificationCommands(workspace, manifest.verification.holdout)
-      } finally {
-        await unstageHoldouts(workspace, manifest)
-      }
-    } else {
-      holdoutPass = true
-    }
-  }
-  const passed = diagnosticPass && (holdoutPass ?? true)
-  return {
-    passed,
-    diagnosticPass,
-    holdoutPass,
-    evidence: {
-      failedCriteria: passed ? [] : ['Verification commands did not pass'],
-      failingTests: [],
-      typeErrors: [],
-      buildErrors: [],
-      changedFiles: [],
-    },
-  }
-}
-
-async function runVerificationCommands(workspace: string, commands: readonly VerificationCommand[]): Promise<boolean> {
-  for (const cmd of commands) {
+/** Run diagnostic verification commands synchronously for the goal completion verifier. */
+function runDiagnosticSync(workspace: string, manifest: TaskManifest): boolean {
+  for (const cmd of manifest.verification.diagnostic) {
     try {
-      execSync(cmd.command, {
-        cwd: workspace,
-        encoding: 'utf8',
-        timeout: 120000,
-        stdio: 'pipe',
-      })
+      execSync(cmd.command, { cwd: workspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
     } catch {
       return false
     }
   }
   return true
+}
+
+/** Create a holdout verifier for the production RepairRuntime. Stages holdout tests, runs them, and cleans up. */
+function createHoldoutVerifier(workspace: string, manifest: TaskManifest): repairRuntimePlugin.HoldoutVerifier {
+  return () => {
+    if (manifest.verification.holdout.length === 0) {
+      return { passed: true, reason: 'no holdout configured' }
+    }
+    // Stage holdout files synchronously.
+    const holdoutDir = join('/tmp/v019-batch-a-repos/holdouts', manifest.repository.name)
+    try {
+      const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
+      for (const entry of entries) {
+        if (entry.endsWith('.holdout.test.ts')) {
+          execSync(`cp "${join(holdoutDir, entry)}" "${join(workspace, 'tests', entry)}"`)
+        }
+      }
+    } catch {
+      return { passed: false, reason: 'failed to stage holdout files' }
+    }
+    // Run holdout commands.
+    let passed = true
+    let reason = ''
+    try {
+      for (const cmd of manifest.verification.holdout) {
+        try {
+          execSync(cmd.command, { cwd: workspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
+        } catch {
+          passed = false
+          reason = `holdout command failed: ${cmd.command}`
+          break
+        }
+      }
+    } finally {
+      // Clean up holdout files.
+      try {
+        const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
+        for (const entry of entries) {
+          if (entry.endsWith('.holdout.test.ts')) {
+            execSync(`rm -f "${join(workspace, 'tests', entry)}"`)
+          }
+        }
+      } catch {
+        // Cleanup failure is not fatal.
+      }
+    }
+    return { passed, reason }
+  }
+}
+
+/** Create a workspace provenance provider that computes a SHA-256 hash of changed files. */
+function createProvenanceProvider(workspace: string): repairRuntimePlugin.WorkspaceProvenanceProvider {
+  return (context) => {
+    const files = context.changedFiles as readonly string[]
+    if (files.length === 0) return 'empty'
+    const hash = createHash('sha256')
+    for (const file of files) {
+      try {
+        const content = readFileSync(join(workspace, file))
+        hash.update(file).update(':').update(content).update('\n')
+      } catch {
+        hash.update(file).update(':missing\n')
+      }
+    }
+    return hash.digest('hex')
+  }
+}
+
+/** Create a rollback provider that restores the workspace to the base commit via git checkout. */
+function createRollbackProvider(workspace: string): repairRuntimePlugin.RollbackProvider {
+  return () => {
+    try {
+      execSync('git checkout -- .', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+      execSync('git clean -fd', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+      return { success: true, rollbackTarget: 'base-commit' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, rollbackTarget: 'base-commit', failureReason: message }
+    }
+  }
+}
+
+/** Build a TaskTrajectory from the session events collected during the repair runtime flow. */
+function buildTrajectoryFromEvents(
+  allEvents: readonly SessionEvent[],
+  manifest: TaskManifest,
+  workspace: string,
+  experimentId: string,
+  benchmarkEligible: boolean,
+  repoMetadata: RepoMetadata,
+  referenceFixFiles: readonly string[],
+  wallClockStart: number,
+): TaskTrajectory {
+  // Extract repair attempts from repair/evidence and repair/decision events.
+  const repairEvents = allEvents.filter(e => e.type === 'repair/evidence' || e.type === 'repair/decision' || e.type === 'repair/completed')
+  const completedEvent = repairEvents.find(e => e.type === 'repair/completed') as
+    | Extract<SessionEvent, { type: 'repair/completed' }> | undefined
+
+  const flashAttempts = completedEvent?.data.flashAttempts ?? 0
+  const proAttempts = completedEvent?.data.proAttempts ?? 0
+  const totalCostUsd = completedEvent?.data.totalCostUsd ?? 0
+  const finalVerified = completedEvent?.data.verified ?? false
+  const outcome = completedEvent?.data.outcome ?? 'unknown'
+  const escalatedToPro = proAttempts > 0
+
+  // Determine holdout pass from the outcome.
+  const holdoutPass = outcome === 'qualification-failed' ? false : finalVerified
+
+  // Extract per-attempt data from model/usage events.
+  const usageEvents = allEvents.filter(e => e.type === 'model/usage')
+  const attempts: AttemptTrajectory[] = []
+  let totalOutputTokens = 0
+  let totalCacheReadTokens = 0
+  let totalCacheMissTokens = 0
+
+  for (let i = 0; i < usageEvents.length; i++) {
+    const usageEvent = usageEvents[i] as Extract<SessionEvent, { type: 'model/usage' }>
+    type UsageData = { usage: {
+      inputTokens?: number
+      outputTokens?: number
+      reasoningTokens?: number
+      totalTokens?: number
+      cacheReadTokens?: number
+      cacheMissTokens?: number
+    } }
+    const usage = (usageEvent.data as unknown as UsageData).usage
+    const inputTokens = usage.inputTokens ?? 0
+    const outputTokens = usage.outputTokens ?? 0
+    const reasoningTokens = usage.reasoningTokens ?? 0
+    const totalTokens = usage.totalTokens ?? 0
+    const cacheReadTokens = usage.cacheReadTokens ?? 0
+    const cacheMissTokens = usage.cacheMissTokens ?? 0
+    totalOutputTokens += outputTokens
+    totalCacheReadTokens += cacheReadTokens
+    totalCacheMissTokens += cacheMissTokens
+
+    // Compute cost for this attempt using the pricing registry.
+    const turn = (usageEvent.data as { turn?: number }).turn ?? 0
+    const routingEvent = allEvents.find(e => e.type === 'model/routing-decision' && (e.data as { turn?: number }).turn === turn) as
+      | Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+    const routingDecisionId = routingEvent?.data.routingDecisionId ?? `unknown-${i + 1}`
+    const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model ?? 'unknown'
+
+    let costUsd = 0
+    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date())
+    if (pricing !== undefined) {
+      const cost = calculateCost({
+        inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
+        reasoningTokens, totalTokens, source: 'provider',
+      }, pricing)
+      costUsd = cost.amount
+    }
+
+    // Find repair decision for this attempt.
+    const repairDecision = allEvents.find(e => e.type === 'repair/decision' && (e.data as { attempt?: number }).attempt === i + 1) as
+      | Extract<SessionEvent, { type: 'repair/decision' }> | undefined
+    const repairAction = repairDecision?.data.action ?? 'complete'
+    const repairReason = repairDecision?.data.reason
+
+    // Extract per-attempt session events for repository observation.
+    const turnEvents = allEvents.filter((e) => {
+      const eventTurn = (e.data as { turn?: number }).turn
+      return eventTurn === turn
+    })
+    const attemptObservation = extractRepositoryObservation(turnEvents, workspace)
+
+    attempts.push({
+      attempt: i + 1,
+      model,
+      routingDecisionId,
+      verified: repairAction === 'complete' && finalVerified,
+      diagnosticPass: repairAction === 'complete',
+      holdoutPass: repairAction === 'complete' ? holdoutPass : undefined,
+      failureFingerprint: undefined,
+      progress: undefined,
+      usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens },
+      costUsd,
+      latencyMs: 0,
+      repairAction,
+      repairReason,
+      changedFiles: attemptObservation.filesModified,
+      toolCallCount: turnEvents.filter(e => e.type === 'tool/call').length,
+      filesInspected: attemptObservation.filesInspected,
+      terminalOutcome: outcome,
+    })
+  }
+
+  const changedFiles = getChangedFiles(workspace)
+  const allSessionEvents = allEvents
+  const observation = extractRepositoryObservation(allSessionEvents, workspace)
+  const referenceFixFilesInspected = intersectPaths(observation.filesInspected, referenceFixFiles)
+  const referenceFixFilesModified = intersectPaths(observation.filesModified, referenceFixFiles)
+
+  const terminalOutcome = outcome === 'verified' ? 'verified-complete'
+    : outcome === 'qualification-failed' ? 'qualification-failed'
+      : outcome === 'attempts-exhausted' ? 'attempts-exhausted'
+        : outcome === 'cost-limit' ? 'cost-limit'
+          : outcome === 'time-limit' ? 'time-limit'
+            : outcome === 'authority-undecidable' ? 'authority-undecidable'
+              : outcome === 'model-unavailable' ? 'model-unavailable'
+                : 'failed-no-rescue'
+
+  const controlPlaneStatus: ControlPlaneStatus = outcome === 'verified' ? 'PASS' : 'FAIL'
+  const modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED' =
+    outcome === 'authority-undecidable' || outcome === 'model-unavailable' ? 'NOT_EVALUATED' : finalVerified ? 'PASS' : 'FAIL'
+
+  return {
+    taskId: manifest.taskId,
+    taskManifestHash: manifest.manifestHash,
+    experimentId,
+    benchmarkEligible,
+    repository: repoMetadata,
+    category: manifest.category,
+    taskDescription: manifest.task.description,
+    baseCommit: manifest.repository.baseCommit,
+    referenceFixCommit: manifest.repository.referenceFixCommit,
+    taskState: 'COMPLETED',
+    controlPlaneStatus,
+    modelCapabilityStatus,
+    finalVerified,
+    holdoutPass,
+    verificationStrength: manifest.verification.strength,
+    flashAttempts,
+    proAttempts,
+    escalatedToPro,
+    totalCostUsd,
+    totalLatencyMs: Date.now() - wallClockStart,
+    totalOutputTokens,
+    totalCacheReadTokens,
+    totalCacheMissTokens,
+    attempts,
+    changedFiles,
+    referenceFixFiles,
+    referenceFixFilesInspected,
+    referenceFixFilesModified,
+    rollbackUsed: true,
+    aborted: outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed',
+    abortReason: outcome === 'authority-undecidable' ? 'authority-undecidable' : outcome === 'model-unavailable' ? 'model-unavailable' : undefined,
+    terminalOutcome,
+    failureCategory: undefined,
+    timestamp: new Date().toISOString(),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -522,17 +632,4 @@ function getChangedFiles(workspace: string): string[] {
   } catch {
     return []
   }
-}
-
-function computeTerminalOutcome(
-  verified: boolean,
-  _holdoutPass: boolean,
-  repairAction: RepairDecision['action'] | undefined,
-  repairReason: string | undefined,
-): string {
-  if (repairAction === 'complete' && repairReason === 'qualification-failed') return 'qualification-failed'
-  if (repairAction === 'complete' && verified) return 'verified-complete'
-  if (repairAction === 'stop') return 'budget-stop'
-  if (repairAction === 'complete' && !verified) return 'failed-no-rescue'
-  return 'unknown'
 }
