@@ -196,16 +196,31 @@ describe('the platform chains', () => {
     // The safety property moves to execution time: an unusable sandbox-exec
     // refuses to run the command, and the wrap's runnerFailureRules let
     // the consumer classify that as a sandbox failure, not a task failure.
+    // Seatbelt advertises partial enforcement: its workspace-isolated mode
+    // uses a protected-path denylist over allow-all reads, not a true allowlist.
     const probeSeatbelt = vi.fn(() => true)
     const { sandbox } = await setup({}, { platform: 'darwin', probeSeatbelt })
     const confined = sandbox.confine(['bash', '-c', 'echo hi'], RO)
     expect(confined).toEqual({
       argv: ['sandbox-exec', ...seatbeltProfileArgs(RO), '--', 'bash', '-c', 'echo hi'],
-      enforcement: 'full',
+      enforcement: 'partial',
       denialSignatures: ['operation not permitted'],
       runnerFailureRules: [{ fatalSignatures: ['sandbox-exec: '] }],
     })
     expect(probeSeatbelt).not.toHaveBeenCalled()
+  })
+
+  it('darwin fails closed when workspace-isolated has no protectedReadPaths', async () => {
+    // Seatbelt workspace-isolated uses a protected-path denylist over allow-all
+    // reads. Without protectedReadPaths, it provides no read isolation at all —
+    // effectively workspace-write. Fail closed instead of silently downgrading.
+    const probeSeatbelt = vi.fn(() => true)
+    const { sandbox } = await setup({}, { platform: 'darwin', probeSeatbelt })
+    const isolatedPolicy: SandboxPolicy = {
+      mode: 'workspace-isolated',
+      workspaceRoot: '/tmp/workspace',
+    }
+    expect(() => sandbox.confine(['true'], isolatedPolicy)).toThrow(SandboxUnavailableError)
   })
 
   it('a platform with no chain fails closed without a single probe: the command never runs', async () => {

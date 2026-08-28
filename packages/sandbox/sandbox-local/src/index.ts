@@ -177,7 +177,13 @@ const PLATFORM_CHAINS: Record<string, readonly SelectedRunner['runner'][]> = {
 const STATIC_ENFORCEMENT: Record<SelectedRunner['runner'], SandboxEnforcement> = {
   bwrap: 'full',
   landlock: 'full',
-  seatbelt: 'full',
+  // Seatbelt uses a protected-path denylist over allow-all reads for
+  // workspace-isolated mode. This is not the same guarantee as "the process
+  // can only read the workspace" — it is "the process cannot read the listed
+  // paths." Completeness depends on the denylist covering every sensitive
+  // host path. Advertise partial enforcement so consumers that require an
+  // absolute read boundary know Seatbelt does not provide it.
+  seatbelt: 'partial',
   // WRITE_RESTRICTED needs Everyone in both restricting lists for process
   // initialization. An external object that grants Everyone write access
   // therefore remains writable, and NTFS hard links can alias a granted
@@ -323,6 +329,18 @@ export class LocalSandboxProvider extends SandboxProvider {
       }
     }
     const selected = this.selectRunner(policy.mode)
+    // Fail closed: Seatbelt workspace-isolated with no protectedReadPaths
+    // provides no read isolation at all — it is effectively workspace-write.
+    if (
+      selected.runner === 'seatbelt'
+      && policy.mode === 'workspace-isolated'
+      && (policy.protectedReadPaths ?? []).length === 0
+    ) {
+      throw new SandboxUnavailableError(
+        'seatbelt workspace-isolated requires non-empty protectedReadPaths; '
+        + 'without protected paths, Seatbelt allows all reads and provides no isolation',
+      )
+    }
     const runnerArgv = this.runnerArgv(selected.runner, policy)
     return {
       argv: [...runnerArgv, '--', ...argv],
