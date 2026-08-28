@@ -516,15 +516,17 @@ function buildTrajectoryFromEvents(
     const routingDecisionId = routingEvent?.data.routingDecisionId ?? `unknown-${i + 1}`
     const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model ?? 'unknown'
 
-    let costUsd = 0
+    // Fail loud on unpriced model usage: unknown pricing must not silently
+    // become $0, which would make economic metrics look artificially better.
     const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, new Date())
-    if (pricing !== undefined) {
-      const cost = calculateCost({
-        inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
-        reasoningTokens, totalTokens, source: 'provider',
-      }, pricing)
-      costUsd = cost.amount
+    if (pricing === undefined) {
+      throw new Error(`UNPRICED_USAGE: no pricing found for model ${model}`)
     }
+    const cost = calculateCost({
+      inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
+      reasoningTokens, totalTokens, source: 'provider',
+    }, pricing)
+    const costUsd = cost.amount
 
     // Find repair decision for this attempt.
     const repairDecision = allEvents.find(e => e.type === 'repair/decision' && (e.data as { attempt?: number }).attempt === i + 1) as
