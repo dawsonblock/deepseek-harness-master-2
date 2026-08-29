@@ -1,25 +1,73 @@
 /**
  * v0.19 secure evaluation freeze record generator.
  *
- * Produces the `v019-secure-eval-v1` freeze record that captures the
+ * Produces the `v019-secure-eval-v2` freeze record that captures the
  * qualified state of the secure evaluation composition. The freeze record
  * is the gate that must be green before any real Batch A evaluation begins.
  *
  * The freeze record includes:
- * - The security qualification record (20 properties)
+ * - The security qualification record (22 source + 11 behavioral properties)
  * - The B0 smoke test status (12 properties)
  * - The corpus qualification status (25/25 frozen)
  * - The effective composition manifest
+ * - The verifier integrity hash (SHA-256 of verifier-controlled source files)
  *
  * @module v019-freeze-secure-eval
  */
 
-import { writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runSecurityQualification, SECURITY_QUALIFICATION_ID } from './v019-security-qualification.ts'
+import { platformEnforcement } from '@deepseek-ai/dsh-sandbox-local'
 
 /** The freeze record identity. */
-export const FREEZE_ID = 'v019-secure-eval-v1'
+export const FREEZE_ID = 'v019-secure-eval-v2'
+
+/** Repository root, resolved from this module's location. */
+const REPO_ROOT = join(import.meta.dirname, '..')
+
+/**
+ * Verifier-controlled source files whose integrity must be preserved between
+ * freeze and evaluation. If any of these files change, the verifier may behave
+ * differently than at qualification time, invalidating benchmark results.
+ */
+const VERIFIER_CONTROLLED_FILES = [
+  'scripts/v019-task-manifest.ts',
+  'scripts/v019-batch-a-corpus.ts',
+  'scripts/v019-trajectory-collector.ts',
+  'scripts/v019-repo-checkout.ts',
+  'scripts/v019-security-qualification.ts',
+  'scripts/v019-corpus-qualification.ts',
+  'packages/core/repair-runtime/src/index.ts',
+  'packages/core/repair-runtime/src/invariant.ts',
+]
+
+/**
+ * Compute a SHA-256 hash of all verifier-controlled source files. This hash
+ * is recorded at freeze time and must match at evaluation time; a mismatch
+ * indicates the verifier code was modified after qualification, which could
+ * change verification outcomes.
+ * @returns hex-encoded SHA-256 digest of verifier-controlled file contents.
+ */
+export function computeVerifierIntegrityHash(): string {
+  const hash = createHash('sha256')
+  for (const relPath of VERIFIER_CONTROLLED_FILES) {
+    const absPath = join(REPO_ROOT, relPath)
+    const content = readFileSync(absPath)
+    hash.update(relPath).update(':').update(content).update('\n')
+  }
+  return hash.digest('hex')
+}
+
+/**
+ * Verify that the current verifier-controlled files match the frozen hash.
+ * @param frozenHash - the hash recorded in the freeze record.
+ * @returns true if the current files match the frozen hash.
+ */
+export function verifyVerifierIntegrity(frozenHash: string): boolean {
+  return computeVerifierIntegrityHash() === frozenHash
+}
 
 /** The secure evaluation freeze record. */
 export interface SecureEvalFreezeRecord {
@@ -37,7 +85,7 @@ export interface SecureEvalFreezeRecord {
     readonly filesystemPlane: 'fs-sandbox'
     readonly subprocessPlane: 'bash-sandbox'
     readonly sandboxPolicy: 'workspace-isolated'
-    readonly seatbeltEnforcement: 'partial'
+    readonly backendEnforcement: 'full' | 'partial'
     readonly holdoutLocation: 'external'
     readonly repairRuntime: 'production'
     readonly rollbackProvider: 'harness-owned'
@@ -45,6 +93,10 @@ export interface SecureEvalFreezeRecord {
     readonly routingAuthority: 'durable'
   }
   readonly ready: boolean
+  /** When false, the platform backend does not provide full enforcement and benchmark-eligible runs must not proceed. */
+  readonly backendFullEnforcement: boolean
+  /** SHA-256 hash of verifier-controlled source files at freeze time. Recompute at evaluation time and reject mismatch. */
+  readonly verifierIntegrityHash: string
 }
 
 /**
@@ -53,15 +105,24 @@ export interface SecureEvalFreezeRecord {
  *
  * @returns the secure evaluation freeze record.
  */
-export function generateFreezeRecord(): SecureEvalFreezeRecord {
-  const securityRecord = runSecurityQualification()
+export async function generateFreezeRecord(): Promise<SecureEvalFreezeRecord> {
+  const securityRecord = await runSecurityQualification()
 
   // The corpus qualification is frozen at 25/25 tasks. This is verified
   // by the B0 smoke test (B0.12) and the corpus qualification spec.
   const corpusFrozenTasks = 25
   const corpusRejectedTasks = 0
 
-  const ready = securityRecord.passed && corpusFrozenTasks === 25 && corpusRejectedTasks === 0
+  const backendEnforcement = platformEnforcement() ?? 'partial'
+  const backendFullEnforcement = backendEnforcement === 'full'
+
+  // Benchmark-eligible runs require full backend enforcement. The security
+  // qualification gate (B11) also checks this, but the freeze record gates
+  // readiness independently so the gate is unmissable.
+  const ready = securityRecord.passed
+    && corpusFrozenTasks === 25
+    && corpusRejectedTasks === 0
+    && backendFullEnforcement
 
   return {
     freezeId: FREEZE_ID,
@@ -78,7 +139,7 @@ export function generateFreezeRecord(): SecureEvalFreezeRecord {
       filesystemPlane: 'fs-sandbox',
       subprocessPlane: 'bash-sandbox',
       sandboxPolicy: 'workspace-isolated',
-      seatbeltEnforcement: 'partial',
+      backendEnforcement,
       holdoutLocation: 'external',
       repairRuntime: 'production',
       rollbackProvider: 'harness-owned',
@@ -86,6 +147,8 @@ export function generateFreezeRecord(): SecureEvalFreezeRecord {
       routingAuthority: 'durable',
     },
     ready,
+    backendFullEnforcement,
+    verifierIntegrityHash: computeVerifierIntegrityHash(),
   }
 }
 
@@ -125,12 +188,14 @@ export function formatFreezeRecord(record: SecureEvalFreezeRecord): string {
     `  Filesystem plane: ${record.effectiveComposition.filesystemPlane}`,
     `  Subprocess plane: ${record.effectiveComposition.subprocessPlane}`,
     `  Sandbox policy: ${record.effectiveComposition.sandboxPolicy}`,
-    `  Seatbelt enforcement: ${record.effectiveComposition.seatbeltEnforcement}`,
+    `  Backend enforcement: ${record.effectiveComposition.backendEnforcement}`,
     `  Holdout location: ${record.effectiveComposition.holdoutLocation}`,
     `  Repair runtime: ${record.effectiveComposition.repairRuntime}`,
     `  Rollback provider: ${record.effectiveComposition.rollbackProvider}`,
     `  Provenance provider: ${record.effectiveComposition.provenanceProvider}`,
     `  Routing authority: ${record.effectiveComposition.routingAuthority}`,
+    '',
+    `Verifier Integrity Hash: ${record.verifierIntegrityHash}`,
     '-'.repeat(60),
     record.ready
       ? 'SECURE EVAL IS FROZEN. Real Batch A may begin.'

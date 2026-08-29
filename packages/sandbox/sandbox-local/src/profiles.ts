@@ -7,7 +7,8 @@
  *   essential system directories (bin, lib, usr, etc) are mounted. Host files
  *   outside the mount set are invisible — genuine filesystem isolation.
  *   `protectedReadPaths` is not consumed because unmounted paths are
- *   inherently unreachable.
+ *   inherently unreachable. Network is unshared (`--unshare-net`) so confined
+ *   processes cannot reach external services.
  *
  * - **Landlock (Linux): allow-list grants.** Read access is granted only to
  *   essential system paths and the workspace root. Like bwrap, ungranted paths
@@ -21,7 +22,9 @@
  *   symlink escapes to protected paths are denied. This is not the same
  *   guarantee as "the process can only read the workspace" — it is "the
  *   process cannot read the listed paths." The completeness of isolation
- *   depends on the denylist covering every sensitive host path.
+ *   depends on the denylist covering every sensitive host path. Network is
+ *   denied (`(deny network*)`) so confined processes cannot reach external
+ *   services.
  *
  * Qualify each backend separately with the same adversarial test suite; do
  * not assume that proving one backend proves another.
@@ -45,6 +48,7 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
       '--dev', '/dev',
       '--proc', '/proc',
       '--unshare-pid',
+      '--unshare-net',
       '--die-with-parent',
       '--ro-bind', '/usr', '/usr',
       '--ro-bind', '/lib', '/lib',
@@ -123,7 +127,7 @@ export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
       '(allow ipc-posix-shm)',
       '(allow sysctl-read)',
       '(allow iokit-open)',
-      '(allow network*)',
+      '(deny network*)',
     ]
     return ['-p', forms.join(' ')]
   }

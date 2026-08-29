@@ -467,11 +467,11 @@ export function qualifyTask(
  * Get reference fix files from a repository at the reference fix commit.
  * Returns repository-relative paths.
  */
-export function getReferenceFixFiles(workspace: string, referenceFixCommit: string): string[] {
+export function getReferenceFixFiles(gitDir: string, referenceFixCommit: string): string[] {
   try {
     const output = execSync(
-      `git diff --name-only ${referenceFixCommit}~1 ${referenceFixCommit}`,
-      { cwd: workspace, encoding: 'utf8', timeout: 10000 },
+      `git --git-dir="${gitDir}/.git" diff --name-only ${referenceFixCommit}~1 ${referenceFixCommit}`,
+      { encoding: 'utf8', timeout: 10000 },
     )
     return output.trim().split('\n').filter(f => f.length > 0)
   } catch {

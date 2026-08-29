@@ -42,6 +42,8 @@ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandb
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { isPathUnder } from './containment.ts'
 
+export { isPathUnder } from './containment.ts'
+
 /**
  * Plugin config: the local backend's knobs verbatim (`cwd` resolution default
  * and `diffBasisMaxBytes` overwrite-presentation bound). The sandbox default

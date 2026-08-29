@@ -4,6 +4,12 @@
  * Clones and checks out repositories at specific commits for evaluation.
  * Caches clones to avoid re-cloning for multiple tasks from the same repo.
  *
+ * The model workspace is a plain archive snapshot of the base commit with no
+ * `.git` directory, so the model cannot access future Git history (including
+ * the reference fix). The cached clone remains available outside the model
+ * workspace for verifier-only operations: reference fix diffing, rollback
+ * restoration, and provenance hashing.
+ *
  * @module v019-repo-checkout
  */
 
@@ -15,36 +21,65 @@ import { tmpdir } from 'node:os'
 
 const CLONE_CACHE = new Map<string, string>()
 
+/** A repository checkout result: the model workspace and the verifier-only clone. */
+export interface RepoCheckout {
+  /** Model-visible workspace: a plain snapshot of the base commit, no `.git`. */
+  readonly workspace: string
+  /** Verifier-only clone directory with full `.git` history (never model-visible). */
+  readonly cloneDir: string
+  /** The base commit SHA the workspace was extracted from. */
+  readonly commit: string
+}
+
 /**
- * Clone a repository (or reuse a cached clone) and checkout a specific commit
- * into a fresh working directory.
+ * Clone a repository (or reuse a cached clone) and extract a specific commit
+ * into a fresh working directory using `git archive`. The workspace has no
+ * `.git` directory, so the model cannot see future commits, branches, or tags.
  *
  * @param repoUrl - git clone URL
- * @param commit - commit SHA to checkout
+ * @param commit - commit SHA to extract
  * @param repoName - short name for cache key and directory naming
- * @returns absolute path to the checked-out workspace
+ * @returns the checkout result with workspace and clone paths
  */
 export async function checkoutRepo(
   repoUrl: string,
   commit: string,
   repoName: string,
-): Promise<string> {
+): Promise<RepoCheckout> {
   const cacheKey = `${repoName}:${repoUrl}`
-  let cachePath = CLONE_CACHE.get(cacheKey)
+  let cloneDir = CLONE_CACHE.get(cacheKey)
 
-  if (cachePath === undefined) {
-    cachePath = join(tmpdir(), `v019-repo-${repoName}-${Date.now()}`)
-    execSync(`git clone --no-checkout "${repoUrl}" "${cachePath}"`, { stdio: 'pipe', timeout: 120000 })
-    CLONE_CACHE.set(cacheKey, cachePath)
+  if (cloneDir === undefined) {
+    cloneDir = join(tmpdir(), `v019-repo-${repoName}-${Date.now()}`)
+    execSync(`git clone --no-checkout "${repoUrl}" "${cloneDir}"`, { stdio: 'pipe', timeout: 120000 })
+    CLONE_CACHE.set(cacheKey, cloneDir)
   }
 
   const workspace = join(tmpdir(), `v019-task-${repoName}-${commit.slice(0, 8)}-${Date.now()}`)
   await mkdir(workspace, { recursive: true })
-  execSync(`git --git-dir="${cachePath}/.git" worktree add --detach "${workspace}" "${commit}"`, {
-    stdio: 'pipe',
-    timeout: 60000,
-  })
-  return workspace
+  // Extract the base commit into the workspace without any Git metadata.
+  // git archive writes a tar stream of the tree at the given commit; tar -x
+  // extracts it into the workspace. No .git directory is created.
+  execSync(
+    `git --git-dir="${cloneDir}/.git" archive "${commit}" | tar -x -C "${workspace}"`,
+    { stdio: 'pipe', timeout: 60000 },
+  )
+  return { workspace, cloneDir, commit }
+}
+
+/**
+ * Restore a workspace to the base commit by re-extracting from the cached
+ * clone. Used by the rollback provider after a failed repair attempt.
+ *
+ * @param checkout - the original checkout result
+ */
+export async function restoreWorkspace(checkout: RepoCheckout): Promise<void> {
+  await rm(checkout.workspace, { recursive: true, force: true })
+  await mkdir(checkout.workspace, { recursive: true })
+  execSync(
+    `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -x -C "${checkout.workspace}"`,
+    { stdio: 'pipe', timeout: 60000 },
+  )
 }
 
 /**
@@ -72,9 +107,6 @@ function detectInstallCommand(workspace: string): string {
 
 /** Clean up a workspace after task completion. */
 export async function cleanupWorkspace(workspace: string): Promise<void> {
-  try {
-    execSync(`git worktree remove --force "${workspace}"`, { stdio: 'pipe', timeout: 30000 })
-  } catch { /* ignore */ }
   await rm(workspace, { recursive: true, force: true })
 }
 

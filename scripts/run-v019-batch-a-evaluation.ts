@@ -26,6 +26,7 @@ import {
   cleanupWorkspace,
   computeRepoMetadata,
   installDependencies,
+  type RepoCheckout,
 } from './v019-repo-checkout.ts'
 import {
   type TaskState,
@@ -39,7 +40,7 @@ import {
   failureCategorySummary,
 } from './v019-failure-taxonomy.ts'
 import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
-import { generateFreezeRecord, FREEZE_ID } from './v019-freeze-secure-eval.ts'
+import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID } from './v019-freeze-secure-eval.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
@@ -89,7 +90,7 @@ async function main(): Promise<void> {
 
   // Enforce the secure-eval freeze gate before any provider execution.
   // The security qualification must pass and the freeze record must be ready.
-  const securityRecord = runSecurityQualification()
+  const securityRecord = await runSecurityQualification()
   if (!securityRecord.passed) {
     process.stderr.write(`\nSECURITY QUALIFICATION FAILED: ${securityRecord.failedCount} properties failed\n`)
     for (const check of securityRecord.checks) {
@@ -100,14 +101,26 @@ async function main(): Promise<void> {
     process.stderr.write('\nCannot proceed to live evaluation. Fix the security qualification first.\n')
     process.exit(1)
   }
-  const freezeRecord = generateFreezeRecord()
+  const freezeRecord = await generateFreezeRecord()
   if (!freezeRecord.ready) {
     process.stderr.write(`\nSECURE EVAL FREEZE NOT READY: ${FREEZE_ID}\n`)
+    if (!freezeRecord.backendFullEnforcement) {
+      process.stderr.write(`  Backend enforcement is '${freezeRecord.effectiveComposition.backendEnforcement}', not 'full'.\n`)
+      process.stderr.write('  Benchmark-eligible runs require full backend enforcement.\n')
+    }
     process.stderr.write('Cannot proceed to live evaluation. Fix the freeze record first.\n')
     process.exit(1)
   }
   process.stderr.write(`Security qualification: ${SECURITY_QUALIFICATION_ID} (${securityRecord.passedCount} properties passed)\n`)
-  process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (ready)\n\n`)
+  process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (ready)\n`)
+
+  // Verify verifier-controlled files match the frozen hash.
+  if (!verifyVerifierIntegrity(freezeRecord.verifierIntegrityHash)) {
+    process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have been modified since freeze.\n')
+    process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
+    process.exit(1)
+  }
+  process.stderr.write('Verifier integrity: verified\n\n')
 
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
   const benchmarkEligible = true
@@ -165,15 +178,17 @@ async function main(): Promise<void> {
     process.stderr.write(`  Category: ${taskManifest.category}\n`)
 
     let workspace: string | undefined
+    let checkout: RepoCheckout | undefined
     let taskState: TaskState = 'PENDING'
     try {
       taskState = 'CHECKOUT'
       process.stderr.write('  [CHECKOUT] Checking out repository...\n')
-      workspace = await checkoutRepo(
+      checkout = await checkoutRepo(
         taskManifest.repository.url,
         taskManifest.repository.baseCommit,
         taskManifest.repository.name,
       )
+      workspace = checkout.workspace
 
       taskState = 'SETUP'
       process.stderr.write('  [SETUP] Installing dependencies...\n')
@@ -188,7 +203,7 @@ async function main(): Promise<void> {
       process.stderr.write(`  Repo: ${repoMetadata.loc} LOC, ${repoMetadata.fileCount} files, ${repoMetadata.testCount} tests\n`)
 
       const referenceFixFiles = taskManifest.repository.referenceFixCommit !== undefined
-        ? getReferenceFixFiles(workspace, taskManifest.repository.referenceFixCommit)
+        ? getReferenceFixFiles(checkout.cloneDir, taskManifest.repository.referenceFixCommit)
         : []
 
       taskState = 'RUNNING'
@@ -200,6 +215,7 @@ async function main(): Promise<void> {
         benchmarkEligible,
         repoMetadata,
         referenceFixFiles,
+        checkout,
       )
 
       const trajectoryPath = join(TRAJECTORIES_DIR, `${taskManifest.taskId}.json`)

@@ -28,7 +28,7 @@ import { claimModelSelection, reconstructSelectionState, releaseToAuto } from '@
 import type { GoalRef, GoalVerificationCheck, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { EscalationReason, FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits, RepairOutcome } from '@deepseek-ai/dsh-repair-controller'
+import type { BuildErrorDetail, EscalationReason, FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits, RepairOutcome, TestFailureDetail } from '@deepseek-ai/dsh-repair-controller'
 import { classifyProgress, computeFailureFingerprint, computeFailurePackageId, decideRepair } from '@deepseek-ai/dsh-repair-controller'
 // Import the events module to trigger declaration merging for repair/* and model/escalation events.
 import '@deepseek-ai/dsh-repair-controller/events'
@@ -232,12 +232,39 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
     .filter(check => check.name.includes('build'))
     .filter(check => !check.passed)
     .flatMap(check => check.evidence ?? [check.reason])
+
+  // Extract structured test failure details: test names, assertion diffs, exit codes.
+  const testDetails: TestFailureDetail[] = checks
+    .filter(check => check.name.includes('test') && !check.passed)
+    .map(check => ({
+      testName: check.name,
+      ...check.evidence !== undefined && check.evidence.length > 0
+        ? { assertionDiff: check.evidence.join('\n') }
+        : {},
+      ...check.reason !== undefined ? { assertionDiff: check.reason } : {},
+    }))
+
+  // Extract structured build/type error details: file paths, line numbers, exit codes.
+  const buildDetails: BuildErrorDetail[] = checks
+    .filter(check => (check.name.includes('build') || check.name.includes('type')) && !check.passed)
+    .map((check) => {
+      const evidence = (check.evidence ?? [check.reason]).join('\n')
+      // Parse file:line patterns from the evidence.
+      const fileMatch = evidence.match(/([^\s]+\.(?:ts|js|tsx|jsx|json|py|rs|go|java)):(\d+)/)
+      return {
+        message: check.reason,
+        ...fileMatch !== null ? { file: fileMatch[1], line: Number(fileMatch[2]) } : {},
+      }
+    })
+
   return {
     failedCriteria,
     failingTests,
     typeErrors,
     buildErrors,
     changedFiles,
+    ...testDetails.length > 0 ? { testDetails } : {},
+    ...buildDetails.length > 0 ? { buildDetails } : {},
   }
 }
 
@@ -622,17 +649,21 @@ function changedFilesInTurn(events: readonly SessionEvent[], turn: number): stri
  *
  * When no `model/usage` event exists (e.g. the provider returned no usage
  * data), cost and latency are zero — the attempt is still counted, just
- * unpriced. This preserves the invariant that every attempt is accounted
- * for, even when pricing data is incomplete.
+ * unpriced. When a `model/usage` event exists but the model has no pricing
+ * entry, the behavior depends on `failOnUnpriced`: when true, the function
+ * throws `UNPRICED_USAGE`; when false (default), the cost is zero.
  *
  * @param events - the full session event log.
  * @param routingDecisionId - the routing decision for this attempt.
+ * @param pricingRegistry - the pricing registry for cost lookup.
+ * @param failOnUnpriced - when true, throw on unpriced usage instead of returning $0.
  * @returns the cost in USD and latency in milliseconds.
  */
 export function computeAttemptAccounting(
   events: readonly SessionEvent[],
   routingDecisionId: string,
   pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
+  failOnUnpriced = false,
 ): { costUsd: number; latencyMs: number; outputTokens: number } {
   let routingTime: number | undefined
   let usageTime: number | undefined
@@ -666,6 +697,8 @@ export function computeAttemptAccounting(
         )
         if (pricing !== undefined) {
           costUsd = calculateCost(data.usage, pricing).amount
+        } else if (failOnUnpriced) {
+          throw new Error(`UNPRICED_USAGE: no pricing found for model ${data.provider}/${data.model}`)
         }
         break
       }
@@ -1012,8 +1045,9 @@ export function handleVerificationFailure(
   const failurePackageId = computeFailurePackageId(session.id, turn, routingDecisionId)
 
   // Compute real cost and latency from the durable model/usage event.
+  // Fail closed on unpriced usage: unknown pricing must not silently become $0.
   const { costUsd, latencyMs, outputTokens } = computeAttemptAccounting(
-    session.events, routingDecisionId, deps.pricingRegistry,
+    session.events, routingDecisionId, deps.pricingRegistry, true,
   )
 
   // Compute workspace provenance hash when a provider is configured.
@@ -1255,19 +1289,70 @@ export function handleVerificationFailure(
  * @param goalId - the goal id being verified, required when holdoutVerifier is present.
  * @returns the completion event, or undefined if no active repair.
  */
+/** Result of a passing verification, returned to the plugin for goal transition. */
+export interface VerificationPassResult {
+  /** Whether the holdout (if any) passed. */
+  readonly verified: boolean
+  /** Terminal outcome: verified or qualification-failed. */
+  readonly outcome: 'verified' | 'qualification-failed'
+  /** Holdout failure details when the holdout failed. */
+  readonly qualificationFailure?: { reason: string; evidence?: readonly string[] }
+  /** SHA-256 workspace content hash at verification time, when provenance is tracked. */
+  readonly workspaceHash?: string
+}
+
+/**
+ * Handle a passing diagnostic verification. Accounts for the passing
+ * attempt's cost and tokens, adds it to repair state, and runs the holdout
+ * verifier when configured. Does NOT append repair/completed — the caller
+ * must transition the goal (completeVerified or block) before appending
+ * repair/completed, so that goal/verification PASS remains the latest event
+ * for completeVerified's freshness check.
+ *
+ * @param session - the session.
+ * @param state - the repair state.
+ * @param turn - the current turn.
+ * @param routingDecisionId - the routing decision for the passing attempt.
+ * @param pricingRegistry - the pricing registry for cost lookup.
+ * @param holdoutVerifier - optional holdout verifier.
+ * @param goalId - required when holdoutVerifier is provided.
+ * @returns the verification pass result for goal transition and repair/completed.
+ */
 export async function handleVerificationPass(
   session: Session,
   state: RepairState,
-  turn: number,
+  _turn: number,
   routingDecisionId: string,
   pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
   holdoutVerifier?: HoldoutVerifier,
   goalId?: string,
-): Promise<SessionEvent | undefined> {
+  workspaceProvenanceProvider?: WorkspaceProvenanceProvider,
+): Promise<VerificationPassResult> {
   // Account for the passing attempt's cost and output tokens from the durable model/usage event.
-  const { costUsd, outputTokens } = computeAttemptAccounting(session.events, routingDecisionId, pricingRegistry)
+  // Fail closed on unpriced usage: unknown pricing must not silently become $0.
+  const { costUsd, latencyMs, outputTokens } = computeAttemptAccounting(session.events, routingDecisionId, pricingRegistry, true)
   state.totalCostUsd += costUsd
   state.totalOutputTokens += outputTokens
+
+  // Add the passing attempt to repair state so terminal accounting agrees
+  // with execution truth. A one-shot success now counts as 1 attempt.
+  const model = modelFromRoutingDecision(session.events, routingDecisionId) ?? { provider: 'deepseek', model: 'deepseek-v4-flash' }
+  const attemptNumber = state.attempts.length + 1
+  state.attempts.push({
+    attempt: attemptNumber,
+    model,
+    routingDecisionId,
+    verified: true,
+    verificationStatus: 'verified-pass',
+    costUsd,
+    latencyMs,
+  })
+  // Increment the model-specific counter.
+  if (model.provider === 'deepseek' && model.model === 'deepseek-v4-flash') {
+    state.flashAttempts += 1
+  } else if (model.provider === 'deepseek' && model.model === 'deepseek-v4-pro') {
+    state.proAttempts += 1
+  }
 
   // Run holdout verification when configured. Holdout failures do NOT
   // trigger repair — they report qualification failure and stop.
@@ -1279,29 +1364,33 @@ export async function handleVerificationPass(
     const holdoutResult = await holdoutVerifier({ session, state, routingDecisionId, goalId })
     if (!holdoutResult.passed) {
       qualificationFailure = {
-        reason: holdoutResult.reason,
-        ...holdoutResult.evidence !== undefined ? { evidence: holdoutResult.evidence } : {},
+        reason: sanitizeEvidenceString(holdoutResult.reason),
+        ...holdoutResult.evidence !== undefined ? { evidence: holdoutResult.evidence.map(sanitizeEvidenceString) } : {},
       }
     }
   }
 
-  const eventsBefore = session.events.length
-  session.append('repair/completed', {
-    repairId: state.repairId,
-    turn,
-    step: 0,
-    finalRoutingDecisionId: routingDecisionId,
+  // Compute workspace hash at verification time when a provenance provider is
+  // configured. The hash binds the workspace state to the verification result,
+  // so replay can detect post-verification tampering.
+  let workspaceHash: string | undefined
+  if (workspaceProvenanceProvider !== undefined) {
+    try {
+      workspaceHash = workspaceProvenanceProvider({
+        session,
+        changedFiles: [],
+      })
+    } catch {
+      // Provenance failure is non-fatal for completion; the hash is omitted.
+    }
+  }
+
+  return {
     verified: qualificationFailure === undefined,
-    totalAttempts: state.attempts.length,
-    flashAttempts: state.flashAttempts,
-    proAttempts: state.proAttempts,
-    totalCostUsd: state.totalCostUsd,
-    elapsedMs: Date.now() - state.startedAt,
     outcome: qualificationFailure === undefined ? 'verified' : 'qualification-failed',
     ...qualificationFailure !== undefined ? { qualificationFailure } : {},
-  }, { ignorable: true })
-  const newEvents = session.events.slice(eventsBefore)
-  return newEvents[0]
+    ...workspaceHash !== undefined ? { workspaceHash } : {},
+  }
 }
 
 /** Plugin entry point. */
@@ -1368,10 +1457,14 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
       const key = `${agent.id}:${goal.id}`
       const state = repairStates.get(key)
 
-      // PASS: run holdout (if configured) and emit repair/completed.
-      // Holdout failures do NOT trigger repair. On a one-shot success
-      // (no prior repair state), create fresh state so the same completion
-      // pipeline owns one-shot success, repair success, and Pro success.
+      // PASS: run holdout (if configured), transition the goal, then emit
+      // repair/completed. The goal transition MUST happen before
+      // repair/completed is appended, because completeVerified() requires
+      // goal/verification PASS as the latest durable event. Holdout failures
+      // do NOT trigger repair — they block the goal as qualification-failed.
+      // On a one-shot success (no prior repair state), create fresh state so
+      // the same completion pipeline owns one-shot success, repair success,
+      // and Pro success.
       if (data.passed) {
         const passState = state ?? stateFor(agent, goal)
         const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
@@ -1380,7 +1473,36 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           DEFAULT_PRICING_REGISTRY,
           config.holdoutVerifier,
           goal.id,
-        ).then(() => {
+          config.workspaceProvenanceProvider,
+        ).then((result) => {
+          // Transition the goal while goal/verification PASS is still the
+          // latest event. completeVerified() checks this freshness.
+          if (result.verified) {
+            ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision })
+          } else {
+            ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+              code: 'qualification-failed',
+              message: result.qualificationFailure?.reason ?? 'holdout verification failed',
+            })
+          }
+
+          // Now append repair/completed after the goal transition.
+          session.append('repair/completed', {
+            repairId: passState.repairId,
+            turn,
+            step: 0,
+            finalRoutingDecisionId: routingDecisionId,
+            verified: result.verified,
+            totalAttempts: passState.attempts.length,
+            flashAttempts: passState.flashAttempts,
+            proAttempts: passState.proAttempts,
+            totalCostUsd: passState.totalCostUsd,
+            elapsedMs: Date.now() - passState.startedAt,
+            outcome: result.outcome,
+            ...result.qualificationFailure !== undefined ? { qualificationFailure: result.qualificationFailure } : {},
+            ...result.workspaceHash !== undefined ? { workspaceHash: result.workspaceHash } : {},
+          }, { ignorable: true })
+
           // Release the model selection back to automatic routing.
           releaseToAuto(session, 'system')
           repairStates.delete(key)
@@ -1453,6 +1575,11 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
 
       switch (result.action) {
         case 'complete': {
+          // Transition the goal to complete. Use complete() rather than
+          // completeVerified() because the latest event is goal/verification
+          // FAIL, not PASS — the repair controller decided to complete
+          // despite the verification failure (e.g. a prior attempt passed).
+          ctx.goals.complete(agent, { id: goal.id, revision: goal.revision })
           releaseToAuto(session, 'system')
           repairStates.delete(key)
           return

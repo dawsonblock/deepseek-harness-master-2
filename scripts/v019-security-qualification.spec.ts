@@ -7,19 +7,24 @@
  * @module v019-security-qualification.spec
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import {
   SECURITY_QUALIFICATION_ID,
   formatSecurityQualification,
   runSecurityQualification,
+  type SecurityQualificationRecord,
 } from './v019-security-qualification.ts'
 
 describe('v019 security qualification gate', () => {
-  const record = runSecurityQualification()
+  let record: SecurityQualificationRecord
+
+  beforeAll(async () => {
+    record = await runSecurityQualification()
+  })
 
   it('uses the correct qualification identity', () => {
     expect(record.qualificationId).toBe(SECURITY_QUALIFICATION_ID)
-    expect(record.qualificationId).toBe('v019-security-qualification-v1')
+    expect(record.qualificationId).toBe('v019-security-qualification-v2')
   })
 
   it('records a timestamp', () => {
@@ -30,8 +35,8 @@ describe('v019 security qualification gate', () => {
     expect(record.platform).toBe(process.platform)
   })
 
-  it('runs all 30 security property checks (20 source + 10 behavioral)', () => {
-    expect(record.checks).toHaveLength(30)
+  it('runs all 34 security property checks (23 source + 11 behavioral)', () => {
+    expect(record.checks).toHaveLength(34)
   })
 
   it('every check has a unique id', () => {
@@ -179,9 +184,48 @@ describe('v019 security qualification gate', () => {
     expect(g20!.status).toBe('pass')
   })
 
-  it('the full gate passes', () => {
-    expect(record.passed).toBe(true)
-    expect(record.failedCount).toBe(0)
+  it('G21: model workspaces have no future Git history', () => {
+    const g21 = record.checks.find(c => c.id === 'G21')
+    expect(g21).toBeDefined()
+    expect(g21!.status).toBe('pass')
+  })
+
+  it('G22: network is denied in workspace-isolated sandbox profiles', () => {
+    const g22 = record.checks.find(c => c.id === 'G22')
+    expect(g22).toBeDefined()
+    expect(g22!.status).toBe('pass')
+  })
+
+  it('G23: verifier-controlled files are hashed at freeze time', () => {
+    const g23 = record.checks.find(c => c.id === 'G23')
+    expect(g23).toBeDefined()
+    expect(g23!.status).toBe('pass')
+  })
+
+  it('B11: benchmark-eligible backend enforcement check exists', () => {
+    const b11 = record.checks.find(c => c.id === 'B11')
+    expect(b11).toBeDefined()
+    // On Linux (bwrap/landlock), enforcement is 'full' and the check passes.
+    // On macOS (Seatbelt), enforcement is 'partial' and the check fails —
+    // benchmark-eligible runs must not proceed on partial-enforcement backends.
+    if (process.platform === 'linux') {
+      expect(b11!.status).toBe('pass')
+    } else if (process.platform === 'darwin') {
+      expect(b11!.status).toBe('fail')
+      expect(b11!.evidence).toContain('partial')
+    }
+  })
+
+  it('the full gate passes only on full-enforcement platforms', () => {
+    if (process.platform === 'linux') {
+      expect(record.passed).toBe(true)
+      expect(record.failedCount).toBe(0)
+    } else {
+      // On partial-enforcement platforms (darwin, win32), the gate fails
+      // because B11 requires full backend enforcement for benchmark-eligible runs.
+      expect(record.passed).toBe(false)
+      expect(record.failedCount).toBeGreaterThanOrEqual(1)
+    }
   })
 
   it('formatSecurityQualification produces a readable report', () => {

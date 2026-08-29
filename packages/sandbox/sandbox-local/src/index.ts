@@ -193,6 +193,23 @@ const STATIC_ENFORCEMENT: Record<SelectedRunner['runner'], SandboxEnforcement> =
 }
 
 /**
+ * The static enforcement completeness the current platform's sole or preferred
+ * runner achieves without a probe. A platform with multiple candidates (Linux)
+ * may upgrade to `full` after probing; this returns the first candidate's
+ * static claim so callers can decide whether to require a probed verdict.
+ *
+ * @returns the enforcement level for the current platform's preferred runner,
+ *   or `undefined` when the platform has no runner chain.
+ */
+export function platformEnforcement(): SandboxEnforcement | undefined {
+  const chain = PLATFORM_CHAINS[process.platform]
+  if (chain === undefined || chain.length === 0) return undefined
+  const first = chain[0]
+  if (first === undefined) return undefined
+  return STATIC_ENFORCEMENT[first]
+}
+
+/**
  * A probe bound must be a positive finite number: Node treats
  * `spawnSync({ timeout: 0 })` as NO timeout, so an unvalidated 0 would
  * silently mean "unbounded" — the opposite of what the field promises.

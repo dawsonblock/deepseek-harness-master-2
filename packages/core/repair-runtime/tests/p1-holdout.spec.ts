@@ -152,7 +152,7 @@ describe('P1.3: diagnostic failure triggers repair (baseline)', () => {
 })
 
 describe('P1.3: diagnostic pass with no holdout → normal completion', () => {
-  it('diagnostic PASS + no holdoutVerifier → repair/completed verified=true', async () => {
+  it('diagnostic PASS + no holdoutVerifier → verified result', async () => {
     const session = Session.create(SessionId('holdout-none'))
     const goalId = 'goal-holdout-none'
     const repairId = computeRepairId(session.id, goalId, 1, 'rd-1')
@@ -169,18 +169,16 @@ describe('P1.3: diagnostic pass with no holdout → normal completion', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
+    const result = await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
 
-    const completedEvent = session.events.find(e => e.type === 'repair/completed')
-    expect(completedEvent).toBeDefined()
-    const data = completedEvent!.data as { verified: boolean; qualificationFailure?: unknown }
-    expect(data.verified).toBe(true)
-    expect(data.qualificationFailure).toBeUndefined()
+    expect(result.verified).toBe(true)
+    expect(result.outcome).toBe('verified')
+    expect(result.qualificationFailure).toBeUndefined()
   })
 })
 
 describe('P1.3: diagnostic pass + holdout pass → normal completion', () => {
-  it('diagnostic PASS + holdout PASS → repair/completed verified=true', async () => {
+  it('diagnostic PASS + holdout PASS → verified result', async () => {
     const session = Session.create(SessionId('holdout-pass'))
     const goalId = 'goal-holdout-pass'
     const repairId = computeRepairId(session.id, goalId, 1, 'rd-1')
@@ -202,20 +200,18 @@ describe('P1.3: diagnostic pass + holdout pass → normal completion', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(
+    const result = await handleVerificationPass(
       session, state, 2, 'rd-2', TEST_PRICING, holdoutPass, goalId,
     )
 
-    const completedEvent = session.events.find(e => e.type === 'repair/completed')
-    expect(completedEvent).toBeDefined()
-    const data = completedEvent!.data as { verified: boolean; qualificationFailure?: unknown }
-    expect(data.verified).toBe(true)
-    expect(data.qualificationFailure).toBeUndefined()
+    expect(result.verified).toBe(true)
+    expect(result.outcome).toBe('verified')
+    expect(result.qualificationFailure).toBeUndefined()
   })
 })
 
 describe('P1.3: diagnostic pass + holdout fail → qualification failure, no repair', () => {
-  it('diagnostic PASS + holdout FAIL → repair/completed verified=false with qualificationFailure', async () => {
+  it('diagnostic PASS + holdout FAIL → qualification-failed result with qualificationFailure', async () => {
     const session = Session.create(SessionId('holdout-fail'))
     const goalId = 'goal-holdout-fail'
     const repairId = computeRepairId(session.id, goalId, 1, 'rd-1')
@@ -236,20 +232,15 @@ describe('P1.3: diagnostic pass + holdout fail → qualification failure, no rep
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(
+    const result = await handleVerificationPass(
       session, state, 2, 'rd-2', TEST_PRICING, holdoutFail, goalId,
     )
 
-    const completedEvent = session.events.find(e => e.type === 'repair/completed')
-    expect(completedEvent).toBeDefined()
-    const data = completedEvent!.data as {
-      verified: boolean
-      qualificationFailure?: { reason: string; evidence?: readonly string[] }
-    }
-    expect(data.verified).toBe(false)
-    expect(data.qualificationFailure).toBeDefined()
-    expect(data.qualificationFailure!.reason).toBe('holdout: integration test coverage below threshold')
-    expect(data.qualificationFailure!.evidence).toEqual(['coverage: 45%', 'threshold: 80%'])
+    expect(result.verified).toBe(false)
+    expect(result.outcome).toBe('qualification-failed')
+    expect(result.qualificationFailure).toBeDefined()
+    expect(result.qualificationFailure!.reason).toBe('holdout: integration test coverage below threshold')
+    expect(result.qualificationFailure!.evidence).toEqual(['coverage: 45%', 'threshold: 80%'])
   })
 
   it('holdout failure does NOT produce repair evidence for the passing attempt', async () => {
@@ -318,12 +309,10 @@ describe('P1.3: diagnostic pass + holdout fail → qualification failure, no rep
       session, state, 2, 'rd-2', TEST_PRICING, holdoutFail, goalId,
     )
 
-    // No new attempt should be added for the holdout failure
-    expect(state.attempts.length).toBe(attemptsBeforeHoldout)
-
-    // Exactly one repair/completed (the holdout failure completion)
-    const completedEvents = session.events.filter(e => e.type === 'repair/completed')
-    expect(completedEvents.length).toBe(1)
+    // The passing attempt is counted (1 failed + 1 passed = 2), but no
+    // additional repair attempt is triggered by the holdout failure.
+    expect(state.attempts.length).toBe(attemptsBeforeHoldout + 1)
+    expect(state.attempts[state.attempts.length - 1]!.verified).toBe(true)
   })
 })
 
@@ -351,17 +340,12 @@ describe('P1.3: async holdout verifier', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    const completedEvent = await handleVerificationPass(
+    const result = await handleVerificationPass(
       session, state, 2, 'rd-2', TEST_PRICING, asyncHoldout, goalId,
     )
 
-    expect(completedEvent).toBeDefined()
-    const data = completedEvent!.data as {
-      verified: boolean
-      qualificationFailure?: { reason: string }
-    }
-    expect(data.verified).toBe(false)
-    expect(data.qualificationFailure).toBeDefined()
-    expect(data.qualificationFailure!.reason).toBe('async holdout failed')
+    expect(result.verified).toBe(false)
+    expect(result.qualificationFailure).toBeDefined()
+    expect(result.qualificationFailure!.reason).toBe('async holdout failed')
   })
 })

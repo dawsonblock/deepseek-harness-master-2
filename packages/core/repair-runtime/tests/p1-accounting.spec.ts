@@ -127,6 +127,31 @@ function appendVerification(session: Session, goalId: string, passed: boolean, c
   } as never, { ignorable: true })
 }
 
+/** Simulate the plugin's repair/completed append after handleVerificationPass. */
+async function passAndComplete(
+  session: Session,
+  state: RepairState,
+  turn: number,
+  routingDecisionId: string,
+  repairId: string,
+): Promise<void> {
+  const result = await handleVerificationPass(session, state, turn, routingDecisionId, TEST_PRICING)
+  session.append('repair/completed', {
+    repairId,
+    turn,
+    step: 0,
+    finalRoutingDecisionId: routingDecisionId,
+    verified: result.verified,
+    totalAttempts: state.attempts.length,
+    flashAttempts: state.flashAttempts,
+    proAttempts: state.proAttempts,
+    totalCostUsd: state.totalCostUsd,
+    elapsedMs: Date.now() - state.startedAt,
+    outcome: result.outcome,
+    ...result.qualificationFailure !== undefined ? { qualificationFailure: result.qualificationFailure } : {},
+  }, { ignorable: true })
+}
+
 /** Expected cost for given tokens under the test pricing registry. */
 function expectedCost(model: ModelRef, tokens: { input: number; output: number; cacheRead: number; cacheMiss: number }): number {
   const pricing = TEST_PRICING.find(p => p.provider === model.provider && p.model === model.model)!
@@ -243,7 +268,7 @@ describe('P1.1: repair/completed carries real totalCostUsd', () => {
     const tokens2 = { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 }
     appendUsage(session, 'rd-2', 2, FLASH, tokens2)
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
+    await passAndComplete(session, state, 2, 'rd-2', repairId)
 
     const completedEvent = session.events.find(e => e.type === 'repair/completed')
     expect(completedEvent).toBeDefined()

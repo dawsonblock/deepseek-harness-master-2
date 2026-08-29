@@ -19,7 +19,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execSync } from 'node:child_process'
 
 import {
   buildExperimentManifest,
@@ -32,7 +31,9 @@ import {
   cleanupWorkspace,
   computeRepoMetadata,
   installDependencies,
+  type RepoCheckout,
 } from './v019-repo-checkout.ts'
+import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 import {
   type TaskState,
   type TaskTrajectory,
@@ -165,16 +166,18 @@ async function main(): Promise<void> {
     process.stderr.write(`  Category: ${taskManifest.category}\n`)
 
     let workspace: string | undefined
+    let checkout: RepoCheckout | undefined
     let taskState: TaskState = 'PENDING'
     try {
-      // Checkout repository at base commit
+      // Checkout repository at base commit (archive snapshot, no .git)
       taskState = 'CHECKOUT'
       process.stderr.write('  [CHECKOUT] Checking out repository...\n')
-      workspace = await checkoutRepo(
+      checkout = await checkoutRepo(
         taskManifest.repository.url,
         taskManifest.repository.baseCommit,
         taskManifest.repository.name,
       )
+      workspace = checkout.workspace
 
       // Install dependencies
       taskState = 'SETUP'
@@ -190,9 +193,9 @@ async function main(): Promise<void> {
       })
       process.stderr.write(`  Repo: ${repoMetadata.loc} LOC, ${repoMetadata.fileCount} files, ${repoMetadata.testCount} tests\n`)
 
-      // Get reference fix files for context discovery tracking
+      // Get reference fix files from the verifier-only clone (not the model workspace)
       const referenceFixFiles = taskManifest.repository.referenceFixCommit !== undefined
-        ? getReferenceFixFiles(workspace, taskManifest.repository.referenceFixCommit)
+        ? getReferenceFixFiles(checkout.cloneDir, taskManifest.repository.referenceFixCommit)
         : []
 
       // Run the task trajectory
@@ -205,6 +208,7 @@ async function main(): Promise<void> {
         benchmarkEligible,
         repoMetadata,
         referenceFixFiles,
+        checkout,
       )
 
       // Save trajectory
@@ -440,19 +444,6 @@ async function generateReport(
   ]
   await writeFile(REPORT_PATH, lines.join('\n') + '\n', 'utf8')
   process.stderr.write(`Report written to ${REPORT_PATH}\n`)
-}
-
-/** Get files changed by the reference fix commit (verifier-only, never model-visible). */
-function getReferenceFixFiles(workspace: string, referenceFixCommit: string): string[] {
-  try {
-    const output = execSync(
-      `git --git-dir="${workspace}/.git" diff --name-only ${referenceFixCommit}~1 ${referenceFixCommit}`,
-      { encoding: 'utf8', timeout: 10000 },
-    )
-    return output.trim().split('\n').filter(f => f.length > 0)
-  } catch {
-    return []
-  }
 }
 
 void main()

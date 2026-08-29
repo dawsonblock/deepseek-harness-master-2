@@ -133,7 +133,7 @@ function getCompletedOutcome(session: Session): string | undefined {
 }
 
 describe('P1.14: verified outcome on diagnostic pass', () => {
-  it('handleVerificationPass emits outcome=verified', async () => {
+  it('handleVerificationPass returns outcome=verified', async () => {
     const session = Session.create(SessionId('outcome-verified'))
     const goalId = 'goal-outcome-verified'
     const repairId = computeRepairId(session.id, goalId, 1, 'rd-1')
@@ -148,14 +148,14 @@ describe('P1.14: verified outcome on diagnostic pass', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
+    const result = await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
 
-    expect(getCompletedOutcome(session)).toBe('verified')
+    expect(result.outcome).toBe('verified')
   })
 })
 
 describe('P1.14: qualification-failed outcome on holdout failure', () => {
-  it('handleVerificationPass with holdout failure emits outcome=qualification-failed', async () => {
+  it('handleVerificationPass with holdout failure returns outcome=qualification-failed', async () => {
     const session = Session.create(SessionId('outcome-qual-failed'))
     const goalId = 'goal-outcome-qual-failed'
     const repairId = computeRepairId(session.id, goalId, 1, 'rd-1')
@@ -170,12 +170,12 @@ describe('P1.14: qualification-failed outcome on holdout failure', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING, async () => ({
+    const result = await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING, async () => ({
       passed: false,
       reason: 'holdout test failed',
     }), goalId)
 
-    expect(getCompletedOutcome(session)).toBe('qualification-failed')
+    expect(result.outcome).toBe('qualification-failed')
   })
 })
 

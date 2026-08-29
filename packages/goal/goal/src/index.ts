@@ -207,6 +207,25 @@ function resolveBlockReason(reason: unknown): GoalBlockReason {
   return { code, message: message.trim() }
 }
 
+/**
+ * Sanitize a verification evidence string for durable persistence. Strips
+ * common secret patterns (API keys, bearer tokens, env-file paths) that may
+ * appear in verifier output. The durable ledger must not retain credentials.
+ * @param value - the raw evidence string from a verifier.
+ * @returns the sanitized string with secrets removed.
+ */
+function sanitizeVerificationEvidence(value: string): string {
+  return value
+    .replace(/authorization:\s*bearer\s+[a-z0-9._~+=/-]+/gi, 'Authorization: Bearer [redacted]')
+    .replace(/authorization:\s*basic\s+[a-z0-9+/=]+/gi, 'Authorization: Basic [redacted]')
+    .replace(/\bsk-[a-z0-9]{20,}\b/gi, '[api-key]')
+    .replace(/\b(?:DEEPSEEK_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)\s*=\s*[a-z0-9._~+=/-]+/gi, '[api-key-env]=[redacted]')
+    .replace(/\/(?:Users|home)\/[^/\s]+\/\.env[^\s]*/g, '[env-file]')
+    .replace(/\/(?:Users|home)\/[^/\s]+\/\.ssh\/[^\s]+/g, '[ssh-path]')
+    .replace(/\b(?:SECRET|TOKEN|PRIVATE_KEY|ACCESS_TOKEN|REFRESH_TOKEN)\s*=\s*[a-z0-9._~+=/-]+/gi, '[secret]=[redacted]')
+    .trim()
+}
+
 /** Goal service (`ctx.goals`) backed exclusively by the owning session log. */
 export class GoalService extends TypertRemoteService {
   static inject = ['agents']
@@ -234,64 +253,64 @@ export class GoalService extends TypertRemoteService {
         name: 'runtime-integrity',
         version: '1',
         verify: ({ agent, goal }) => {
-        const events = agent.session.events
-        let goalStart = 0
-        for (let i = events.length - 1; i >= 0; i -= 1) {
-          const event = events[i]
-          if (event?.type === 'goal/change' && event.data.operation === 'create'
+          const events = agent.session.events
+          let goalStart = 0
+          for (let i = events.length - 1; i >= 0; i -= 1) {
+            const event = events[i]
+            if (event?.type === 'goal/change' && event.data.operation === 'create'
             && event.data.goal.id === goal.id) {
-            goalStart = i
-            break
+              goalStart = i
+              break
+            }
           }
-        }
-        const goalEvents = events.slice(goalStart)
-        const idempotentCalls = new Set<string>()
-        const reconciledCalls = new Set<string>()
-        for (const event of goalEvents) {
-          if (event.type === 'tool/call' && event.data.recoveryMode === 'idempotent') {
-            idempotentCalls.add(event.data.callId)
-          } else if (event.type === 'tool/reconciliation'
+          const goalEvents = events.slice(goalStart)
+          const idempotentCalls = new Set<string>()
+          const reconciledCalls = new Set<string>()
+          for (const event of goalEvents) {
+            if (event.type === 'tool/call' && event.data.recoveryMode === 'idempotent') {
+              idempotentCalls.add(event.data.callId)
+            } else if (event.type === 'tool/reconciliation'
             && (event.data.state === 'completed' || event.data.state === 'not-executed')) {
-            reconciledCalls.add(event.data.priorCallId)
+              reconciledCalls.add(event.data.priorCallId)
+            }
           }
-        }
-        const unresolved = goalEvents.find(event => event.type === 'tool/result'
+          const unresolved = goalEvents.find(event => event.type === 'tool/result'
           && event.data.error?.code === TOOL_OUTCOME_UNKNOWN
           && !idempotentCalls.has(event.data.message.source.callId)
           && !reconciledCalls.has(event.data.message.source.callId))
-        if (unresolved?.type === 'tool/result') {
-          return {
-            name: 'runtime-integrity',
-            passed: false,
-            reason: `session contains unresolved TOOL_OUTCOME_UNKNOWN call ${unresolved.data.message.source.callId}`,
+          if (unresolved?.type === 'tool/result') {
+            return {
+              name: 'runtime-integrity',
+              passed: false,
+              reason: `session contains unresolved TOOL_OUTCOME_UNKNOWN call ${unresolved.data.message.source.callId}`,
+            }
           }
-        }
-        let roundStart = -1
-        for (let i = events.length - 1; i >= 0; i -= 1) {
-          const event = events[i]
-          if (event?.type === 'user/message' && event.data.source.kind === 'goal'
+          let roundStart = -1
+          for (let i = events.length - 1; i >= 0; i -= 1) {
+            const event = events[i]
+            if (event?.type === 'user/message' && event.data.source.kind === 'goal'
             && event.data.source.goalId === goal.id && event.data.source.revision === goal.revision
             && event.data.source.round === goal.roundsStarted) {
-            roundStart = i
-            break
+              roundStart = i
+              break
+            }
           }
-        }
-        const roundEvents = roundStart < 0 ? [] : events.slice(roundStart + 1)
-        const failed = roundEvents.find(event =>
-          event.type === 'tool/result' && event.data.message.content[0].isError === true)
-        if (failed?.type === 'tool/result') {
+          const roundEvents = roundStart < 0 ? [] : events.slice(roundStart + 1)
+          const failed = roundEvents.find(event =>
+            event.type === 'tool/result' && event.data.message.content[0].isError === true)
+          if (failed?.type === 'tool/result') {
+            return {
+              name: 'runtime-integrity',
+              passed: false,
+              reason: `current goal round contains failed tool call ${failed.data.message.source.callId}`,
+            }
+          }
           return {
             name: 'runtime-integrity',
-            passed: false,
-            reason: `current goal round contains failed tool call ${failed.data.message.source.callId}`,
+            passed: true,
+            reason: 'no unresolved side effect or failed tool result is present in the active goal round',
+            evidence: [`goal-round:${goal.roundsStarted}`, `session-events:${events.length}`],
           }
-        }
-        return {
-          name: 'runtime-integrity',
-          passed: true,
-          reason: 'no unresolved side effect or failed tool result is present in the active goal round',
-          evidence: [`goal-round:${goal.roundsStarted}`, `session-events:${events.length}`],
-        }
         },
       },
     })
@@ -518,10 +537,12 @@ export class GoalService extends TypertRemoteService {
             role: registration.role,
             ...(verifier.version === undefined ? {} : { verifierVersion: verifier.version }),
             passed: candidate.passed === true,
-            reason: typeof candidate.reason === 'string' && candidate.reason.trim().length > 0
-              ? candidate.reason.trim()
-              : candidate.passed === true ? 'passed' : 'failed without a reason',
-            ...(candidate.evidence === undefined ? {} : { evidence: candidate.evidence.map(String) }),
+            reason: sanitizeVerificationEvidence(
+              typeof candidate.reason === 'string' && candidate.reason.trim().length > 0
+                ? candidate.reason.trim()
+                : candidate.passed === true ? 'passed' : 'failed without a reason',
+            ),
+            ...(candidate.evidence === undefined ? {} : { evidence: candidate.evidence.map(s => sanitizeVerificationEvidence(String(s))) }),
           })
         } catch (error: unknown) {
           checks.push({
@@ -529,7 +550,7 @@ export class GoalService extends TypertRemoteService {
             role: registration.role,
             ...(verifier.version === undefined ? {} : { verifierVersion: verifier.version }),
             passed: false,
-            reason: `verifier threw: ${error instanceof Error ? error.message : String(error)}`,
+            reason: sanitizeVerificationEvidence(`verifier threw: ${error instanceof Error ? error.message : String(error)}`),
           })
         }
       }

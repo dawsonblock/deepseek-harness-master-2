@@ -24,9 +24,9 @@ import {
   type RepairState,
   computeRepairId,
   handleVerificationFailure,
+  handleVerificationPass,
   validateRepairEventInvariants,
 } from '../src/index.ts'
-import { handleVerificationPass } from '../src/index.ts'
 
 const FLASH: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
 const PRO: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-pro' }
@@ -129,6 +129,31 @@ function appendVerification(
   } as never, { ignorable: true })
 }
 
+/** Simulate the plugin's repair/completed append after handleVerificationPass. */
+async function passAndComplete(
+  session: Session,
+  state: RepairState,
+  turn: number,
+  routingDecisionId: string,
+  repairId: string,
+): Promise<void> {
+  const result = await handleVerificationPass(session, state, turn, routingDecisionId, TEST_PRICING)
+  session.append('repair/completed', {
+    repairId,
+    turn,
+    step: 0,
+    finalRoutingDecisionId: routingDecisionId,
+    verified: result.verified,
+    totalAttempts: state.attempts.length,
+    flashAttempts: state.flashAttempts,
+    proAttempts: state.proAttempts,
+    totalCostUsd: state.totalCostUsd,
+    elapsedMs: Date.now() - state.startedAt,
+    outcome: result.outcome,
+    ...result.qualificationFailure !== undefined ? { qualificationFailure: result.qualificationFailure } : {},
+  }, { ignorable: true })
+}
+
 describe('P1.8: valid event ordering passes', () => {
   it('flash-repair sequence with no violations', async () => {
     const session = Session.create(SessionId('inv-valid'))
@@ -147,7 +172,7 @@ describe('P1.8: valid event ordering passes', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
+    await passAndComplete(session, state, 2, 'rd-2', repairId)
 
     const result = validateRepairEventInvariants(session.events, repairId)
     expect(result.valid).toBe(true)
@@ -177,7 +202,7 @@ describe('P1.8: valid event ordering passes', () => {
     setupTurn(session, 3, PRO, 'rd-3')
     appendUsage(session, 'rd-3', 3, PRO, { input: 2000, output: 1000, cacheRead: 500, cacheMiss: 1500 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 3, 'rd-3', TEST_PRICING)
+    await passAndComplete(session, state, 3, 'rd-3', repairId)
 
     const result = validateRepairEventInvariants(session.events, repairId)
     expect(result.valid).toBe(true)
@@ -280,7 +305,7 @@ describe('P1.8: multiple completed events', () => {
     setupTurn(session, 2, FLASH, 'rd-2')
     appendUsage(session, 'rd-2', 2, FLASH, { input: 800, output: 300, cacheRead: 400, cacheMiss: 400 })
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 2, 'rd-2', TEST_PRICING)
+    await passAndComplete(session, state, 2, 'rd-2', repairId)
 
     // Manually append a second completed event
     session.append('repair/completed', {
@@ -293,6 +318,7 @@ describe('P1.8: multiple completed events', () => {
       proAttempts: 0,
       totalCostUsd: 0,
       elapsedMs: 0,
+      outcome: 'verified',
     }, { ignorable: true })
 
     const result = validateRepairEventInvariants(session.events, repairId)
@@ -317,6 +343,7 @@ describe('P1.8: completed before decision', () => {
       proAttempts: 0,
       totalCostUsd: 0,
       elapsedMs: 0,
+      outcome: 'attempts-exhausted',
     }, { ignorable: true })
 
     // Then evidence and decision (out of order)

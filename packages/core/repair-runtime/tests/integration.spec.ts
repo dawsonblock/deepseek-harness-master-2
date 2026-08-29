@@ -458,7 +458,7 @@ describe('E2E: holdout failure is terminal', () => {
 })
 
 describe('E2E: one-shot PASS lifecycle', () => {
-  it('Flash → diagnostic PASS (no prior repair) → holdout PASS → repair/completed emitted', async () => {
+  it('Flash → diagnostic PASS (no prior repair) → holdout PASS → verified result', async () => {
     const session = Session.create(SessionId('one-shot-pass'))
     setupTurn(session, 1, FLASH)
     appendUsage(session, 1, FLASH, {
@@ -467,18 +467,21 @@ describe('E2E: one-shot PASS lifecycle', () => {
 
     const state = freshState('repair-one-shot')
     const holdoutVerifier = async () => ({ passed: true, reason: '' })
-    const completedEvent = await handleVerificationPass(
+    const result = await handleVerificationPass(
       session, state, 1, 'rd-1', undefined, holdoutVerifier, 'goal-one-shot',
     )
 
-    expect(completedEvent).toBeDefined()
-    expect(completedEvent!.type).toBe('repair/completed')
-    const data = completedEvent!.data as { verified: boolean; outcome: string }
-    expect(data.verified).toBe(true)
-    expect(data.outcome).toBe('verified')
+    expect(result.verified).toBe(true)
+    expect(result.outcome).toBe('verified')
+    // The passing attempt must be counted in state.
+    expect(state.attempts).toHaveLength(1)
+    expect(state.attempts[0]!.verified).toBe(true)
+    expect(state.attempts[0]!.verificationStatus).toBe('verified-pass')
+    expect(state.flashAttempts).toBe(1)
+    expect(state.proAttempts).toBe(0)
   })
 
-  it('Flash → diagnostic PASS (no prior repair) → holdout FAIL → repair/completed with qualification-failed', async () => {
+  it('Flash → diagnostic PASS (no prior repair) → holdout FAIL → qualification-failed result', async () => {
     const session = Session.create(SessionId('one-shot-holdout-fail'))
     setupTurn(session, 1, FLASH)
     appendUsage(session, 1, FLASH, {
@@ -487,15 +490,16 @@ describe('E2E: one-shot PASS lifecycle', () => {
 
     const state = freshState('repair-one-shot-holdout-fail')
     const holdoutVerifier = async () => ({ passed: false, reason: 'holdout test failed' })
-    const completedEvent = await handleVerificationPass(
+    const result = await handleVerificationPass(
       session, state, 1, 'rd-1', undefined, holdoutVerifier, 'goal-one-shot-holdout-fail',
     )
 
-    expect(completedEvent).toBeDefined()
-    expect(completedEvent!.type).toBe('repair/completed')
-    const data = completedEvent!.data as { verified: boolean; outcome: string }
-    expect(data.verified).toBe(false)
-    expect(data.outcome).toBe('qualification-failed')
+    expect(result.verified).toBe(false)
+    expect(result.outcome).toBe('qualification-failed')
+    expect(result.qualificationFailure?.reason).toBe('holdout test failed')
+    // The passing attempt is still counted even though the holdout failed.
+    expect(state.attempts).toHaveLength(1)
+    expect(state.flashAttempts).toBe(1)
   })
 })
 
@@ -664,7 +668,7 @@ describe('P0: deterministic repairId', () => {
 })
 
 describe('P0: repair completion on verification PASS', () => {
-  it('active repair + goal/verification PASS → repair/completed exactly once', async () => {
+  it('active repair + goal/verification PASS → verified result, attempt counted', async () => {
     const session = Session.create(SessionId('p0-complete'))
     const state = freshState('repair-goal-p0-complete')
     const deps = defaultDeps()
@@ -675,17 +679,17 @@ describe('P0: repair completion on verification PASS', () => {
 
     // Turn 2: Flash repair passes
     setupTurn(session, 2, FLASH)
-    const completedEvent = await handleVerificationPass(session, state, 2, 'rd-2')
+    const result = await handleVerificationPass(session, state, 2, 'rd-2')
 
-    expect(completedEvent).toBeDefined()
-    expect(completedEvent!.type).toBe('repair/completed')
-    const data = completedEvent!.data as { verified: boolean; repairId: string }
-    expect(data.verified).toBe(true)
-    expect(data.repairId).toBe(state.repairId)
+    expect(result.verified).toBe(true)
+    expect(result.outcome).toBe('verified')
 
-    // Exactly one repair/completed event
-    const completedCount = session.events.filter(e => e.type === 'repair/completed').length
-    expect(completedCount).toBe(1)
+    // The passing attempt is counted: 1 failed + 1 passed = 2 total.
+    expect(state.attempts).toHaveLength(2)
+    expect(state.attempts[1]!.verified).toBe(true)
+    expect(state.attempts[1]!.verificationStatus).toBe('verified-pass')
+    // Both attempts used Flash.
+    expect(state.flashAttempts).toBe(2)
   })
 })
 

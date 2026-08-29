@@ -82,6 +82,31 @@ function appendVerification(session: Session, goalId: string, passed: boolean, c
   } as never, { ignorable: true })
 }
 
+/** Simulate the plugin's repair/completed append after handleVerificationPass. */
+async function passAndComplete(
+  session: Session,
+  state: RepairState,
+  turn: number,
+  routingDecisionId: string,
+  repairId: string,
+): Promise<void> {
+  const result = await handleVerificationPass(session, state, turn, routingDecisionId)
+  session.append('repair/completed', {
+    repairId,
+    turn,
+    step: 0,
+    finalRoutingDecisionId: routingDecisionId,
+    verified: result.verified,
+    totalAttempts: state.attempts.length,
+    flashAttempts: state.flashAttempts,
+    proAttempts: state.proAttempts,
+    totalCostUsd: state.totalCostUsd,
+    elapsedMs: Date.now() - state.startedAt,
+    outcome: result.outcome,
+    ...result.qualificationFailure !== undefined ? { qualificationFailure: result.qualificationFailure } : {},
+  }, { ignorable: true })
+}
+
 /** Append a repair/evidence event. */
 function appendEvidence(
   session: Session,
@@ -200,7 +225,7 @@ describe('P0 inspection: Flash fail → Flash fail no progress → Pro escalatio
 
     // --- Turn 3: Pro passes ---
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 3, R3)
+    await passAndComplete(session, state, 3, R3, repairId)
 
     // ===== Inspect the full event history =====
     const events = session.events
@@ -309,7 +334,7 @@ describe('P0 inspection: replay of the same escalation trajectory', () => {
     }, { ignorable: true })
 
     appendVerification(session, goalId, true, passChecks())
-    await handleVerificationPass(session, state, 3, R3)
+    await passAndComplete(session, state, 3, R3, repairId)
 
     // Now reconstruct from the log (simulating restart)
     // repair/completed exists, so reconstruction returns undefined (repair is done)

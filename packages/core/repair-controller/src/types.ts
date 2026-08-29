@@ -20,6 +20,27 @@ export type ProgressClass = 'none' | 'partial' | 'regression' | 'resolved'
 /** Verification status for one repair attempt. */
 export type VerificationStatus = 'verified-pass' | 'verified-fail' | 'unverified' | 'incomplete'
 
+/** Structured diagnostic evidence for one failed test. */
+export interface TestFailureDetail {
+  /** Test name or describe/it title from the test runner output. */
+  readonly testName: string
+  /** Assertion diff or error message from the test runner. */
+  readonly assertionDiff?: string
+  /** Exit code of the test process. */
+  readonly exitCode?: number
+}
+
+/** Structured diagnostic evidence for one type or build error. */
+export interface BuildErrorDetail {
+  /** Error message from the compiler or build tool. */
+  readonly message: string
+  /** File path and line number where the error occurred, when parseable. */
+  readonly file?: string
+  readonly line?: number
+  /** Exit code of the build process. */
+  readonly exitCode?: number
+}
+
 /** Objective verification evidence collected from a failed attempt. */
 export interface FailurePackage {
   readonly failedCriteria: readonly string[]
@@ -27,6 +48,12 @@ export interface FailurePackage {
   readonly typeErrors: readonly string[]
   readonly buildErrors: readonly string[]
   readonly changedFiles: readonly string[]
+  /** Structured test failure details with test names, assertion diffs, and exit codes. */
+  readonly testDetails?: readonly TestFailureDetail[]
+  /** Structured build/type error details with file paths, line numbers, and exit codes. */
+  readonly buildDetails?: readonly BuildErrorDetail[]
+  /** Exit code of the diagnostic verification process. */
+  readonly diagnosticExitCode?: number
 }
 
 /** One completed repair attempt's evidence for deterministic decisions. */

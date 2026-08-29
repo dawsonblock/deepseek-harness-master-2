@@ -59,6 +59,8 @@ export type {
   ProgressMetrics,
   VerificationStatus,
   FailurePackage,
+  TestFailureDetail,
+  BuildErrorDetail,
   RepairAttempt,
   RepairLimits,
   RepairBudget,

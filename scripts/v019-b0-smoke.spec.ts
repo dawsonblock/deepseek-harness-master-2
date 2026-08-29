@@ -21,10 +21,10 @@
  * @module v019-b0-smoke.spec
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { runSecurityQualification, SECURITY_QUALIFICATION_ID } from './v019-security-qualification.ts'
+import { runSecurityQualification, SECURITY_QUALIFICATION_ID, type SecurityQualificationRecord } from './v019-security-qualification.ts'
 import { buildExperimentManifest } from './v019-experiment-identity.ts'
 
 const REPO_ROOT = join(import.meta.dirname, '..')
@@ -34,13 +34,25 @@ function readCollectorSource(): string {
 }
 
 describe('v019 post-security B0 smoke test', () => {
-  const securityRecord = runSecurityQualification()
+  let securityRecord: SecurityQualificationRecord
   const collectorSource = readCollectorSource()
 
-  it('B0.1: security qualification gate is green', () => {
+  beforeAll(async () => {
+    securityRecord = await runSecurityQualification()
+  })
+
+  it('B0.1: security qualification gate is green on full-enforcement platforms', () => {
     expect(securityRecord.qualificationId).toBe(SECURITY_QUALIFICATION_ID)
-    expect(securityRecord.passed).toBe(true)
-    expect(securityRecord.failedCount).toBe(0)
+    // On Linux (bwrap/landlock), the gate passes. On macOS (Seatbelt),
+    // the gate fails at B11 because benchmark-eligible runs require full
+    // backend enforcement and Seatbelt is only partial.
+    if (process.platform === 'linux') {
+      expect(securityRecord.passed).toBe(true)
+      expect(securityRecord.failedCount).toBe(0)
+    } else {
+      expect(securityRecord.passed).toBe(false)
+      expect(securityRecord.failedCount).toBeGreaterThanOrEqual(1)
+    }
   })
 
   it('B0.2: B0 manifest is not benchmark-eligible', () => {

@@ -15,7 +15,7 @@
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -42,7 +42,7 @@ import {
 } from './v019-session-extraction.ts'
 
 import type { TaskManifest } from './v019-task-manifest.ts'
-import type { RepoMetadata } from './v019-repo-checkout.ts'
+import { type RepoMetadata, type RepoCheckout } from './v019-repo-checkout.ts'
 
 /** Checkpoint state for one task during evaluation. */
 export type TaskState =
@@ -146,6 +146,7 @@ export async function runTaskTrajectory(
   benchmarkEligible: boolean,
   repoMetadata: RepoMetadata,
   referenceFixFiles: readonly string[],
+  checkout?: RepoCheckout,
 ): Promise<TaskTrajectory> {
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
@@ -173,7 +174,7 @@ export async function runTaskTrajectory(
       maxTotalAttempts: manifest.limits.maxTotalAttempts,
       holdoutVerifier: createHoldoutVerifier(workspace, manifest),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
-      rollbackProvider: createRollbackProvider(workspace),
+      rollbackProvider: createRollbackProvider(workspace, checkout),
     }
     await ctx.plugin(repairRuntimePlugin, repairConfig)
 
@@ -246,7 +247,7 @@ export async function runTaskTrajectory(
   // Extract trajectory from session events.
   return buildTrajectoryFromEvents(
     allEvents, manifest, workspace, experimentId, benchmarkEligible,
-    repoMetadata, referenceFixFiles, wallClockStart,
+    repoMetadata, referenceFixFiles, wallClockStart, checkout,
   )
 }
 
@@ -442,12 +443,27 @@ function createProvenanceProvider(workspace: string): repairRuntimePlugin.Worksp
   }
 }
 
-/** Create a rollback provider that restores the workspace to the base commit via git checkout. */
-function createRollbackProvider(workspace: string): repairRuntimePlugin.RollbackProvider {
+/**
+ * Create a rollback provider that restores the workspace to the base commit.
+ * When a `RepoCheckout` is available (no `.git` in the workspace), uses
+ * `git archive` re-extraction from the cached clone. Falls back to
+ * `git checkout` for legacy worktree-based workspaces.
+ */
+function createRollbackProvider(workspace: string, checkout?: RepoCheckout): repairRuntimePlugin.RollbackProvider {
   return () => {
     try {
-      execSync('git checkout -- .', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
-      execSync('git clean -fd', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+      if (checkout !== undefined) {
+        // Synchronous restore: clear workspace and re-extract from clone.
+        rmSync(checkout.workspace, { recursive: true, force: true })
+        mkdirSync(checkout.workspace, { recursive: true })
+        execSync(
+          `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -x -C "${checkout.workspace}"`,
+          { stdio: 'pipe', timeout: 60000 },
+        )
+      } else {
+        execSync('git checkout -- .', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+        execSync('git clean -fd', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+      }
       return { success: true, rollbackTarget: 'base-commit' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -466,6 +482,7 @@ function buildTrajectoryFromEvents(
   repoMetadata: RepoMetadata,
   referenceFixFiles: readonly string[],
   wallClockStart: number,
+  checkout?: RepoCheckout,
 ): TaskTrajectory {
   // Extract repair attempts from repair/evidence and repair/decision events.
   const repairEvents = allEvents.filter(e => e.type === 'repair/evidence' || e.type === 'repair/decision' || e.type === 'repair/completed')
@@ -514,7 +531,7 @@ function buildTrajectoryFromEvents(
     const turn = (usageEvent.data as { turn?: number }).turn ?? 0
     const routingEvent = allEvents.find(e => e.type === 'model/routing-decision' && (e.data as { turn?: number }).turn === turn) as
       | Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
-    const routingDecisionId = routingEvent?.data.routingDecisionId ?? `unknown-${i + 1}`
+    const routingDecisionId = routingEvent?.data.routingDecisionId ?? 'unrouted'
     const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model ?? 'unknown'
 
     // Fail loud on unpriced model usage: unknown pricing must not silently
@@ -574,7 +591,7 @@ function buildTrajectoryFromEvents(
     })
   }
 
-  const changedFiles = getChangedFiles(workspace)
+  const changedFiles = getChangedFiles(workspace, checkout)
   const allSessionEvents = allEvents
   const observation = extractRepositoryObservation(allSessionEvents, workspace)
   const referenceFixFilesInspected = intersectPaths(observation.filesInspected, referenceFixFiles)
@@ -633,7 +650,10 @@ function buildTrajectoryFromEvents(
     referenceFixFilesModified,
     rollbackUsed: allEvents.some(e => e.type === 'repair/rollback'),
     aborted: outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed',
-    abortReason: outcome === 'authority-undecidable' ? 'authority-undecidable' : outcome === 'model-unavailable' ? 'model-unavailable' : undefined,
+    abortReason: outcome === 'authority-undecidable' ? 'authority-undecidable'
+      : outcome === 'model-unavailable' ? 'model-unavailable'
+        : outcome === 'rollback-failed' ? 'rollback-failed'
+          : undefined,
     terminalOutcome,
     failureCategory: undefined,
     timestamp: new Date().toISOString(),
@@ -644,8 +664,53 @@ function buildTrajectoryFromEvents(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getChangedFiles(workspace: string): string[] {
+/**
+ * Get files changed in the workspace relative to the base commit.
+ * Uses the verifier-only clone for the diff baseline since the model
+ * workspace has no `.git` directory.
+ */
+function getChangedFiles(workspace: string, checkout?: RepoCheckout): string[] {
   try {
+    if (checkout !== undefined) {
+      // Archive-based workspace: compare against the base commit in the clone.
+      // List files in the workspace and diff against the archive at the base commit.
+      const baseFiles = execSync(
+        `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -t`,
+        { encoding: 'utf8', timeout: 30000 },
+      ).trim().split('\n').filter(f => f.length > 0)
+      const workspaceFiles = execSync(`find "${workspace}" -type f -not -path '*/node_modules/*' -not -path '*/.git/*'`, {
+        encoding: 'utf8',
+        timeout: 30000,
+      }).trim().split('\n').filter(f => f.length > 0)
+        .map(f => f.slice(workspace.length + 1))
+      const changed = new Set<string>()
+      const baseSet = new Set(baseFiles)
+      const wsSet = new Set(workspaceFiles)
+      for (const f of workspaceFiles) {
+        if (!baseSet.has(f)) changed.add(f)
+      }
+      for (const f of baseFiles) {
+        if (!wsSet.has(f)) changed.add(f)
+      }
+      // Also detect content changes by comparing file contents.
+      for (const f of baseFiles) {
+        if (wsSet.has(f)) {
+          try {
+            const baseContent = execSync(
+              `git --git-dir="${checkout.cloneDir}/.git" show "${checkout.commit}:${f}"`,
+              { encoding: 'utf8', timeout: 10000 },
+            )
+            const wsContent = readFileSync(join(workspace, f), 'utf8')
+            if (baseContent !== wsContent) changed.add(f)
+          } catch {
+            // Binary file or read error — treat as changed.
+            changed.add(f)
+          }
+        }
+      }
+      return [...changed].sort()
+    }
+    // Legacy: workspace has .git (worktree-based checkout).
     const output = execSync('git diff --name-only HEAD', {
       cwd: workspace,
       encoding: 'utf8',

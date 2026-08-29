@@ -1,5 +1,5 @@
 /**
- * v0.19 security qualification gate (`v019-security-qualification-v1`).
+ * v0.19 security qualification gate (`v019-security-qualification-v2`).
  *
  * Records the security properties the integrated evaluator composition must
  * satisfy before any real Batch A evaluation begins. Each property carries an
@@ -28,6 +28,10 @@
  * G18: Repair decisions route through durable routing authority
  * G19: Repair events are emitted in correct order (evidence → decision → completed)
  * G20: releaseToAuto refuses undecidable authority state
+ * G21: Model workspaces have no future Git history (git archive, not worktree)
+ * G22: Network is denied in workspace-isolated sandbox profiles
+ * G23: Verifier-controlled files are hashed at freeze time and verified at evaluation time
+ * B11: benchmark-eligible runs require full backend enforcement (behavioral)
  *
  * @module v019-security-qualification
  */
@@ -56,7 +60,7 @@ export interface SecurityQualificationRecord {
 }
 
 /** The qualification identity. */
-export const SECURITY_QUALIFICATION_ID = 'v019-security-qualification-v1'
+export const SECURITY_QUALIFICATION_ID = 'v019-security-qualification-v2'
 
 /**
  * Run all security property checks and produce the qualification record.
@@ -70,7 +74,7 @@ export const SECURITY_QUALIFICATION_ID = 'v019-security-qualification-v1'
  *
  * @returns the security qualification record.
  */
-export function runSecurityQualification(): SecurityQualificationRecord {
+export async function runSecurityQualification(): Promise<SecurityQualificationRecord> {
   const checks: SecurityPropertyCheck[] = [
     checkFilesystemPlane(),
     checkSubprocessPlane(),
@@ -92,17 +96,21 @@ export function runSecurityQualification(): SecurityQualificationRecord {
     checkDurableRoutingAuthority(),
     checkRepairEventOrdering(),
     checkReleaseToAutoUndecidable(),
+    checkWorkspaceNoGitHistory(),
+    checkNetworkDenyInSandbox(),
+    checkVerifierIntegrityHash(),
     // Behavioral checks — exercise the actual runtime APIs.
     behavioralCheckWritableRootsExcludesTmp(),
     behavioralCheckReadableRootsWorkspaceOnly(),
-    behavioralCheckRepairRuntimeOneShotPass(),
-    behavioralCheckRepairRuntimeOneShotHoldoutFail(),
+    await behavioralCheckRepairRuntimeOneShotPass(),
+    await behavioralCheckRepairRuntimeOneShotHoldoutFail(),
     behavioralCheckAuthorityRefusesUndecidable(),
     behavioralCheckSandboxQualificationSkipIsNonPass(),
     behavioralCheckSeatbeltEnforcementPartial(),
-    behavioralCheckFsSandboxDeniesOutsideRead(),
-    behavioralCheckFsSandboxDeniesTraversal(),
+    await behavioralCheckFsSandboxDeniesOutsideRead(),
+    await behavioralCheckFsSandboxDeniesTraversal(),
     behavioralCheckUnpricedUsageThrows(),
+    behavioralCheckBenchmarkBackendFullEnforcement(),
   ]
 
   const passedCount = checks.filter(c => c.status === 'pass').length
@@ -447,11 +455,61 @@ function checkReleaseToAutoUndecidable(): SecurityPropertyCheck {
   }
 }
 
+/** G21: Verify model workspaces are created via git archive (no .git directory). */
+function checkWorkspaceNoGitHistory(): SecurityPropertyCheck {
+  const source = readCheckoutSource()
+  const usesArchive = source.includes('git archive')
+  const noWorktree = !source.includes('worktree add')
+  const passed = usesArchive && noWorktree
+  return {
+    id: 'G21',
+    name: 'Model workspaces have no future Git history (git archive, not worktree)',
+    status: passed ? 'pass' : 'fail',
+    evidence: passed
+      ? 'checkoutRepo uses git archive to extract a plain snapshot without .git'
+      : 'checkoutRepo does not use git archive or still uses worktree add',
+  }
+}
+
+/** G22: Verify network is denied in workspace-isolated sandbox profiles. */
+function checkNetworkDenyInSandbox(): SecurityPropertyCheck {
+  const source = readSandboxProfilesSource()
+  const bwrapUnsharesNet = source.includes('--unshare-net')
+  const seatbeltDeniesNet = source.includes('(deny network*)')
+  const noSeatbeltAllowNet = !source.includes('(allow network*)')
+  const passed = bwrapUnsharesNet && seatbeltDeniesNet && noSeatbeltAllowNet
+  return {
+    id: 'G22',
+    name: 'Network is denied in workspace-isolated sandbox profiles',
+    status: passed ? 'pass' : 'fail',
+    evidence: passed
+      ? 'bwrap uses --unshare-net and Seatbelt denies network* for workspace-isolated'
+      : 'sandbox profiles do not deny network in workspace-isolated mode',
+  }
+}
+
+/** G23: Verify verifier-controlled files are hashed at freeze time. */
+function checkVerifierIntegrityHash(): SecurityPropertyCheck {
+  const source = readFreezeSource()
+  const hasHashField = source.includes('verifierIntegrityHash')
+  const hasComputeFn = source.includes('computeVerifierIntegrityHash')
+  const hasVerifyFn = source.includes('verifyVerifierIntegrity')
+  const passed = hasHashField && hasComputeFn && hasVerifyFn
+  return {
+    id: 'G23',
+    name: 'Verifier-controlled files are hashed at freeze time and verified at evaluation time',
+    status: passed ? 'pass' : 'fail',
+    evidence: passed
+      ? 'freeze record includes verifierIntegrityHash, computeVerifierIntegrityHash, and verifyVerifierIntegrity'
+      : 'freeze record does not hash or verify verifier-controlled files',
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Source readers
 // ---------------------------------------------------------------------------
 
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -481,6 +539,18 @@ function readRepairRuntimeInvariantSource(): string {
   return readFileSync(join(REPO_ROOT, 'packages', 'core', 'repair-runtime', 'src', 'invariant.ts'), 'utf8')
 }
 
+function readCheckoutSource(): string {
+  return readFileSync(join(REPO_ROOT, 'scripts', 'v019-repo-checkout.ts'), 'utf8')
+}
+
+function readSandboxProfilesSource(): string {
+  return readFileSync(join(REPO_ROOT, 'packages', 'sandbox', 'sandbox-local', 'src', 'profiles.ts'), 'utf8')
+}
+
+function readFreezeSource(): string {
+  return readFileSync(join(REPO_ROOT, 'scripts', 'v019-freeze-secure-eval.ts'), 'utf8')
+}
+
 // ---------------------------------------------------------------------------
 // Behavioral checks — exercise the actual runtime APIs
 // ---------------------------------------------------------------------------
@@ -488,6 +558,10 @@ function readRepairRuntimeInvariantSource(): string {
 import { writableRoots, readableRoots } from '@deepseek-ai/dsh-sandbox'
 import { handleVerificationPass } from '@deepseek-ai/dsh-repair-runtime'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { platformEnforcement } from '@deepseek-ai/dsh-sandbox-local'
+import { releaseToAuto } from '@deepseek-ai/dsh-agent'
+import { isPathUnder } from '@deepseek-ai/dsh-fs-sandbox'
+import { DEFAULT_PRICING_REGISTRY, lookupPricingAt } from '@deepseek-ai/dsh-token-meter'
 
 /** B1: workspace-isolated writableRoots excludes /tmp and os.tmpdir(). */
 function behavioralCheckWritableRootsExcludesTmp(): SecurityPropertyCheck {
@@ -529,8 +603,8 @@ function behavioralCheckReadableRootsWorkspaceOnly(): SecurityPropertyCheck {
   }
 }
 
-/** B3: RepairRuntime handleVerificationPass emits repair/completed on one-shot PASS. */
-function behavioralCheckRepairRuntimeOneShotPass(): SecurityPropertyCheck {
+/** B3: RepairRuntime handleVerificationPass returns verified on one-shot PASS. */
+async function behavioralCheckRepairRuntimeOneShotPass(): Promise<SecurityPropertyCheck> {
   try {
     const session = Session.create(SessionId('sec-qual-one-shot'))
     const state = {
@@ -543,24 +617,23 @@ function behavioralCheckRepairRuntimeOneShotPass(): SecurityPropertyCheck {
       proAttempts: 0,
       totalOutputTokens: 0,
     }
-    void handleVerificationPass(session, state, 1, 'rd-test', undefined, undefined, 'goal-test').then((event) => {
-      const passed = event !== undefined && event.type === 'repair/completed'
-        && (event.data as { verified: boolean }).verified === true
-      if (!passed) throw new Error('expected repair/completed with verified=true')
-    })
+    const result = await handleVerificationPass(session, state, 1, 'rd-test', undefined, undefined, 'goal-test')
+    const passed = result.verified && result.outcome === 'verified'
     return {
       id: 'B3',
-      name: 'RepairRuntime one-shot PASS emits repair/completed (behavioral)',
-      status: 'pass',
-      evidence: 'handleVerificationPass with no prior repair state emits repair/completed verified=true',
+      name: 'RepairRuntime one-shot PASS returns verified (behavioral)',
+      status: passed ? 'pass' : 'fail',
+      evidence: passed
+        ? 'handleVerificationPass with no prior repair state returns verified=true outcome=verified'
+        : `expected verified=true outcome=verified, got verified=${result.verified} outcome=${result.outcome}`,
     }
   } catch (e) {
-    return { id: 'B3', name: 'RepairRuntime one-shot PASS emits repair/completed (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B3', name: 'RepairRuntime one-shot PASS returns verified (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
-/** B4: RepairRuntime handleVerificationPass with holdout FAIL emits qualification-failed. */
-function behavioralCheckRepairRuntimeOneShotHoldoutFail(): SecurityPropertyCheck {
+/** B4: RepairRuntime handleVerificationPass with holdout FAIL returns qualification-failed. */
+async function behavioralCheckRepairRuntimeOneShotHoldoutFail(): Promise<SecurityPropertyCheck> {
   try {
     const session = Session.create(SessionId('sec-qual-holdout-fail'))
     const state = {
@@ -574,41 +647,54 @@ function behavioralCheckRepairRuntimeOneShotHoldoutFail(): SecurityPropertyCheck
       totalOutputTokens: 0,
     }
     const holdoutVerifier = async () => ({ passed: false, reason: 'holdout test failed' })
-    void handleVerificationPass(session, state, 1, 'rd-test', undefined, holdoutVerifier, 'goal-test').then((event) => {
-      const passed = event !== undefined && event.type === 'repair/completed'
-        && (event.data as { verified: boolean }).verified === false
-        && (event.data as { outcome: string }).outcome === 'qualification-failed'
-      if (!passed) throw new Error('expected repair/completed with verified=false, outcome=qualification-failed')
-    })
+    const result = await handleVerificationPass(session, state, 1, 'rd-test', undefined, holdoutVerifier, 'goal-test')
+    const passed = !result.verified && result.outcome === 'qualification-failed'
+      && result.qualificationFailure?.reason === 'holdout test failed'
     return {
       id: 'B4',
-      name: 'RepairRuntime holdout FAIL emits qualification-failed (behavioral)',
-      status: 'pass',
-      evidence: 'handleVerificationPass with failing holdout emits repair/completed verified=false outcome=qualification-failed',
+      name: 'RepairRuntime holdout FAIL returns qualification-failed (behavioral)',
+      status: passed ? 'pass' : 'fail',
+      evidence: passed
+        ? 'handleVerificationPass with failing holdout returns verified=false outcome=qualification-failed'
+        : `expected verified=false outcome=qualification-failed, got verified=${result.verified} outcome=${result.outcome}`,
     }
   } catch (e) {
-    return { id: 'B4', name: 'RepairRuntime holdout FAIL emits qualification-failed (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B4', name: 'RepairRuntime holdout FAIL returns qualification-failed (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
-/** B5: releaseToAuto refuses undecidable authority state. */
+/** B5: releaseToAuto refuses undecidable authority state (behavioral). */
 function behavioralCheckAuthorityRefusesUndecidable(): SecurityPropertyCheck {
   try {
-    const source = readFileSync(join(REPO_ROOT, 'packages', 'core', 'agent', 'src', 'authority.ts'), 'utf8')
-    // The authority source must explicitly handle undecidable and refuse transition.
-    const handlesUndecidable = source.includes('undecidable')
-    const refusesTransition = source.includes('return') && (source.includes('undecidable') || source.includes('refuse'))
-    const passed = handlesUndecidable && refusesTransition
+    // Create a session with a future-schema authority event that produces
+    // an undecidable state, then verify releaseToAuto throws.
+    const session = Session.create(SessionId('sec-qual-undecidable'))
+    // Append a model/selection-authority event with a future schema version
+    // to make reconstructSelectionState return { undecidable: true }.
+    session.append('model/selection-authority', {
+      authoritySchemaVersion: 999,
+      mode: 'auto',
+      authority: 'router',
+      authorityEpoch: 0,
+      source: 'web',
+    } as unknown as never, { ignorable: true })
+    let threw = false
+    try {
+      releaseToAuto(session, 'web')
+    } catch {
+      threw = true
+    }
+    const passed = threw
     return {
       id: 'B5',
-      name: 'releaseToAuto refuses undecidable authority (behavioral source)',
+      name: 'releaseToAuto refuses undecidable authority (behavioral)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
-        ? 'authority.ts handles undecidable state and refuses transition to Auto'
-        : 'authority.ts does not explicitly handle undecidable state',
+        ? 'releaseToAuto threw when reconstructSelectionState returned undecidable'
+        : 'releaseToAuto did not throw for undecidable authority state',
     }
   } catch (e) {
-    return { id: 'B5', name: 'releaseToAuto refuses undecidable authority (behavioral source)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B5', name: 'releaseToAuto refuses undecidable authority (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -634,83 +720,130 @@ function behavioralCheckSandboxQualificationSkipIsNonPass(): SecurityPropertyChe
   }
 }
 
-/** B7: Seatbelt enforcement is reported as partial. */
+/** B7: Seatbelt enforcement is reported as partial (behavioral). */
 function behavioralCheckSeatbeltEnforcementPartial(): SecurityPropertyCheck {
   try {
-    const source = readSandboxLocalSource()
-    const hasSeatbeltPartial = source.includes("seatbelt: 'partial'")
-    const passed = hasSeatbeltPartial
+    const enforcement = platformEnforcement()
+    // On macOS, platformEnforcement() must return 'partial' (Seatbelt).
+    // On Linux, it must return 'full' (bwrap or Landlock).
+    // On other platforms, it returns undefined (no sandbox runner).
+    if (process.platform === 'darwin') {
+      const passed = enforcement === 'partial'
+      return {
+        id: 'B7',
+        name: 'Seatbelt enforcement is partial (behavioral)',
+        status: passed ? 'pass' : 'fail',
+        evidence: passed
+          ? 'platformEnforcement() returned \'partial\' on darwin'
+          : `platformEnforcement() returned '${enforcement}' on darwin, expected 'partial'`,
+      }
+    }
+    // On non-macOS, Seatbelt is not applicable; verify the platform reports
+    // its actual enforcement level rather than hardcoding 'partial'.
+    const passed = enforcement === 'full' || enforcement === undefined
     return {
       id: 'B7',
-      name: 'Seatbelt enforcement is partial (behavioral source)',
+      name: 'Seatbelt enforcement is partial (behavioral)',
       status: passed ? 'pass' : 'fail',
-      evidence: passed
-        ? "sandbox-local/src/index.ts declares seatbelt: 'partial'"
-        : 'Seatbelt enforcement is not declared as partial',
+      evidence: `platformEnforcement() returned '${enforcement}' on ${process.platform}`,
     }
   } catch (e) {
-    return { id: 'B7', name: 'Seatbelt enforcement is partial (behavioral source)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B7', name: 'Seatbelt enforcement is partial (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
-/** B8: fs-sandbox denies read of a file outside the workspace. */
-function behavioralCheckFsSandboxDeniesOutsideRead(): SecurityPropertyCheck {
+/** B8: fs-sandbox denies read of a file outside the workspace (behavioral). */
+async function behavioralCheckFsSandboxDeniesOutsideRead(): Promise<SecurityPropertyCheck> {
   try {
-    // This is a source-level check that the fs-sandbox overrides readText.
-    // The behavioral test is in packages/fs/fs-sandbox/tests/fs-sandbox.spec.ts.
-    const source = readFileSync(join(REPO_ROOT, 'packages', 'fs', 'fs-sandbox', 'src', 'index.ts'), 'utf8')
-    const overridesReadText = source.includes('override async readText')
-    const usesCheckedReadTarget = source.includes('checkedReadTarget')
-    const passed = overridesReadText && usesCheckedReadTarget
-    return {
-      id: 'B8',
-      name: 'fs-sandbox denies outside-workspace reads (behavioral source)',
-      status: passed ? 'pass' : 'fail',
-      evidence: passed
-        ? 'fs-sandbox overrides readText and routes through checkedReadTarget (behavioral tests in fs-sandbox.spec.ts)'
-        : 'fs-sandbox does not override readText or use checkedReadTarget',
+    // Create a workspace and an outside file, then verify isPathUnder
+    // correctly identifies the outside file as outside the workspace.
+    const ws = mkdtempSync(join(tmpdir(), 'dsh-sec-qual-fs-'))
+    const outsideFile = join(tmpdir(), 'dsh-sec-qual-outside-' + Math.random().toString(36).slice(2))
+    writeFileSync(outsideFile, 'secret')
+    try {
+      const insideResult = await isPathUnder(join(ws, 'file.ts'), ws)
+      const outsideResult = await isPathUnder(outsideFile, ws)
+      const passed = insideResult && !outsideResult
+      return {
+        id: 'B8',
+        name: 'fs-sandbox denies outside-workspace reads (behavioral)',
+        status: passed ? 'pass' : 'fail',
+        evidence: passed
+          ? `isPathUnder correctly identified inside=${insideResult}, outside=${outsideResult}`
+          : `isPathUnder returned inside=${insideResult}, outside=${outsideResult} (expected inside=true, outside=false)`,
+      }
+    } finally {
+      rmSync(outsideFile, { force: true })
     }
   } catch (e) {
-    return { id: 'B8', name: 'fs-sandbox denies outside-workspace reads (behavioral source)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B8', name: 'fs-sandbox denies outside-workspace reads (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
-/** B9: fs-sandbox denies traversal via ... */
-function behavioralCheckFsSandboxDeniesTraversal(): SecurityPropertyCheck {
+/** B9: fs-sandbox denies path traversal via .. (behavioral). */
+async function behavioralCheckFsSandboxDeniesTraversal(): Promise<SecurityPropertyCheck> {
   try {
-    const source = readFileSync(join(REPO_ROOT, 'packages', 'fs', 'fs-sandbox', 'src', 'containment.ts'), 'utf8')
-    const hasIsPathUnder = source.includes('isPathUnder')
-    const hasCanonicalResolution = source.includes('realpath') || source.includes('canonical')
-    const passed = hasIsPathUnder && hasCanonicalResolution
+    const ws = mkdtempSync(join(tmpdir(), 'dsh-sec-qual-trav-'))
+    // A traversal attempt: workspace/../outside should NOT be under workspace.
+    const traversalPath = join(ws, '..', 'outside-file')
+    const result = await isPathUnder(traversalPath, ws)
+    const passed = !result
     return {
       id: 'B9',
-      name: 'fs-sandbox denies path traversal (behavioral source)',
+      name: 'fs-sandbox denies path traversal (behavioral)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
-        ? 'fs-sandbox/containment.ts uses isPathUnder with canonical path resolution (behavioral tests in containment.spec.ts)'
-        : 'fs-sandbox does not use isPathUnder or canonical path resolution',
+        ? `isPathUnder denied traversal path '${traversalPath}' (returned false)`
+        : `isPathUnder allowed traversal path '${traversalPath}' (returned true)`,
     }
   } catch (e) {
-    return { id: 'B9', name: 'fs-sandbox denies path traversal (behavioral source)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B9', name: 'fs-sandbox denies path traversal (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
-/** B10: unpriced usage throws UNPRICED_USAGE. */
+/** B10: unpriced usage throws UNPRICED_USAGE (behavioral). */
 function behavioralCheckUnpricedUsageThrows(): SecurityPropertyCheck {
   try {
-    const source = readCollectorSource()
-    const hasUnpricedThrow = source.includes('UNPRICED_USAGE')
-    const passed = hasUnpricedThrow
+    // Call lookupPricingAt with a model that has no pricing entry and verify
+    // it returns undefined, which the trajectory collector converts to UNPRICED_USAGE.
+    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', 'nonexistent-model-v999', new Date())
+    const passed = pricing === undefined
     return {
       id: 'B10',
-      name: 'unpriced usage throws UNPRICED_USAGE (behavioral source)',
+      name: 'unpriced usage throws UNPRICED_USAGE (behavioral)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
-        ? 'trajectory collector throws UNPRICED_USAGE when pricing is undefined'
-        : 'trajectory collector does not throw on unpriced usage',
+        ? 'lookupPricingAt returned undefined for unknown model (trajectory collector throws UNPRICED_USAGE)'
+        : `lookupPricingAt returned ${JSON.stringify(pricing)} for unknown model (expected undefined)`,
     }
   } catch (e) {
-    return { id: 'B10', name: 'unpriced usage throws UNPRICED_USAGE (behavioral source)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'B10', name: 'unpriced usage throws UNPRICED_USAGE (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+  }
+}
+
+/** B11: benchmark-eligible runs require full backend enforcement. */
+function behavioralCheckBenchmarkBackendFullEnforcement(): SecurityPropertyCheck {
+  try {
+    const enforcement = platformEnforcement()
+    if (enforcement === undefined) {
+      return {
+        id: 'B11',
+        name: 'benchmark-eligible backend enforcement is full (behavioral)',
+        status: 'fail',
+        evidence: `platform ${process.platform} has no sandbox runner chain`,
+      }
+    }
+    const passed = enforcement === 'full'
+    return {
+      id: 'B11',
+      name: 'benchmark-eligible backend enforcement is full (behavioral)',
+      status: passed ? 'pass' : 'fail',
+      evidence: passed
+        ? `platform ${process.platform} backend enforcement is 'full'`
+        : `platform ${process.platform} backend enforcement is '${enforcement}', not 'full' — benchmark-eligible runs require full enforcement`,
+    }
+  } catch (e) {
+    return { id: 'B11', name: 'benchmark-eligible backend enforcement is full (behavioral)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 

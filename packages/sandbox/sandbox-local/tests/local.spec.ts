@@ -73,6 +73,24 @@ describe('profile dialects', () => {
     ])
   })
 
+  it('bwrap workspace-isolated: unshares pid AND net, mounts only essential system dirs + workspace', () => {
+    const WI: SandboxPolicy = { mode: 'workspace-isolated', workspaceRoot: '/ws' }
+    expect(bwrapProfileArgs(WI)).toEqual([
+      '--dev', '/dev',
+      '--proc', '/proc',
+      '--unshare-pid',
+      '--unshare-net',
+      '--die-with-parent',
+      '--ro-bind', '/usr', '/usr',
+      '--ro-bind', '/lib', '/lib',
+      '--ro-bind', '/lib64', '/lib64',
+      '--ro-bind', '/bin', '/bin',
+      '--ro-bind', '/etc', '/etc',
+      '--tmpfs', '/tmp',
+      '--bind', '/ws', '/ws',
+    ])
+  })
+
   it('landlock read-only: readable tree plus a writable /dev/null, nothing else', () => {
     // /dev/null specifically, NOT /dev: a whole-/dev grant would let confined
     // commands write real host paths beneath it (/dev/shm) under read-only.
@@ -103,6 +121,16 @@ describe('profile dialects', () => {
     const grant = `(subpath "${realpathSync(tmpdir())}")`
     expect(profile).toContain(grant)
     expect(profile.split(grant)).toHaveLength(2)
+  })
+
+  it('seatbelt workspace-isolated: denies network and writes, allows only workspace writes', () => {
+    const WI: SandboxPolicy = { mode: 'workspace-isolated', workspaceRoot: '/ws', protectedReadPaths: ['/secret'] }
+    const profile = seatbeltProfileArgs(WI)[1] as string
+    expect(profile).toContain('(deny network*)')
+    expect(profile).not.toContain('(allow network*)')
+    expect(profile).toContain('(deny file-write*)')
+    expect(profile).toContain('(allow file-write* (subpath "/ws"))')
+    expect(profile).toContain('(deny file-read* (subpath "/secret"))')
   })
 })
 
