@@ -132,11 +132,32 @@ describe('v019 composed runtime qualification', () => {
     expect(source).toContain('repair')
   })
 
+  it('includes composed-runtime scenario checks through the real plugin', () => {
+    expect(source).toContain('checkScenarioOneShotPass')
+    expect(source).toContain('checkScenarioHoldoutFail')
+    expect(source).toContain('checkScenarioPostMutationDenied')
+    expect(source).toContain('checkScenarioHoldoutDenied')
+    expect(source).toContain('verifyCompletion')
+    expect(source).toContain('registerAcceptanceVerifier')
+    expect(source).toContain('goals.create')
+  })
+
+  it('persists and reads the composed qualification artifact', () => {
+    expect(source).toContain('writeComposedQualificationRecord')
+    expect(source).toContain('readComposedQualificationRecord')
+  })
+
+  it('Batch A runner uses persisted freeze and composed qualification', () => {
+    expect(batchRunnerSource).toContain('readFreezeRecord')
+    expect(batchRunnerSource).toContain('writeFreezeRecord')
+    expect(batchRunnerSource).toContain('readComposedQualificationRecord')
+    expect(batchRunnerSource).toContain('writeComposedQualificationRecord')
+    expect(batchRunnerSource).toContain('getSourceCommit')
+  })
+
   it('Batch A runner enforces the composed-runtime qualification gate', () => {
     expect(batchRunnerSource).toContain('runComposedRuntimeQualification')
     expect(batchRunnerSource).toContain('COMPOSED_QUALIFICATION_ID')
-    expect(batchRunnerSource).toContain('composedRecord.ready')
-    expect(batchRunnerSource).toContain('composedRecord.passedCount')
   })
 
   it('Batch A runner exits with failure when composed qualification is not ready', () => {

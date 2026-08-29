@@ -164,6 +164,22 @@ export function writeFreezeRecord(record: SecureEvalFreezeRecord, artifactsDir: 
 }
 
 /**
+ * Read a persisted freeze record from the artifacts directory.
+ *
+ * @param artifactsDir - the artifacts directory path.
+ * @returns the persisted freeze record, or undefined if none exists.
+ */
+export function readFreezeRecord(artifactsDir: string): SecureEvalFreezeRecord | undefined {
+  const path = join(artifactsDir, 'evals', `${FREEZE_ID}.json`)
+  try {
+    const content = readFileSync(path, 'utf8')
+    return JSON.parse(content) as SecureEvalFreezeRecord
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Format the freeze record as a human-readable report.
  * @param record - the freeze record.
  * @returns formatted report string.

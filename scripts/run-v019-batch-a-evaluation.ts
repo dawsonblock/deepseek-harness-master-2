@@ -40,8 +40,8 @@ import {
   failureCategorySummary,
 } from './v019-failure-taxonomy.ts'
 import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
-import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID } from './v019-freeze-secure-eval.ts'
-import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification } from './v019-composed-runtime-qualification.ts'
+import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID, readFreezeRecord, writeFreezeRecord } from './v019-freeze-secure-eval.ts'
+import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord, readComposedQualificationRecord, getSourceCommit } from './v019-composed-runtime-qualification.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
@@ -102,43 +102,78 @@ async function main(): Promise<void> {
     process.stderr.write('\nCannot proceed to live evaluation. Fix the security qualification first.\n')
     process.exit(1)
   }
-  const freezeRecord = await generateFreezeRecord()
-  if (!freezeRecord.ready) {
-    process.stderr.write(`\nSECURE EVAL FREEZE NOT READY: ${FREEZE_ID}\n`)
-    if (!freezeRecord.backendFullEnforcement) {
-      process.stderr.write(`  Backend enforcement is '${freezeRecord.effectiveComposition.backendEnforcement}', not 'full'.\n`)
-      process.stderr.write('  Benchmark-eligible runs require full backend enforcement.\n')
-    }
-    process.stderr.write('Cannot proceed to live evaluation. Fix the freeze record first.\n')
-    process.exit(1)
-  }
-  process.stderr.write(`Security qualification: ${SECURITY_QUALIFICATION_ID} (${securityRecord.passedCount} properties passed)\n`)
-  process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (ready)\n`)
 
-  // Verify verifier-controlled files match the frozen hash.
+  // Check for a persisted freeze record. If one exists, validate the current
+  // source against it. If not, generate and persist a new one. The persisted
+  // record binds the evaluation to a previously qualified source state rather
+  // than a hash generated and immediately verified in the same process run.
+  const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
+  const persistedFreeze = readFreezeRecord(REPO_ROOT)
+  let freezeRecord
+  if (persistedFreeze !== undefined) {
+    // Validate current source against the persisted freeze hash
+    if (!verifyVerifierIntegrity(persistedFreeze.verifierIntegrityHash)) {
+      process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have changed since the persisted freeze.\n')
+      process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
+      process.exit(1)
+    }
+    freezeRecord = persistedFreeze
+    process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (persisted, verified against current source)\n`)
+  } else {
+    // No persisted freeze — generate, verify, and persist
+    freezeRecord = await generateFreezeRecord()
+    if (!freezeRecord.ready) {
+      process.stderr.write(`\nSECURE EVAL FREEZE NOT READY: ${FREEZE_ID}\n`)
+      if (!freezeRecord.backendFullEnforcement) {
+        process.stderr.write(`  Backend enforcement is '${freezeRecord.effectiveComposition.backendEnforcement}', not 'full'.\n`)
+        process.stderr.write('  Benchmark-eligible runs require full backend enforcement.\n')
+      }
+      process.stderr.write('Cannot proceed to live evaluation. Fix the freeze record first.\n')
+      process.exit(1)
+    }
+    writeFreezeRecord(freezeRecord, REPO_ROOT)
+    process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (newly generated and persisted)\n`)
+  }
+
+  // Verify verifier-controlled files match the freeze hash.
   if (!verifyVerifierIntegrity(freezeRecord.verifierIntegrityHash)) {
     process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have been modified since freeze.\n')
     process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
     process.exit(1)
   }
   process.stderr.write('Verifier integrity: verified\n')
+  process.stderr.write(`Security qualification: ${SECURITY_QUALIFICATION_ID} (${securityRecord.passedCount} properties passed)\n`)
 
   // Enforce the composed-runtime qualification gate. The exact Cordis
   // composition produced by the Batch A evaluator must boot, resolve the
   // expected services, and pass every runtime check before any paid
   // execution begins.
-  const composedRecord = await runComposedRuntimeQualification()
-  if (!composedRecord.ready) {
-    process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
-    for (const check of composedRecord.checks) {
-      if (check.status === 'fail') {
-        process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
-      }
+  const persistedComposed = readComposedQualificationRecord()
+  if (persistedComposed !== undefined && persistedComposed.sourceCommit === getSourceCommit()) {
+    // Persisted artifact matches current source — validate it
+    if (!persistedComposed.ready) {
+      process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED (persisted): ${COMPOSED_QUALIFICATION_ID}\n`)
+      process.stderr.write('Cannot proceed to live evaluation. Re-qualify.\n')
+      process.exit(1)
     }
-    process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
-    process.exit(1)
+    process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (persisted, ${persistedComposed.passedCount} checks passed)\n`)
+  } else {
+    // No persisted artifact or source mismatch — run qualification and persist
+    const composedRecord = await runComposedRuntimeQualification()
+    if (!composedRecord.ready) {
+      process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
+      for (const check of composedRecord.checks) {
+        if (check.status === 'fail') {
+          process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+        }
+      }
+      process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
+      process.exit(1)
+    }
+    writeComposedQualificationRecord(composedRecord)
+    process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed, persisted)\n`)
   }
-  process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed)\n\n`)
+  process.stderr.write('\n')
 
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
   const benchmarkEligible = true

@@ -52,7 +52,8 @@ The `ComposedQualificationRecord` artifact binds: `qualificationId`, `sourceComm
 
 ### Known limitations
 
-- The freeze record's `verifierIntegrityHash` is generated and verified in the same process run, so it proves "source did not change between two adjacent calls" rather than "source matches a previously qualified frozen state." A persisted freeze artifact loaded from a prior qualification run is planned.
+- The freeze record and composed qualification artifact are now persisted to `artifacts/evals/`. On subsequent Batch A runs, the persisted freeze record is loaded and the current source is validated against its `verifierIntegrityHash`, and the persisted composed qualification artifact is loaded and matched against the current source commit. This binds the evaluation to a previously qualified source state rather than a hash generated and immediately verified in the same process run.
+- Composed-runtime scenario checks (S1-S4) drive `verifyCompletion()` through the real GoalService and RepairRuntime plugin listener on the booted context's root agent, testing the full plugin→GoalService→completeVerified pipeline. S1 tests one-shot PASS→holdout PASS→goal complete. S2 tests diagnostic FAIL→repair evidence+decision. S3 tests post-verification `completeVerified` DENIED. S4 tests agent holdout access DENIED through the sandbox.
 - Landlock does not isolate networking. A Linux runtime that falls back from bwrap to Landlock has filesystem isolation but not network isolation. The probed backend check reports this as `partial` enforcement, but the benchmark gate should additionally require a network-denied backend.
 - Workspace-bound completion (GoalService comparing current workspace contents against the verified workspace) is not yet implemented in `completeVerified()`. The provenance hash is stored in the repair event but not checked at completion time. A follow-up source fix is planned.
 
