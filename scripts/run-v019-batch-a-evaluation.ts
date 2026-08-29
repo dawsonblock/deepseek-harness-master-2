@@ -41,6 +41,7 @@ import {
 } from './v019-failure-taxonomy.ts'
 import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
 import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID } from './v019-freeze-secure-eval.ts'
+import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification } from './v019-composed-runtime-qualification.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
@@ -120,7 +121,24 @@ async function main(): Promise<void> {
     process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
     process.exit(1)
   }
-  process.stderr.write('Verifier integrity: verified\n\n')
+  process.stderr.write('Verifier integrity: verified\n')
+
+  // Enforce the composed-runtime qualification gate. The exact Cordis
+  // composition produced by the Batch A evaluator must boot, resolve the
+  // expected services, and pass every runtime check before any paid
+  // execution begins.
+  const composedRecord = await runComposedRuntimeQualification()
+  if (!composedRecord.ready) {
+    process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
+    for (const check of composedRecord.checks) {
+      if (check.status === 'fail') {
+        process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+      }
+    }
+    process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
+    process.exit(1)
+  }
+  process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed)\n\n`)
 
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
   const benchmarkEligible = true

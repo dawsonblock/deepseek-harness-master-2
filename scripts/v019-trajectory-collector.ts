@@ -303,7 +303,7 @@ export function buildInfraFailureTrajectory(
   }
 }
 
-async function generateRepoConfig(model: string, workspace: string): Promise<string> {
+export async function generateRepoConfig(model: string, workspace: string): Promise<string> {
   const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
   let base = await readFile(basePath, 'utf8')
   base = base.replace(/model: deepseek-v4-flash/, `model: ${model}`)
