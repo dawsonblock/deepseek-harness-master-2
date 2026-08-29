@@ -1316,6 +1316,11 @@ export interface VerificationPassResult {
  * @param pricingRegistry - the pricing registry for cost lookup.
  * @param holdoutVerifier - optional holdout verifier.
  * @param goalId - required when holdoutVerifier is provided.
+ * @param workspaceProvenanceProvider - optional provenance provider; when
+ *   present, a provider error is fatal (fail-closed) so benchmark
+ *   qualification cannot silently omit the workspace hash.
+ * @param changedFiles - files changed in the passing turn, passed to the
+ *   provenance provider so the hash reflects the actual workspace state.
  * @returns the verification pass result for goal transition and repair/completed.
  */
 export async function handleVerificationPass(
@@ -1327,6 +1332,7 @@ export async function handleVerificationPass(
   holdoutVerifier?: HoldoutVerifier,
   goalId?: string,
   workspaceProvenanceProvider?: WorkspaceProvenanceProvider,
+  changedFiles: readonly string[] = [],
 ): Promise<VerificationPassResult> {
   // Account for the passing attempt's cost and output tokens from the durable model/usage event.
   // Fail closed on unpriced usage: unknown pricing must not silently become $0.
@@ -1372,17 +1378,14 @@ export async function handleVerificationPass(
 
   // Compute workspace hash at verification time when a provenance provider is
   // configured. The hash binds the workspace state to the verification result,
-  // so replay can detect post-verification tampering.
+  // so replay can detect post-verification tampering. Provenance failure is
+  // fatal: a benchmark-qualified run must not silently omit the workspace hash.
   let workspaceHash: string | undefined
   if (workspaceProvenanceProvider !== undefined) {
-    try {
-      workspaceHash = workspaceProvenanceProvider({
-        session,
-        changedFiles: [],
-      })
-    } catch {
-      // Provenance failure is non-fatal for completion; the hash is omitted.
-    }
+    workspaceHash = workspaceProvenanceProvider({
+      session,
+      changedFiles,
+    })
   }
 
   return {
@@ -1468,12 +1471,14 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
       if (data.passed) {
         const passState = state ?? stateFor(agent, goal)
         const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
+        const passChangedFiles = changedFilesInTurn(session.events, turn)
         void handleVerificationPass(
           session, passState, turn, routingDecisionId,
           DEFAULT_PRICING_REGISTRY,
           config.holdoutVerifier,
           goal.id,
           config.workspaceProvenanceProvider,
+          passChangedFiles,
         ).then((result) => {
           // Transition the goal while goal/verification PASS is still the
           // latest event. completeVerified() checks this freshness.

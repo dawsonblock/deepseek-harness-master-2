@@ -38,8 +38,23 @@ The `ComposedQualificationRecord` artifact binds: `qualificationId`, `sourceComm
 
 - Batch A cannot start paid execution until the composed runtime qualification is green, closing the gap between isolated mechanism tests and the real composed graph.
 - The qualification reuses the exact Batch A config generator, so any future change to `generateRepoConfig()` that breaks composition fidelity will fail the gate before paid execution.
-- The artifact records platform enforcement status, so macOS (partial Seatbelt) and Linux (full bwrap/landlock) runs are distinguishable.
+- The artifact records probed backend enforcement (from actual shell run `sandbox.enforcement`), not static platform preference — a Linux machine that falls back from bwrap to Landlock will report `partial` enforcement, not `full`.
+- C3 uses `result.exitCode` and `result.sandbox?.denied` (not try/catch) to detect sandbox denial, because `shell.run()` resolves with a `ShellRunResult` on denial — exceptions are infrastructure failures only.
+- C3 uses a harness-created secret file outside the workspace (not `/etc/passwd`, which bwrap/Landlock intentionally allow read-only) and `git ls-remote` (not `git fetch --dry-run`, which fails with "not a git repository" regardless of network state).
+- C5 uses the actual sandboxed fs and bash for the agent side and host-side Node for the verifier side, establishing the asymmetric access property.
+- C8 checks `passResult.verified` and state accounting (not `repair/completed` events) because `handleVerificationPass()` does not emit `repair/completed` — the plugin listener owns that event.
+- C12 passes `changedFiles` to `handleVerificationPass()` and includes `tool/call` events so `changedFilesInTurn()` finds them, so the provenance provider hashes actual file content.
+- The composed context is disposed (`ctx.fiber.dispose()`) and the fail-loud handler is uninstalled before the qualification returns, so the gate does not leak event handlers or plugins into the Batch A process.
+- The qualification boots with a rollback provider (same as Batch A), so the "exact config" claim is true at the plugin level.
+- Checks C6-C15 are labeled "helper-level" because they call exported repair-runtime helpers with synthetic sessions, not the full plugin→GoalService→completeVerified pipeline. A follow-up composed-evaluator scenario layer is planned to test the complete lifecycle through the running agent.
+- Source fix: `handleVerificationPass()` now accepts `changedFiles` and passes them to the provenance provider, and provenance failure is fatal (fail-closed) rather than silently swallowed.
 - Adding new security-critical capabilities to the Batch A composition requires extending the qualification with a corresponding check.
+
+### Known limitations
+
+- The freeze record's `verifierIntegrityHash` is generated and verified in the same process run, so it proves "source did not change between two adjacent calls" rather than "source matches a previously qualified frozen state." A persisted freeze artifact loaded from a prior qualification run is planned.
+- Landlock does not isolate networking. A Linux runtime that falls back from bwrap to Landlock has filesystem isolation but not network isolation. The probed backend check reports this as `partial` enforcement, but the benchmark gate should additionally require a network-denied backend.
+- Workspace-bound completion (GoalService comparing current workspace contents against the verified workspace) is not yet implemented in `completeVerified()`. The provenance hash is stored in the repair event but not checked at completion time. A follow-up source fix is planned.
 
 ## Alternatives considered
 

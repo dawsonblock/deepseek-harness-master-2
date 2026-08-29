@@ -71,10 +71,10 @@ describe('v019 composed runtime qualification', () => {
     expect(source).toContain('shell.run')
   })
 
-  it('tests network denial through DNS, HTTP, and git fetch', () => {
+  it('tests network denial through DNS, HTTP, and git ls-remote', () => {
     expect(source).toContain('nslookup')
     expect(source).toContain('curl')
-    expect(source).toContain('git fetch')
+    expect(source).toContain('git ls-remote')
   })
 
   it('verifies model workspace has no Git history', () => {
@@ -84,7 +84,8 @@ describe('v019 composed runtime qualification', () => {
 
   it('verifies holdout secrecy from both tool planes', () => {
     expect(source).toContain('holdout')
-    expect(source).toContain('findCanSeeHoldout')
+    expect(source).toContain('agentFsReadDenied')
+    expect(source).toContain('agentBashReadDenied')
     expect(source).toContain('verifierCanRead')
   })
 
@@ -164,7 +165,7 @@ describe('v019 composed runtime qualification', () => {
       failedCount: 0,
       skipCount: 0,
       passed: true,
-      backend: { enforcement: 'full', networkDenied: true },
+      backend: { enforcement: 'full', networkDenied: true, probed: true },
       filesystem: { modelReadFence: true, modelWriteFence: true },
       holdout: { modelReadable: false },
       repair: { productionRuntime: true, rollbackRequired: true, provenanceRequired: true },

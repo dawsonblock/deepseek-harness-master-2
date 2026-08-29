@@ -8,14 +8,26 @@
  * this gate proves the mechanisms survive dependency injection, config
  * resolution, plugin ordering, and service registration.
  *
- * Checks:
+ * Checks are split into two levels:
  *
+ * Composed-runtime checks (C1-C5): boot the actual Cordis context, resolve
+ * the real services, and exercise the actual sandboxed fs/bash stack.
+ *
+ * Helper-level checks (C6-C15): call the exported repair-runtime helpers
+ * with synthetic sessions to verify the lifecycle, accounting, authority,
+ * sanitization, and reconstruction contracts. These do NOT exercise the
+ * full plugin→GoalService→completeVerified pipeline — that requires a
+ * separate composed-evaluator scenario layer (planned for a follow-up).
+ *
+ * Composed-runtime:
  * C1:  Effective composition identity (fs-sandbox, bash-sandbox, workspace-isolated, RepairRuntime)
  * C2:  File-tool isolation through the actual tool stack (read/write/traversal)
  * C3:  Bash isolation through the actual Bash tool (workspace, external, network)
  * C4:  Model workspace contains no Git history
- * C5:  Holdout secrecy (agent cannot read, verifier can read)
- * C6:  One-shot lifecycle (PASS→holdout PASS, terminal exactly once)
+ * C5:  Holdout secrecy (agent cannot read via sandbox, verifier can read)
+ *
+ * Helper-level:
+ * C6:  One-shot lifecycle (PASS→holdout PASS)
  * C7:  One-shot holdout failure (qualification-failed, no repair)
  * C8:  Repair success with rollback between attempts
  * C9:  Pro escalation with real routing decision IDs
@@ -75,7 +87,7 @@ export interface ComposedQualificationRecord {
   readonly failedCount: number
   readonly skipCount: number
   readonly passed: boolean
-  readonly backend: { enforcement: string; networkDenied: boolean }
+  readonly backend: { enforcement: string; networkDenied: boolean; probed: boolean }
   readonly filesystem: { modelReadFence: boolean; modelWriteFence: boolean }
   readonly holdout: { modelReadable: boolean }
   readonly repair: { productionRuntime: boolean; rollbackRequired: boolean; provenanceRequired: boolean }
@@ -232,11 +244,14 @@ function defaultDeps(overrides: Partial<RepairHandlerDeps> = {}): RepairHandlerD
   }
 }
 
-/** Boot the composed runtime with the exact Batch A config. */
-async function bootComposedRuntime(workspace: string): Promise<Context> {
+/** Boot the composed runtime with the exact Batch A config, including rollback. */
+async function bootComposedRuntime(
+  workspace: string,
+  snapshotDir: string,
+): Promise<{ ctx: Context; uninstall: () => void }> {
   const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
   loadEnv('v019-composed-qual')
-  installFailLoud('v019-composed-qual')
+  const uninstall = installFailLoud('v019-composed-qual')
 
   const ctx = await boot('v019-composed-qual', resolveConfigPath(configPath, undefined))
 
@@ -249,10 +264,11 @@ async function bootComposedRuntime(workspace: string): Promise<Context> {
     maxTotalAttempts: 5,
     holdoutVerifier: createPassingHoldoutVerifier(),
     workspaceProvenanceProvider: createProvenanceProvider(workspace),
+    rollbackProvider: createRollbackProvider(workspace, snapshotDir),
   }
   await ctx.plugin(repairRuntimePlugin, repairConfig)
 
-  return ctx
+  return { ctx, uninstall }
 }
 
 // ---------------------------------------------------------------------------
@@ -426,64 +442,72 @@ async function checkBashIsolation(ctx: Context, workspace: string): Promise<Comp
 
     const policy = sandboxPolicy.resolve()
 
-    // Workspace read — should PASS
-    let workspaceReadOk = false
-    try {
-      const spec = shell.resolve({ command: 'cat src.ts', workdir: workspace, sandboxPolicy: policy })
-      const result = await shell.run(spec)
-      workspaceReadOk = result.exitCode === 0
-    } catch {
-      workspaceReadOk = false
-    }
+    // Create a harness-owned secret file outside the workspace to test
+    // sandbox denial. /etc/passwd is intentionally allowed by bwrap/Landlock
+    // (read-only system dirs), so it is the wrong forbidden-path test.
+    const secretDir = mkdtempSync(join(tmpdir(), 'dsh-qual-secret-'))
+    const secretFile = join(secretDir, 'verifier-secret.txt')
+    writeFileSync(secretFile, 'SECRET-CONTENT-THAT-MUST-NOT-LEAK')
 
-    // External sensitive path read — should DENY
-    let externalReadDenied = false
     try {
-      const spec = shell.resolve({ command: 'cat /etc/passwd', workdir: workspace, sandboxPolicy: policy })
-      await shell.run(spec)
-      externalReadDenied = false
-    } catch {
-      externalReadDenied = true
-    }
+      // Workspace read — should PASS (exitCode 0)
+      let workspaceReadOk = false
+      {
+        const spec = shell.resolve({ command: 'cat src.ts', workdir: workspace, sandboxPolicy: policy })
+        const result = await shell.run(spec)
+        workspaceReadOk = result.exitCode === 0
+      }
 
-    // Network: DNS lookup — should DENY
-    let dnsDenied = false
-    try {
-      const spec = shell.resolve({ command: 'nslookup example.com 2>&1 || dig example.com 2>&1 || host example.com 2>&1', workdir: workspace, sandboxPolicy: policy })
-      await shell.run(spec)
-      dnsDenied = false
-    } catch {
-      dnsDenied = true
-    }
+      // External secret read — should DENY. shell.run resolves (not rejects)
+      // on sandbox denial; check exitCode and sandbox.denied.
+      let externalReadDenied = false
+      {
+        const spec = shell.resolve({ command: `cat "${secretFile}"`, workdir: workspace, sandboxPolicy: policy })
+        const result = await shell.run(spec)
+        externalReadDenied = (result.exitCode !== 0 && result.exitCode !== null)
+          || result.sandbox?.denied === true
+      }
 
-    // Network: HTTP connection — should DENY
-    let httpDenied = false
-    try {
-      const spec = shell.resolve({ command: 'curl -s --connect-timeout 5 http://example.com > /dev/null 2>&1', workdir: workspace, sandboxPolicy: policy })
-      await shell.run(spec)
-      httpDenied = false
-    } catch {
-      httpDenied = true
-    }
+      // Network: DNS lookup — should DENY (nonzero exit or sandbox denied)
+      let dnsDenied = false
+      {
+        const spec = shell.resolve({ command: 'nslookup example.com 2>&1 || dig example.com 2>&1 || host example.com 2>&1', workdir: workspace, sandboxPolicy: policy })
+        const result = await shell.run(spec)
+        dnsDenied = (result.exitCode !== 0 && result.exitCode !== null)
+          || result.sandbox?.denied === true
+      }
 
-    // Network: git fetch — should DENY
-    let gitFetchDenied = false
-    try {
-      const spec = shell.resolve({ command: 'git fetch --dry-run 2>&1', workdir: workspace, sandboxPolicy: policy })
-      await shell.run(spec)
-      gitFetchDenied = false
-    } catch {
-      gitFetchDenied = true
-    }
+      // Network: HTTP connection — should DENY
+      let httpDenied = false
+      {
+        const spec = shell.resolve({ command: 'curl -s --connect-timeout 5 http://example.com > /dev/null 2>&1', workdir: workspace, sandboxPolicy: policy })
+        const result = await shell.run(spec)
+        httpDenied = (result.exitCode !== 0 && result.exitCode !== null)
+          || result.sandbox?.denied === true
+      }
 
-    const passed = workspaceReadOk && externalReadDenied && dnsDenied && httpDenied && gitFetchDenied
-    return {
-      id: 'C3',
-      name: 'Bash isolation through actual Bash tool',
-      status: passed ? 'pass' : 'fail',
-      evidence: passed
-        ? 'workspace read=PASS, external read=DENY, DNS=DENY, HTTP=DENY, git fetch=DENY'
-        : `workspaceReadOk=${workspaceReadOk}, externalReadDenied=${externalReadDenied}, dnsDenied=${dnsDenied}, httpDenied=${httpDenied}, gitFetchDenied=${gitFetchDenied}`,
+      // Network: git ls-remote — should DENY. Using ls-remote instead of
+      // fetch --dry-run because the workspace has no .git, so fetch fails
+      // with "not a git repository" regardless of network state.
+      let gitRemoteDenied = false
+      {
+        const spec = shell.resolve({ command: 'git ls-remote https://github.com/octocat/Hello-World.git HEAD 2>&1', workdir: workspace, sandboxPolicy: policy })
+        const result = await shell.run(spec)
+        gitRemoteDenied = (result.exitCode !== 0 && result.exitCode !== null)
+          || result.sandbox?.denied === true
+      }
+
+      const passed = workspaceReadOk && externalReadDenied && dnsDenied && httpDenied && gitRemoteDenied
+      return {
+        id: 'C3',
+        name: 'Bash isolation through actual Bash tool',
+        status: passed ? 'pass' : 'fail',
+        evidence: passed
+          ? 'workspace read=PASS, external read=DENY, DNS=DENY, HTTP=DENY, git ls-remote=DENY'
+          : `workspaceReadOk=${workspaceReadOk}, externalReadDenied=${externalReadDenied}, dnsDenied=${dnsDenied}, httpDenied=${httpDenied}, gitRemoteDenied=${gitRemoteDenied}`,
+      }
+    } finally {
+      rmSync(secretDir, { recursive: true, force: true })
     }
   } catch (e) {
     return { id: 'C3', name: 'Bash isolation through actual Bash tool', status: 'fail', evidence: `check error: ${(e as Error).message}` }
@@ -525,29 +549,52 @@ function checkNoGitHistory(workspace: string): ComposedCheck {
 // C5: Holdout secrecy
 // ---------------------------------------------------------------------------
 
-function checkHoldoutSecrecy(workspace: string, holdoutDir: string): ComposedCheck {
+async function checkHoldoutSecrecy(ctx: Context, workspace: string, holdoutDir: string): Promise<ComposedCheck> {
   try {
     const holdoutFile = join(holdoutDir, 'secret.holdout.test.ts')
 
-    // Can the workspace see the holdout via find?
-    let findCanSeeHoldout = false
-    try {
-      const result = execSync(`find "${workspace}" -name "*.holdout.test.ts" 2>&1`, { encoding: 'utf8', timeout: 5000 })
-      findCanSeeHoldout = result.trim().length > 0
-    } catch {
-      findCanSeeHoldout = false
+    // Agent side: use the actual sandboxed fs and bash to try to read the
+    // holdout. The previous implementation used host-side readFileSync for
+    // both agent and verifier, making the check logically impossible to pass.
+    const fs = ctx.get('fs')
+    const shell = ctx.get('shell')
+    const sandboxPolicy = ctx.get('sandboxPolicy')
+
+    // Agent fs-sandbox read of holdout — should DENY
+    let agentFsReadDenied = false
+    if (fs !== undefined) {
+      const sandboxFs = fs as unknown as { readText: (target: string, signal?: AbortSignal, policy?: unknown) => Promise<string> }
+      try {
+        await sandboxFs.readText(holdoutFile, undefined, sandboxPolicy?.resolve())
+        agentFsReadDenied = false
+      } catch {
+        agentFsReadDenied = true
+      }
     }
 
-    // Can the workspace read the holdout directly?
-    let canReadHoldout = false
-    try {
-      readFileSync(holdoutFile)
-      canReadHoldout = true
-    } catch {
-      canReadHoldout = false
+    // Agent bash read of holdout — should DENY
+    let agentBashReadDenied = false
+    if (shell !== undefined && sandboxPolicy !== undefined) {
+      const policy = sandboxPolicy.resolve()
+      const spec = shell.resolve({ command: `cat "${holdoutFile}"`, workdir: workspace, sandboxPolicy: policy })
+      const result = await shell.run(spec)
+      agentBashReadDenied = (result.exitCode !== 0 && result.exitCode !== null)
+        || result.sandbox?.denied === true
     }
 
-    // Can the verifier (host-side) read the holdout?
+    // Agent bash find of holdout — should not discover it
+    let agentFindDenied = true
+    if (shell !== undefined && sandboxPolicy !== undefined) {
+      const policy = sandboxPolicy.resolve()
+      const spec = shell.resolve({ command: `find "${holdoutDir}" -name "*.holdout.test.ts" 2>&1`, workdir: workspace, sandboxPolicy: policy })
+      const result = await shell.run(spec)
+      const stdout = typeof result.stdout === 'string' ? result.stdout : ''
+      agentFindDenied = (result.exitCode !== 0 && result.exitCode !== null)
+        || result.sandbox?.denied === true
+        || !stdout.includes('.holdout.test.ts')
+    }
+
+    // Verifier side: host-side Node can read the holdout
     let verifierCanRead = false
     try {
       const content = readFileSync(holdoutFile, 'utf8')
@@ -556,14 +603,14 @@ function checkHoldoutSecrecy(workspace: string, holdoutDir: string): ComposedChe
       verifierCanRead = false
     }
 
-    const passed = !findCanSeeHoldout && !canReadHoldout && verifierCanRead
+    const passed = agentFsReadDenied && agentBashReadDenied && agentFindDenied && verifierCanRead
     return {
       id: 'C5',
       name: 'Holdout secrecy (agent cannot read, verifier can read)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
-        ? 'agent cannot find or read holdout, verifier can read holdout'
-        : `findCanSeeHoldout=${findCanSeeHoldout}, canReadHoldout=${canReadHoldout}, verifierCanRead=${verifierCanRead}`,
+        ? 'agent fs=DENY, agent bash=DENY, agent find=DENY, verifier=PASS'
+        : `agentFsReadDenied=${agentFsReadDenied}, agentBashReadDenied=${agentBashReadDenied}, agentFindDenied=${agentFindDenied}, verifierCanRead=${verifierCanRead}`,
     }
   } catch (e) {
     return { id: 'C5', name: 'Holdout secrecy', status: 'fail', evidence: `check error: ${(e as Error).message}` }
@@ -602,14 +649,14 @@ async function checkOneShotPassLifecycle(): Promise<ComposedCheck> {
 
     return {
       id: 'C6',
-      name: 'One-shot lifecycle (PASS→holdout PASS)',
+      name: 'One-shot lifecycle (PASS→holdout PASS, helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'verified=true, outcome=verified, totalAttempts=1, flashAttempts=1, proAttempts=0'
         : `verified=${result.verified}, outcome=${result.outcome}, totalAttempts=${totalAttempts}, flashAttempts=${flashAttempts}, proAttempts=${proAttempts}`,
     }
   } catch (e) {
-    return { id: 'C6', name: 'One-shot lifecycle (PASS→holdout PASS)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C6', name: 'One-shot lifecycle (PASS→holdout PASS, helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -644,14 +691,14 @@ async function checkOneShotHoldoutFailure(): Promise<ComposedCheck> {
 
     return {
       id: 'C7',
-      name: 'One-shot holdout failure (qualification-failed, no repair)',
+      name: 'One-shot holdout failure (qualification-failed, no repair, helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'verified=false, outcome=qualification-failed, repair/evidence=0, repair/decision=0, model/escalation=0'
         : `verified=${result.verified}, outcome=${result.outcome}, evidence=${evidenceEvents.length}, decision=${decisionEvents.length}, escalation=${escalationEvents.length}`,
     }
   } catch (e) {
-    return { id: 'C7', name: 'One-shot holdout failure', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C7', name: 'One-shot holdout failure (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -689,23 +736,24 @@ async function checkRepairSuccessWithRollback(workspace: string, snapshotDir: st
 
     const flashRequests = state.flashAttempts
     const totalAttempts = state.attempts.length
-    const completedEvents = findEvents(session.events, 'repair/completed')
-    const lastCompleted = completedEvents.at(-1)
-    const lastCompletedData = lastCompleted !== undefined ? eventData(lastCompleted) : undefined
 
+    // handleVerificationPass does NOT emit repair/completed — the plugin
+    // listener owns that event, appending it after completeVerified().
+    // This check verifies the helper-level contract: rollback occurred,
+    // state accounting is correct, and the pass result is verified.
     const passed = rollbackSuccess
       && flashRequests === 2
       && totalAttempts === 2
       && passResult.verified
-      && lastCompletedData?.verified === true
+      && passResult.outcome === 'verified'
 
     return {
       id: 'C8',
-      name: 'Repair success with rollback between attempts',
+      name: 'Repair success with rollback between attempts (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
-        ? 'rollback=1(success), flashRequests=2, totalAttempts=2, verified=true'
-        : `rollbackSuccess=${rollbackSuccess}, flashRequests=${flashRequests}, totalAttempts=${totalAttempts}, verified=${passResult.verified}`,
+        ? 'rollback=1(success), flashRequests=2, totalAttempts=2, verified=true, outcome=verified'
+        : `rollbackSuccess=${rollbackSuccess}, flashRequests=${flashRequests}, totalAttempts=${totalAttempts}, verified=${passResult.verified}, outcome=${passResult.outcome}`,
     }
   } catch (e) {
     return { id: 'C8', name: 'Repair success with rollback', status: 'fail', evidence: `check error: ${(e as Error).message}` }
@@ -738,14 +786,14 @@ function checkProEscalation(): ComposedCheck {
 
     return {
       id: 'C9',
-      name: 'Pro escalation with real routing decision IDs',
+      name: 'Pro escalation with real routing decision IDs (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'pro-escalate decision present, flashAttempts=2'
         : `proEscalateDecision=${proEscalateDecision !== undefined}, flashAttempts=${state.flashAttempts}`,
     }
   } catch (e) {
-    return { id: 'C9', name: 'Pro escalation with real routing decision IDs', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C9', name: 'Pro escalation with real routing decision IDs (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -783,14 +831,14 @@ function checkRollbackFailureStopsRepair(): ComposedCheck {
 
     return {
       id: 'C10',
-      name: 'Rollback failure stops repair, no subsequent provider call',
+      name: 'Rollback failure stops repair, no subsequent provider call (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'action=stop, reason=rollback-failed, rollback success=false, outcome=rollback-failed, no routing after'
         : `action=${result.action}, reason=${result.reason}, rollbackSuccess=${String(rollbackData?.success)}, outcome=${typeof lastCompletedData?.outcome === 'string' ? lastCompletedData.outcome : 'none'}, routingAfter=${routingAfterCompleted.length}`,
     }
   } catch (e) {
-    return { id: 'C10', name: 'Rollback failure stops repair', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C10', name: 'Rollback failure stops repair (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -822,14 +870,14 @@ function checkAuthorityAmbiguity(): ComposedCheck {
     const passed = releaseThrew
     return {
       id: 'C11',
-      name: 'Authority ambiguity denies model transition',
+      name: 'Authority ambiguity denies model transition (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'releaseToAuto threw on undecidable authority state'
         : 'releaseToAuto did not throw on undecidable authority state',
     }
   } catch (e) {
-    return { id: 'C11', name: 'Authority ambiguity denies model transition', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C11', name: 'Authority ambiguity denies model transition (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -843,8 +891,16 @@ async function checkWorkspaceBoundVerification(workspace: string): Promise<Compo
     const provenanceProvider = createProvenanceProvider(workspace)
     const state = freshState('repair:qual:workspace-bound')
 
+    // Set up turn 1 with a tool/call event so changedFilesInTurn finds
+    // the file. The provenance provider hashes the changed file content,
+    // so the hash reflects the actual workspace state.
     setupTurn(session, 1, FLASH_MODEL, 'rd-qual-ws-bound')
     appendUsage(session, 1, FLASH_MODEL, 50, 'rd-qual-ws-bound')
+    session.append('tool/call', {
+      turn: 1,
+      name: 'write_file',
+      arguments: JSON.stringify({ file_path: 'src.ts' }),
+    } as never, { ignorable: true })
 
     const result = await handleVerificationPass(
       session, state, 1, 'rd-qual-ws-bound',
@@ -852,15 +908,22 @@ async function checkWorkspaceBoundVerification(workspace: string): Promise<Compo
       createPassingHoldoutVerifier(),
       'goal-qual-ws-bound',
       provenanceProvider,
+      ['src.ts'],
     )
 
-    const hasHash = result.workspaceHash !== undefined
+    const hasHash = result.workspaceHash !== undefined && result.workspaceHash !== 'empty'
 
     // Mutate the workspace
     writeFileSync(join(workspace, 'src.ts'), 'export const MUTATED = true\n')
 
+    // Set up turn 2 with the same file changed
     setupTurn(session, 2, FLASH_MODEL, 'rd-qual-ws-bound-2')
     appendUsage(session, 2, FLASH_MODEL, 50, 'rd-qual-ws-bound-2')
+    session.append('tool/call', {
+      turn: 2,
+      name: 'write_file',
+      arguments: JSON.stringify({ file_path: 'src.ts' }),
+    } as never, { ignorable: true })
 
     const mutatedResult = await handleVerificationPass(
       session, state, 2, 'rd-qual-ws-bound-2',
@@ -868,6 +931,7 @@ async function checkWorkspaceBoundVerification(workspace: string): Promise<Compo
       createPassingHoldoutVerifier(),
       'goal-qual-ws-bound',
       provenanceProvider,
+      ['src.ts'],
     )
 
     const hashChanged = result.workspaceHash !== mutatedResult.workspaceHash
@@ -878,11 +942,11 @@ async function checkWorkspaceBoundVerification(workspace: string): Promise<Compo
     const passed = hasHash && hashChanged
     return {
       id: 'C12',
-      name: 'Workspace-bound verification (mutation changes hash)',
+      name: 'Workspace-bound verification (mutation changes hash, helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? `workspaceHash present and changes on mutation (H1=${(result.workspaceHash ?? '').slice(0, 12)}..., H2=${(mutatedResult.workspaceHash ?? '').slice(0, 12)}...)`
-        : `hasHash=${hasHash}, hashChanged=${hashChanged}`,
+        : `hasHash=${hasHash}, hashChanged=${hashChanged}, H1=${result.workspaceHash ?? 'undefined'}, H2=${mutatedResult.workspaceHash ?? 'undefined'}`,
     }
   } catch (e) {
     return { id: 'C12', name: 'Workspace-bound verification', status: 'fail', evidence: `check error: ${(e as Error).message}` }
@@ -926,14 +990,14 @@ function checkLedgerSecretSanitization(): ComposedCheck {
     const passed = foundSecrets.length === 0
     return {
       id: 'C13',
-      name: 'Ledger secret sanitization (scan durable events for raw secrets)',
+      name: 'Ledger secret sanitization (scan durable events for raw secrets, helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'no raw secrets found in durable session events'
         : `raw secrets found in events: ${foundSecrets.join(', ')}`,
     }
   } catch (e) {
-    return { id: 'C13', name: 'Ledger secret sanitization', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C13', name: 'Ledger secret sanitization (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -976,14 +1040,14 @@ async function checkUnpricedUsageStops(): Promise<ComposedCheck> {
     const passed = threwUnpriced
     return {
       id: 'C14',
-      name: 'Unpriced usage stops before next paid execution',
+      name: 'Unpriced usage stops before next paid execution (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? 'UNPRICED_USAGE thrown for unknown model, no $0 fallback'
         : 'UNPRICED_USAGE not thrown — unpriced usage silently became $0',
     }
   } catch (e) {
-    return { id: 'C14', name: 'Unpriced usage stops before next paid execution', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C14', name: 'Unpriced usage stops before next paid execution (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -1033,14 +1097,14 @@ function checkTrajectoryReconstruction(): ComposedCheck {
     const passed = hasAttempts && correctModel && correctRoutingId
     return {
       id: 'C15',
-      name: 'Trajectory reconstruction from composed session history',
+      name: 'Trajectory reconstruction from composed session history (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
         ? `attempts=${reconstructed.attempts.length}, model=${reconstructed.attempts[0]?.model.model}, routingId=${reconstructed.attempts[0]?.routingDecisionId}`
         : `hasAttempts=${hasAttempts}, correctModel=${correctModel}, correctRoutingId=${correctRoutingId}`,
     }
   } catch (e) {
-    return { id: 'C15', name: 'Trajectory reconstruction from composed session history', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'C15', name: 'Trajectory reconstruction from composed session history (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -1074,8 +1138,11 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
 
     // Boot the composed runtime
     let ctx: Context | undefined
+    let uninstall: (() => void) | undefined
     try {
-      ctx = await bootComposedRuntime(workspace)
+      const booted = await bootComposedRuntime(workspace, snapshotDir)
+      ctx = booted.ctx
+      uninstall = booted.uninstall
     } catch (e) {
       checks.push({
         id: 'BOOT',
@@ -1095,32 +1162,42 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
       return buildRecord(sourceCommit, checks)
     }
 
-    // C1: Effective composition identity
-    checks.push(checkCompositionIdentity(ctx))
+    try {
+      // C1: Effective composition identity
+      checks.push(checkCompositionIdentity(ctx))
 
-    // C2: File-tool isolation
-    checks.push(await checkFileToolIsolation(ctx, workspace))
+      // C2: File-tool isolation
+      checks.push(await checkFileToolIsolation(ctx, workspace))
 
-    // C3: Bash isolation
-    checks.push(await checkBashIsolation(ctx, workspace))
+      // C3: Bash isolation
+      checks.push(await checkBashIsolation(ctx, workspace))
 
-    // C4: No Git history
-    checks.push(checkNoGitHistory(workspace))
+      // C4: No Git history
+      checks.push(checkNoGitHistory(workspace))
 
-    // C5: Holdout secrecy
-    checks.push(checkHoldoutSecrecy(workspace, holdoutDir))
+      // C5: Holdout secrecy — uses actual sandboxed fs/bash for agent side
+      checks.push(await checkHoldoutSecrecy(ctx, workspace, holdoutDir))
 
-    // C6-C15: Lifecycle checks
-    checks.push(await checkOneShotPassLifecycle())
-    checks.push(await checkOneShotHoldoutFailure())
-    checks.push(await checkRepairSuccessWithRollback(workspace, snapshotDir))
-    checks.push(checkProEscalation())
-    checks.push(checkRollbackFailureStopsRepair())
-    checks.push(checkAuthorityAmbiguity())
-    checks.push(await checkWorkspaceBoundVerification(workspace))
-    checks.push(checkLedgerSecretSanitization())
-    checks.push(await checkUnpricedUsageStops())
-    checks.push(checkTrajectoryReconstruction())
+      // C6-C15: Lifecycle checks (helper-level — see check names)
+      checks.push(await checkOneShotPassLifecycle())
+      checks.push(await checkOneShotHoldoutFailure())
+      checks.push(await checkRepairSuccessWithRollback(workspace, snapshotDir))
+      checks.push(checkProEscalation())
+      checks.push(checkRollbackFailureStopsRepair())
+      checks.push(checkAuthorityAmbiguity())
+      checks.push(await checkWorkspaceBoundVerification(workspace))
+      checks.push(checkLedgerSecretSanitization())
+      checks.push(await checkUnpricedUsageStops())
+      checks.push(checkTrajectoryReconstruction())
+    } finally {
+      // Dispose the composed context so event handlers, plugins, and
+      // service fibers do not leak into the Batch A process. The
+      // qualification gate runs in the same process immediately before
+      // the paid benchmark, so it must leave the process exactly as it
+      // found it.
+      await ctx.fiber.dispose()
+      uninstall()
+    }
   } finally {
     if (workspace !== undefined) {
       rmSync(workspace, { recursive: true, force: true })
@@ -1158,8 +1235,9 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
     skipCount,
     passed,
     backend: {
-      enforcement: c1?.status === 'pass' ? 'full' : 'unknown',
+      enforcement: c3?.status === 'pass' ? 'full' : 'unknown',
       networkDenied: c3?.status === 'pass',
+      probed: c3?.status === 'pass',
     },
     filesystem: {
       modelReadFence: c2?.status === 'pass',
