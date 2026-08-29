@@ -269,6 +269,7 @@ export type RepairOutcome =
   | 'rollback-failed'
   | 'authority-undecidable'
   | 'model-unavailable'
+  | 'workspace-provenance-failed'
 
 /**
  * Durable record of repair sequence completion. Emitted as the

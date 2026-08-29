@@ -372,7 +372,7 @@ function renderRepairPrompt(projection: ModelVisibleFailureProjection, attempt: 
     'Build errors:',
     ...projection.buildErrors.map(e => `- ${e}`),
     '',
-    'Fix the issues above. The workspace state from the previous attempt is preserved.',
+    'Fix the issues above. The workspace has been rolled back to the trusted base state before this repair attempt. Start your fix from the base source, not from the failed attempt.',
   ]
   return [{ type: 'text', text: lines.join('\n') }]
 }
@@ -1483,7 +1483,42 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           // Transition the goal while goal/verification PASS is still the
           // latest event. completeVerified() checks this freshness.
           if (result.verified) {
-            ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision })
+            // Re-compute the workspace hash at completion time. If the
+            // workspace mutated between verification and completion, the
+            // hash will differ and completeVerified() will reject.
+            let currentWorkspaceHash: string | undefined
+            if (config.workspaceProvenanceProvider !== undefined && result.workspaceHash !== undefined) {
+              try {
+                currentWorkspaceHash = config.workspaceProvenanceProvider({
+                  session,
+                  changedFiles: passChangedFiles,
+                })
+              } catch {
+                // Provenance failure at completion is fatal — the workspace
+                // state cannot be verified, so refuse completion.
+                ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+                  code: 'workspace-provenance-failed',
+                  message: 'workspace provenance provider failed at completion time',
+                })
+                session.append('repair/completed', {
+                  repairId: passState.repairId,
+                  turn,
+                  step: 0,
+                  finalRoutingDecisionId: routingDecisionId,
+                  verified: false,
+                  totalAttempts: passState.attempts.length,
+                  flashAttempts: passState.flashAttempts,
+                  proAttempts: passState.proAttempts,
+                  totalCostUsd: passState.totalCostUsd,
+                  elapsedMs: Date.now() - passState.startedAt,
+                  outcome: 'workspace-provenance-failed',
+                }, { ignorable: true })
+                releaseToAuto(session, 'system')
+                repairStates.delete(key)
+                return
+              }
+            }
+            ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, currentWorkspaceHash)
           } else {
             ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
               code: 'qualification-failed',

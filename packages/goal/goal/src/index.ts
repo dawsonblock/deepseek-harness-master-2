@@ -499,8 +499,13 @@ export class GoalService extends TypertRemoteService {
    * Evaluate every registered verifier against one exact current goal revision.
    * No verifier means fail-closed; verifier exceptions become failed checks.
    * The report is appended durably but never enters model-visible history.
+   * @param agent - owning live agent.
+   * @param ref - expected current goal revision.
+   * @param workspaceHash - optional content hash of the workspace at verification time; bound to the
+   *   verification event and checked by completeVerified().
+   * @returns the verification report.
    */
-  async verifyCompletion(agent: Agent, ref: GoalRef): Promise<GoalVerificationReport> {
+  async verifyCompletion(agent: Agent, ref: GoalRef, workspaceHash?: string): Promise<GoalVerificationReport> {
     this.assertLive(agent)
     const current = this.get(agent)
     if (current === undefined) throw new GoalError('no current goal', 'GOAL_NOT_FOUND')
@@ -564,6 +569,7 @@ export class GoalService extends TypertRemoteService {
       basisSeq: agent.session.events.at(-1)?.seq ?? -1,
       registryFingerprint: this.verifierRegistryFingerprint(),
       checks,
+      ...workspaceHash !== undefined ? { workspaceHash } : {},
     }
     agent.session.append('goal/verification', report, { ignorable: true })
     return report
@@ -574,8 +580,19 @@ export class GoalService extends TypertRemoteService {
    * event is a passing verification for this exact goal revision. This closes
    * the verification-to-completion gap: any intervening event invalidates the
    * authorization and requires verification to run again.
+   *
+   * When the verification event carries a `workspaceHash` and the caller
+   * supplies `currentWorkspaceHash`, the two must match. A mismatch indicates
+   * the workspace mutated between verification and completion, invalidating
+   * the verification basis.
+   *
+   * @param agent - owning live agent.
+   * @param ref - expected current goal revision.
+   * @param currentWorkspaceHash - optional current workspace content hash; checked against the verification
+   *   event's workspaceHash when present.
+   * @returns the completed view.
    */
-  completeVerified(agent: Agent, ref: GoalRef): GoalView {
+  completeVerified(agent: Agent, ref: GoalRef, currentWorkspaceHash?: string): GoalView {
     this.assertLive(agent)
     const current = this.get(agent)
     if (current === undefined) throw new GoalError('no current goal', 'GOAL_NOT_FOUND')
@@ -596,6 +613,17 @@ export class GoalService extends TypertRemoteService {
         `goal "${ref.id}" revision ${ref.revision} requires a fresh passing verification for the current verifier registry as the latest durable event`,
         'GOAL_VERIFICATION_REQUIRED',
       )
+    }
+    // Workspace-bound completion: if the verification event recorded a
+    // workspace hash, the caller must supply a matching current hash.
+    const verificationWorkspaceHash = (latest.data as { workspaceHash?: string }).workspaceHash
+    if (verificationWorkspaceHash !== undefined && currentWorkspaceHash !== undefined) {
+      if (verificationWorkspaceHash !== currentWorkspaceHash) {
+        throw new GoalError(
+          `goal "${ref.id}" revision ${ref.revision} workspace hash mismatch: verification recorded ${verificationWorkspaceHash.slice(0, 12)}... but current is ${currentWorkspaceHash.slice(0, 12)}...`,
+          'GOAL_WORKSPACE_MUTATED',
+        )
+      }
     }
     return this.transition(
       agent,

@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runSecurityQualification, SECURITY_QUALIFICATION_ID } from './v019-security-qualification.ts'
-import { platformEnforcement } from '@deepseek-ai/dsh-sandbox-local'
+import { runComposedRuntimeQualification } from './v019-composed-runtime-qualification.ts'
 
 /** The freeze record identity. */
 export const FREEZE_ID = 'v019-secure-eval-v2'
@@ -39,8 +39,15 @@ const VERIFIER_CONTROLLED_FILES = [
   'scripts/v019-repo-checkout.ts',
   'scripts/v019-security-qualification.ts',
   'scripts/v019-corpus-qualification.ts',
+  'scripts/v019-composed-runtime-qualification.ts',
+  'scripts/v019-freeze-secure-eval.ts',
+  'scripts/run-v019-batch-a-evaluation.ts',
   'packages/core/repair-runtime/src/index.ts',
   'packages/core/repair-runtime/src/invariant.ts',
+  'packages/core/repair-controller/src/index.ts',
+  'packages/core/repair-controller/src/types.ts',
+  'packages/goal/goal/src/index.ts',
+  'packages/goal/goal/src/domain.ts',
 ]
 
 /**
@@ -78,6 +85,10 @@ export interface SecureEvalFreezeRecord {
   readonly securityPropertyCount: number
   readonly securityPassedCount: number
   readonly securityFailedCount: number
+  readonly composedQualificationId: string
+  readonly composedQualificationPassed: boolean
+  readonly composedCheckCount: number
+  readonly composedPassedCount: number
   readonly b0SmokeTestCount: number
   readonly corpusFrozenTasks: number
   readonly corpusRejectedTasks: number
@@ -85,7 +96,7 @@ export interface SecureEvalFreezeRecord {
     readonly filesystemPlane: 'fs-sandbox'
     readonly subprocessPlane: 'bash-sandbox'
     readonly sandboxPolicy: 'workspace-isolated'
-    readonly backendEnforcement: 'full' | 'partial'
+    readonly backendEnforcement: 'full' | 'partial' | 'unknown'
     readonly holdoutLocation: 'external'
     readonly repairRuntime: 'production'
     readonly rollbackProvider: 'harness-owned'
@@ -108,20 +119,31 @@ export interface SecureEvalFreezeRecord {
 export async function generateFreezeRecord(): Promise<SecureEvalFreezeRecord> {
   const securityRecord = await runSecurityQualification()
 
+  // Run the composed runtime qualification to probe the actual backend
+  // rather than relying on a static platform preference. The composed
+  // qualification boots the real Cordis context, runs shell commands
+  // through the actual sandbox, and records whether the backend denied
+  // network access and enforced filesystem isolation.
+  const composedRecord = await runComposedRuntimeQualification()
+
   // The corpus qualification is frozen at 25/25 tasks. This is verified
   // by the B0 smoke test (B0.12) and the corpus qualification spec.
   const corpusFrozenTasks = 25
   const corpusRejectedTasks = 0
 
-  const backendEnforcement = platformEnforcement() ?? 'partial'
+  // Use the probed backend from the composed qualification, not a static
+  // platform lookup. This ensures the freeze record reflects the actual
+  // runner selected at runtime, not the preferred candidate.
+  const backendEnforcement = composedRecord.backend.probed
+    ? (composedRecord.backend.networkDenied ? 'full' : 'partial')
+    : 'unknown'
   const backendFullEnforcement = backendEnforcement === 'full'
 
-  // Benchmark-eligible runs require full backend enforcement. The security
-  // qualification gate (B11) also checks this, but the freeze record gates
-  // readiness independently so the gate is unmissable.
+  // Benchmark-eligible runs require full backend enforcement AND a passing
+  // composed runtime qualification. The composed gate proves the exact
+  // evaluator composition boots and passes lifecycle/security scenarios.
   const ready = securityRecord.passed
-    && corpusFrozenTasks === 25
-    && corpusRejectedTasks === 0
+    && composedRecord.ready
     && backendFullEnforcement
 
   return {
@@ -132,6 +154,10 @@ export async function generateFreezeRecord(): Promise<SecureEvalFreezeRecord> {
     securityPropertyCount: securityRecord.checks.length,
     securityPassedCount: securityRecord.passedCount,
     securityFailedCount: securityRecord.failedCount,
+    composedQualificationId: composedRecord.qualificationId,
+    composedQualificationPassed: composedRecord.passed,
+    composedCheckCount: composedRecord.checks.length,
+    composedPassedCount: composedRecord.passedCount,
     b0SmokeTestCount: 12,
     corpusFrozenTasks,
     corpusRejectedTasks,

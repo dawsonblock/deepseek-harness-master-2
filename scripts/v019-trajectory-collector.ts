@@ -15,10 +15,10 @@
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { execSync } from 'node:child_process'
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -228,7 +228,10 @@ export async function runTaskTrajectory(
         const currentGoal = goalsService.get(agent)
         if (currentGoal === undefined || currentGoal.phase !== 'active') break
 
-        await goalsService.verifyCompletion(agent, { id: currentGoal.id, revision: currentGoal.revision })
+        // Compute a workspace hash at verification time so completeVerified()
+        // can detect post-verification filesystem mutation.
+        const workspaceHash = computeWorkspaceHash(workspace)
+        await goalsService.verifyCompletion(agent, { id: currentGoal.id, revision: currentGoal.revision }, workspaceHash)
         await agent.whenIdle()
 
         // Check if the repair-runtime plugin completed or blocked the goal.
@@ -360,6 +363,41 @@ export async function generateRepoConfig(model: string, workspace: string): Prom
 // ---------------------------------------------------------------------------
 // Verifier: runs the repository's own build and test commands
 // ---------------------------------------------------------------------------
+
+/**
+ * Compute a SHA-256 hash of the workspace's source files. Walks the workspace
+ * recursively, hashes file contents, and returns a digest. Used to bind
+ * verification to a specific workspace state and detect post-verification
+ * mutation at completion time.
+ *
+ * @param workspace - the workspace root to hash.
+ * @returns a hex SHA-256 digest of the workspace contents.
+ */
+function computeWorkspaceHash(workspace: string): string {
+  const hash = createHash('sha256')
+  const walk = (dir: string): void => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue
+      const fullPath = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(fullPath)
+      } else if (entry.isFile()) {
+        const rel = relative(workspace, fullPath)
+        hash.update(rel).update(':')
+        try {
+          hash.update(readFileSync(fullPath))
+        } catch {
+          hash.update('[unreadable]')
+        }
+        hash.update('\n')
+      }
+    }
+  }
+  walk(workspace)
+  return hash.digest('hex')
+}
 
 // ---------------------------------------------------------------------------
 // Production RepairRuntime helpers: holdout, provenance, rollback, trajectory

@@ -53,9 +53,11 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 ### 已知限制
 
 - 冻结记录和组合资格认证工件现在持久化到 `artifacts/evals/`。在后续 Batch A 运行中，加载持久化冻结记录并针对其 `verifierIntegrityHash` 验证当前源，加载持久化组合资格认证工件并匹配当前源提交。这将评估绑定到先前限定的源状态，而非在同一进程运行中生成并立即验证的哈希。
-- 组合运行时场景检查（S1-S4）通过启动上下文的根代理上的真实 GoalService 和 RepairRuntime 插件监听器驱动 `verifyCompletion()`，测试完整的插件→GoalService→completeVerified 管道。S1 测试一次性 PASS→holdout PASS→目标完成。S2 测试诊断 FAIL→修复证据+决策。S3 测试验证后 `completeVerified` 被拒绝。S4 测试代理通过沙箱访问 holdout 被拒绝。
-- Landlock 不隔离网络。从 bwrap 回退到 Landlock 的 Linux 运行时具有文件系统隔离但没有网络隔离。探测的后端检查将此报告为 `partial` 执行，但基准测试门还应额外要求网络拒绝的后端。
-- 工作区绑定完成（GoalService 比较当前工作区内容与已验证工作区）尚未在 `completeVerified()` 中实现。来源哈希存储在修复事件中但在完成时不检查。计划后续源修复。
+- 组合运行时场景检查（S1-S7）通过启动上下文的根代理上的真实 GoalService 和 RepairRuntime 插件监听器驱动 `verifyCompletion()`，测试完整的插件→GoalService→completeVerified 管道。S1 测试一次性 PASS→holdout PASS→目标完成。S2 测试诊断 FAIL→修复证据+决策。S3 测试验证后 `completeVerified` 被拒绝。S4 测试代理通过沙箱访问 holdout 被拒绝。S5 测试工作区绑定完成（无突变→完成）。S6 测试回滚失败停止修复且无新付费调用。S7 测试权限模糊拒绝模型转换。
+- 冻结记录现在使用组合运行时资格认证的探测后端而非 `platformEnforcement()`。组合资格认证启动真实 Cordis 上下文，通过实际沙箱运行 shell 命令，并记录后端是否拒绝网络访问。冻结记录的 `backendEnforcement` 字段反映实际探测的运行器，而非静态平台偏好。
+- 工作区绑定完成现在在 `completeVerified()` 中实现。验证事件携带绑定到验证时工作区状态的可选 `workspaceHash`。在完成时，插件重新计算工作区哈希并将其传递给 `completeVerified()`，后者以 `GOAL_WORKSPACE_MUTATED` 拒绝不匹配。修复提示现在正确说明工作区已回滚到可信基础状态。
+- 验证器完整性文件集现在覆盖组合资格认证脚本、冻结生成器、Batch A 运行器、repair-controller 类型和 goal 领域——将完整的评估器源闭包绑定到冻结哈希。
+- Landlock 不隔离网络。从 bwrap 回退到 Landlock 的 Linux 运行时具有文件系统隔离但没有网络隔离。探测的后端检查将此报告为 `partial` 执行，基准测试门要求 `full` 执行（网络拒绝的后端）。
 
 ## Alternatives considered
 

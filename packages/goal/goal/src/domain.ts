@@ -66,6 +66,8 @@ export interface GoalVerificationReport {
   /** SHA-256 binding to the exact verifier names, roles, and declared versions. */
   readonly registryFingerprint: string
   readonly checks: readonly GoalVerificationCheck[]
+  /** Optional workspace content hash bound to this verification. When present, completeVerified() requires a matching current hash. */
+  readonly workspaceHash?: string
 }
 
 /** Log-only event payload for one independent completion-verification attempt. */
@@ -144,6 +146,7 @@ export type GoalErrorCode =
   | 'GOAL_INVALID_TRANSITION'
   | 'GOAL_INVALID_VERIFIER'
   | 'GOAL_VERIFICATION_REQUIRED'
+  | 'GOAL_WORKSPACE_MUTATED'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
