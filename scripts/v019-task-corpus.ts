@@ -28,8 +28,8 @@ export const TASK_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-utils',
       url: `${REPO_BASE}/ts-utils`,
-      baseCommit: 'ba73492e41267e4b1d5e1492e436d144e490a564',
-      referenceFixCommit: 'ddb57342d96e98a2c18a1c69964fbae22189aa7d',
+      baseCommit: '8f94fe0fcf32dce5f94edc215424299a59e16989',
+      referenceFixCommit: 'c1497cf2a5634eac69c3c816f407fa6e467e8dbb',
     },
     repoSize: 'small',
     task: {
@@ -55,7 +55,7 @@ export const TASK_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-math',
       url: `${REPO_BASE}/ts-math`,
-      baseCommit: 'ac0f0a02abd5f519c9faac6f1f32be25cac021b3',
+      baseCommit: 'd2b8304efbab6e4d89dbcae6cf23681bb2cd8de3',
       referenceFixCommit: undefined,
     },
     repoSize: 'small',
@@ -82,7 +82,7 @@ export const TASK_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-string',
       url: `${REPO_BASE}/ts-string`,
-      baseCommit: 'db466bc93113a232b8517fb267f0ec293f7cca2f',
+      baseCommit: '801d3c8fa0575f9c5ba01443b1a76cf12d10f6d1',
       referenceFixCommit: undefined,
     },
     repoSize: 'small',
@@ -109,7 +109,7 @@ export const TASK_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-validate',
       url: `${REPO_BASE}/ts-validate`,
-      baseCommit: 'c59e92d60484dfce94449b6ab9faec7a323a8f5e',
+      baseCommit: 'ec1974c35d9616baf0046dd57f6d620e6f157d28',
       referenceFixCommit: undefined,
     },
     repoSize: 'small',
@@ -136,7 +136,7 @@ export const TASK_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-events',
       url: `${REPO_BASE}/ts-events`,
-      baseCommit: '04a5e83060f76a0b0108b239278b666ff6de15b2',
+      baseCommit: '1dc3fe974064722f3af7c4a43e5498ad707442a7',
       referenceFixCommit: undefined,
     },
     repoSize: 'small',
