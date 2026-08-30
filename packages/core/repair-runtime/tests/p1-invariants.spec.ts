@@ -218,7 +218,7 @@ describe('P1.8: duplicate evidence detection', () => {
     // Manually append two evidence events for the same attempt
     session.append('repair/evidence', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1',
       failurePackageId: 'pkg-1',
@@ -227,7 +227,7 @@ describe('P1.8: duplicate evidence detection', () => {
     }, { ignorable: true })
     session.append('repair/evidence', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1',
       failurePackageId: 'pkg-1',
@@ -247,7 +247,7 @@ describe('P1.8: duplicate evidence detection', () => {
     // Two evidence events for different attempts but same failurePackageId
     session.append('repair/evidence', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1',
       failurePackageId: 'pkg-dup',
@@ -256,7 +256,7 @@ describe('P1.8: duplicate evidence detection', () => {
     }, { ignorable: true })
     session.append('repair/evidence', {
       repairId,
-      turn: 2, step: 0, attempt: 2,
+      turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2',
       routingDecisionId: 'rd-2',
       failureFingerprint: 'fp-1',
       failurePackageId: 'pkg-dup',
@@ -278,7 +278,7 @@ describe('P1.8: decision without evidence', () => {
     // Decision without any preceding evidence
     session.append('repair/decision', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       action: 'flash-repair',
       failureFingerprint: 'fp-1',
     }, { ignorable: true })
@@ -349,7 +349,7 @@ describe('P1.8: completed before decision', () => {
     // Then evidence and decision (out of order)
     session.append('repair/evidence', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1',
       failurePackageId: 'pkg-1',
@@ -358,7 +358,7 @@ describe('P1.8: completed before decision', () => {
     }, { ignorable: true })
     session.append('repair/decision', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       action: 'flash-repair',
       failureFingerprint: 'fp-1',
     }, { ignorable: true })
@@ -377,7 +377,7 @@ describe('P1.8: rollback without evidence', () => {
     // Rollback without any preceding evidence
     session.append('repair/rollback', {
       repairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1',
       rollbackTarget: 'checkpoint-001',
       success: true,
@@ -404,7 +404,7 @@ describe('P1.8: empty or unrelated events', () => {
 
     session.append('repair/evidence', {
       repairId: otherRepairId,
-      turn: 1, step: 0, attempt: 1,
+      turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1',
       failurePackageId: 'pkg-other',

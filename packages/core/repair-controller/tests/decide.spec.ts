@@ -47,6 +47,7 @@ function makeAttempt(
 ): RepairAttempt {
   return {
     attempt,
+    attemptId: `test#attempt-${attempt}`,
     model,
     verified,
     verificationStatus: verified ? 'verified-pass' : 'verified-fail',

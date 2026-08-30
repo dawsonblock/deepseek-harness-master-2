@@ -988,6 +988,7 @@ export function reconstructRepairState(
 
     attempts.push({
       attempt: evidence.attempt,
+      attemptId: `${repairId}#attempt-${evidence.attempt}`,
       model,
       routingDecisionId,
       verified: false,
@@ -1105,6 +1106,7 @@ export function handleVerificationFailure(
   const model = modelFromRoutingDecision(session.events, routingDecisionId) ?? deps.flashModel
 
   const attemptNumber = state.attempts.length + 1
+  const attemptId = `${state.repairId}#attempt-${attemptNumber}`
   const lastAttempt = state.attempts.length > 0
     ? state.attempts[state.attempts.length - 1]
     : undefined
@@ -1131,6 +1133,7 @@ export function handleVerificationFailure(
 
   const attempt: RepairAttempt = {
     attempt: attemptNumber,
+    attemptId,
     model,
     routingDecisionId,
     verified: false,
@@ -1158,6 +1161,7 @@ export function handleVerificationFailure(
     turn,
     step: 0,
     attempt: attemptNumber,
+    attemptId,
     routingDecisionId,
     failureFingerprint: fingerprint,
     failurePackageId,
@@ -1196,6 +1200,7 @@ export function handleVerificationFailure(
     turn,
     step: 0,
     attempt: attemptNumber,
+    attemptId,
     action: decision.action,
     ...(decision.action === 'pro-escalate' ? { reason: decision.reason } : {}),
     ...(decision.action === 'stop' ? { reason: decision.reason } : {}),
@@ -1224,6 +1229,7 @@ export function handleVerificationFailure(
       turn,
       step: 0,
       attempt: attemptNumber,
+      attemptId,
       routingDecisionId,
       rollbackTarget: rollbackResult.rollbackTarget,
       success: rollbackResult.success,
@@ -1424,8 +1430,10 @@ export async function handleVerificationPass(
   // with execution truth. A one-shot success now counts as 1 attempt.
   const model = modelFromRoutingDecision(session.events, routingDecisionId) ?? { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const attemptNumber = state.attempts.length + 1
+  const attemptId = `${state.repairId}#attempt-${attemptNumber}`
   state.attempts.push({
     attempt: attemptNumber,
+    attemptId,
     model,
     routingDecisionId,
     verified: true,

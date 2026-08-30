@@ -248,12 +248,12 @@ describe('P1.2: reconstructed state preserves startedAt for budget gate', () => 
     appendUsage(session, 'rd-1', 1, FLASH, { input: 1000, output: 500, cacheRead: 200, cacheMiss: 800 })
     appendVerification(session, goalId, false, failChecks(['criterion-1']))
     session.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-1', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', action: 'flash-repair', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 
     // Get the actual time of the first repair/evidence event

@@ -294,6 +294,7 @@ export async function runRepairLoop(options: RepairLoopOptions): Promise<LoopRes
 
     const repairAttempt: RepairAttempt = {
       attempt: attemptNumber,
+      attemptId: `repair-v018#attempt-${attemptNumber}`,
       model: currentModel,
       routingDecisionId: turnResult.routingDecisionId,
       verified,

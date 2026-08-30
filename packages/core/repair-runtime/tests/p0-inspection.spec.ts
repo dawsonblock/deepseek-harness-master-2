@@ -119,7 +119,7 @@ function appendEvidence(
   failedCriteria: string[],
 ): void {
   session.append('repair/evidence', {
-    repairId, turn, step: 0, attempt, routingDecisionId: rdId,
+    repairId, turn, step: 0, attempt, attemptId: `test#attempt-${attempt}`, routingDecisionId: rdId,
     failureFingerprint: fingerprint, failurePackageId: `fpid-${attempt}`, progress,
     failedCriteria, failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
   }, { ignorable: true })
@@ -135,7 +135,7 @@ function appendDecision(
   reason?: 'same-failure-no-progress' | 'flash-limit-exhausted' | 'regression-detected',
 ): void {
   session.append('repair/decision', {
-    repairId, turn, step: 0, attempt, action,
+    repairId, turn, step: 0, attempt, attemptId: `test#attempt-${attempt}`, action,
     ...(reason !== undefined ? { reason } : {}),
     failureFingerprint: 'fp-1',
   }, { ignorable: true })

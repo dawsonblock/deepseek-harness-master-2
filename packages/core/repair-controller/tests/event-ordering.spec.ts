@@ -38,7 +38,7 @@ function appendVerification(session: Session, turn: number, passed: boolean): vo
 /** Append a repair/evidence event. */
 function appendEvidence(session: Session, repairId: string, turn: number, attempt: number): void {
   session.append('repair/evidence', {
-    repairId, turn, step: 0, attempt,
+    repairId, turn, step: 0, attempt, attemptId: `test#attempt-${attempt}`,
     routingDecisionId: `rd-${attempt}`,
     failureFingerprint: 'fp-1234',
     progress: 'none',
@@ -56,7 +56,7 @@ function appendDecision(
   action: 'flash-repair' | 'pro-escalate' | 'complete' | 'stop',
 ): void {
   session.append('repair/decision', {
-    repairId, turn, step: 0, attempt, action,
+    repairId, turn, step: 0, attempt, attemptId: `test#attempt-${attempt}`, action,
     failureFingerprint: 'fp-1234',
   }, { ignorable: true })
 }
@@ -248,7 +248,7 @@ describe('crash boundary tests', () => {
     appendEscalation(session, 'repair-1', 1)
     appendRoutingDecision(session, 2, 'rd-pro-1')
     session.append('model/usage', {
-      turn: 2, step: 0, attempt: 2, provider: 'deepseek', model: 'deepseek-v4-pro',
+      turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', provider: 'deepseek', model: 'deepseek-v4-pro',
       usage: {
         inputTokens: 100,
         outputTokens: 50,

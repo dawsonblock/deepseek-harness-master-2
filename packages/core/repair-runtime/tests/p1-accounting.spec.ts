@@ -291,12 +291,12 @@ describe('P1.1: reconstructRepairState recovers real cost after restart', () => 
     appendUsage(session, 'rd-1', 1, FLASH, { input: 1000, output: 500, cacheRead: 200, cacheMiss: 800 })
     appendVerification(session, goalId, false, failChecks(['criterion-1']))
     session.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-1', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', action: 'flash-repair', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 
     // Flash #2 fail (same)
@@ -304,12 +304,12 @@ describe('P1.1: reconstructRepairState recovers real cost after restart', () => 
     appendUsage(session, 'rd-2', 2, FLASH, { input: 1200, output: 600, cacheRead: 300, cacheMiss: 900 })
     appendVerification(session, goalId, false, failChecks(['criterion-1']))
     session.append('repair/evidence', {
-      repairId, turn: 2, step: 0, attempt: 2, routingDecisionId: 'rd-2',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', routingDecisionId: 'rd-2',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-2', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 2, step: 0, attempt: 2, action: 'pro-escalate',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', action: 'pro-escalate',
       reason: 'same-failure-no-progress', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 
@@ -353,24 +353,24 @@ describe('P1.1: reconstructRepairState recovers real cost after restart', () => 
     appendUsage(session2, 'rd-1', 1, FLASH, { input: 1000, output: 500, cacheRead: 200, cacheMiss: 800 })
     appendVerification(session2, goalId, false, failChecks(['criterion-1']))
     session2.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-1', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session2.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', action: 'flash-repair', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 
     setupTurn(session2, 2, FLASH, 'rd-2')
     appendUsage(session2, 'rd-2', 2, FLASH, { input: 1200, output: 600, cacheRead: 300, cacheMiss: 900 })
     appendVerification(session2, goalId, false, failChecks(['criterion-1']))
     session2.append('repair/evidence', {
-      repairId, turn: 2, step: 0, attempt: 2, routingDecisionId: 'rd-2',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', routingDecisionId: 'rd-2',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-2', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session2.append('repair/decision', {
-      repairId, turn: 2, step: 0, attempt: 2, action: 'pro-escalate',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', action: 'pro-escalate',
       reason: 'same-failure-no-progress', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 

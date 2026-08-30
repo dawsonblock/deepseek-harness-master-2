@@ -60,6 +60,8 @@ export interface FailurePackage {
 export interface RepairAttempt {
   /** 1-based attempt number within the repair sequence. */
   readonly attempt: number
+  /** Logical attempt ID joining all repair events for this attempt: `${repairId}#attempt-${attempt}`. */
+  readonly attemptId: string
   readonly model: ModelRef
   /** Joins to the `model/routing-decision` event for this attempt. */
   readonly routingDecisionId: string
@@ -205,6 +207,8 @@ export interface RepairEvidenceEventData {
   readonly turn: number
   readonly step: number
   readonly attempt: number
+  /** Logical attempt ID joining all repair events for this attempt. */
+  readonly attemptId: string
   readonly routingDecisionId: string
   readonly failureFingerprint: string
   /** Deterministic ID for idempotent event emission on restart. */
@@ -228,6 +232,8 @@ export interface RepairDecisionEventData {
   readonly turn: number
   readonly step: number
   readonly attempt: number
+  /** Logical attempt ID joining all repair events for this attempt. */
+  readonly attemptId: string
   readonly action: 'flash-repair' | 'pro-escalate' | 'complete' | 'stop'
   readonly reason?: EscalationReason | StopReason
   readonly failureFingerprint?: string
@@ -315,6 +321,8 @@ export interface RepairRollbackEventData {
   readonly step: number
   /** The failed attempt number whose changes are being rolled back. */
   readonly attempt: number
+  /** Logical attempt ID joining all repair events for this attempt. */
+  readonly attemptId: string
   /** The routing decision of the failed attempt. */
   readonly routingDecisionId: string
   /** Workspace hash or checkpoint identifier being restored. */
@@ -323,4 +331,8 @@ export interface RepairRollbackEventData {
   readonly success: boolean
   /** Human-readable reason when rollback failed. */
   readonly failureReason?: string
+  /** Expected baseline hash that rollback should restore. */
+  readonly targetHash?: string
+  /** Actual workspace hash after rollback. Must match `targetHash` for success. */
+  readonly resultHash?: string
 }

@@ -335,13 +335,13 @@ describe('E2E: true idempotency — restart after persisted escalation', () => {
       checks: failChecks(['criterion-1']),
     } as never, { ignorable: true })
     session.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1,
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       routingDecisionId: 'rd-1', failureFingerprint: 'fp-aaaa',
       failurePackageId: 'fpkg-1', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1,
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1',
       action: 'flash-repair', failureFingerprint: 'fp-aaaa',
     }, { ignorable: true })
 
@@ -352,13 +352,13 @@ describe('E2E: true idempotency — restart after persisted escalation', () => {
       checks: failChecks(['criterion-1']),
     } as never, { ignorable: true })
     session.append('repair/evidence', {
-      repairId, turn: 2, step: 0, attempt: 2,
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2',
       routingDecisionId: 'rd-2', failureFingerprint: 'fp-aaaa',
       failurePackageId: 'fpkg-2', progress: 'none',
       failedCriteria: ['criterion-1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 2, step: 0, attempt: 2,
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2',
       action: 'pro-escalate', reason: 'same-failure-no-progress', failureFingerprint: 'fp-aaaa',
     }, { ignorable: true })
     // The model/escalation event with a real toRoutingDecisionId
@@ -751,12 +751,12 @@ describe('P0: replay preserves Flash attempts as Flash', () => {
       goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['c1']),
     } as never, { ignorable: true })
     session.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-1', progress: 'none',
       failedCriteria: ['c1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', action: 'flash-repair', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 
     // Flash #2 fail (same)
@@ -765,12 +765,12 @@ describe('P0: replay preserves Flash attempts as Flash', () => {
       goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['c1']),
     } as never, { ignorable: true })
     session.append('repair/evidence', {
-      repairId, turn: 2, step: 0, attempt: 2, routingDecisionId: 'rd-2',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', routingDecisionId: 'rd-2',
       failureFingerprint: 'fp-1', failurePackageId: 'fpid-2', progress: 'none',
       failedCriteria: ['c1'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 2, step: 0, attempt: 2, action: 'pro-escalate',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', action: 'pro-escalate',
       reason: 'same-failure-no-progress', failureFingerprint: 'fp-1',
     }, { ignorable: true })
 
@@ -806,12 +806,12 @@ describe('P0: progress-aware decision survives restart', () => {
       goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['A', 'B', 'C', 'D']),
     } as never, { ignorable: true })
     session.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-abcd', failurePackageId: 'fpid-1', progress: 'none',
       failedCriteria: ['A', 'B', 'C', 'D'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-abcd',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', action: 'flash-repair', failureFingerprint: 'fp-abcd',
     }, { ignorable: true })
 
     // Flash #2: fail with A, B (partial progress)
@@ -820,12 +820,12 @@ describe('P0: progress-aware decision survives restart', () => {
       goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['A', 'B']),
     } as never, { ignorable: true })
     session.append('repair/evidence', {
-      repairId, turn: 2, step: 0, attempt: 2, routingDecisionId: 'rd-2',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', routingDecisionId: 'rd-2',
       failureFingerprint: 'fp-ab', failurePackageId: 'fpid-2', progress: 'partial',
       failedCriteria: ['A', 'B'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session.append('repair/decision', {
-      repairId, turn: 2, step: 0, attempt: 2, action: 'flash-repair', failureFingerprint: 'fp-ab',
+      repairId, turn: 2, step: 0, attempt: 2, attemptId: 'test#attempt-2', action: 'flash-repair', failureFingerprint: 'fp-ab',
     }, { ignorable: true })
 
     // CRASH → restart → reconstruct
@@ -882,12 +882,12 @@ describe('P0: progress-aware decision survives restart', () => {
       goal: { id: goalId, revision: 1 }, passed: false, checks: failChecks(['A', 'B', 'C', 'D']),
     } as never, { ignorable: true })
     session2.append('repair/evidence', {
-      repairId, turn: 1, step: 0, attempt: 1, routingDecisionId: 'rd-1',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', routingDecisionId: 'rd-1',
       failureFingerprint: 'fp-abcd', failurePackageId: 'fpid-1', progress: 'none',
       failedCriteria: ['A', 'B', 'C', 'D'], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
     }, { ignorable: true })
     session2.append('repair/decision', {
-      repairId, turn: 1, step: 0, attempt: 1, action: 'flash-repair', failureFingerprint: 'fp-abcd',
+      repairId, turn: 1, step: 0, attempt: 1, attemptId: 'test#attempt-1', action: 'flash-repair', failureFingerprint: 'fp-abcd',
     }, { ignorable: true })
 
     // Reconstruct after restart (crash happened after Flash #1 decision)
