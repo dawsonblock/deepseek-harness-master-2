@@ -17,12 +17,14 @@
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
   buildExperimentManifest,
 } from './v019-experiment-identity.ts'
+import { runComposedRuntimeQualification } from './v019-composed-runtime-qualification.ts'
 import {
   FROZEN_V018_LIMITS,
 } from './v019-task-manifest.ts'
@@ -114,6 +116,15 @@ async function main(): Promise<void> {
     process.stderr.write('MODE: Baseline Cohort (benchmark-eligible)\n')
   }
 
+  // Run composed qualification to bind the experiment manifest to the
+  // actual sandbox backend and snapshot algorithm versions.
+  const composedRecord = await runComposedRuntimeQualification()
+  if (!composedRecord.ready) {
+    process.stderr.write('\nCOMPOSED RUNTIME QUALIFICATION FAILED\n')
+    process.stderr.write('Cannot proceed to evaluation. Fix the composed runtime qualification first.\n')
+    process.exit(1)
+  }
+
   // Build and verify experiment manifest
   const experimentManifest = buildExperimentManifest({
     repairControllerVersion: '0.18.0',
@@ -126,6 +137,18 @@ async function main(): Promise<void> {
     taskCount: Math.min(TASK_CORPUS.length, maxTasks),
     repositoryCount: new Set(TASK_CORPUS.slice(0, maxTasks).map(t => t.repository.name)).size,
     benchmarkEligible,
+    sandboxBackend: {
+      runner: composedRecord.backend.runner,
+      runnerPath: composedRecord.backend.runnerPath,
+      runnerVersion: composedRecord.backend.runnerVersion,
+      enforcement: composedRecord.backend.enforcement,
+      networkDenied: composedRecord.backend.networkDenied,
+    },
+    snapshotAlgorithm: composedRecord.snapshot.algorithm,
+    snapshotExclusions: composedRecord.snapshot.exclusions,
+    qualificationArtifactHash: createHash('sha256')
+      .update(JSON.stringify(composedRecord))
+      .digest('hex'),
   })
 
   process.stderr.write(`Experiment ID: ${experimentManifest.experimentId}\n`)

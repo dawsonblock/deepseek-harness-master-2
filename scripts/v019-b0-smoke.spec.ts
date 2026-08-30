@@ -67,6 +67,10 @@ describe('v019 post-security B0 smoke test', () => {
       taskCount: 5,
       repositoryCount: 5,
       benchmarkEligible: false,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     expect(manifest.benchmarkEligible).toBe(false)
     expect(manifest.experimentId).toBe('v019-infra-validation-v1')

@@ -49,6 +49,19 @@ export interface ExperimentManifest {
   readonly repositoryCount: number
   /** False for B0 infrastructure validation; true for the baseline cohort. */
   readonly benchmarkEligible: boolean
+  /** Actual selected sandbox backend (runner name, path, version, enforcement, network isolation). */
+  readonly sandboxBackend: Readonly<{
+    runner: string
+    runnerPath: string
+    runnerVersion: string
+    enforcement: string
+    networkDenied: boolean
+  }>
+  /** Workspace snapshot algorithm and exclusion set versions. */
+  readonly snapshotAlgorithm: string
+  readonly snapshotExclusions: string
+  /** Hash of the composed qualification artifact that must pass before the cohort runs. */
+  readonly qualificationArtifactHash: string
   readonly manifestHash: string
 }
 
@@ -64,6 +77,10 @@ export function buildExperimentManifest(params: {
   taskCount: number
   repositoryCount: number
   benchmarkEligible: boolean
+  sandboxBackend: { runner: string; runnerPath: string; runnerVersion: string; enforcement: string; networkDenied: boolean }
+  snapshotAlgorithm: string
+  snapshotExclusions: string
+  qualificationArtifactHash: string
 }): ExperimentManifest {
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
   const experimentId = params.benchmarkEligible ? EXPERIMENT_ID : B0_EXPERIMENT_ID
@@ -95,6 +112,10 @@ export function buildExperimentManifest(params: {
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
+    sandboxBackend: params.sandboxBackend,
+    snapshotAlgorithm: params.snapshotAlgorithm,
+    snapshotExclusions: params.snapshotExclusions,
+    qualificationArtifactHash: params.qualificationArtifactHash,
   })
   return {
     experimentId,
@@ -112,6 +133,10 @@ export function buildExperimentManifest(params: {
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
+    sandboxBackend: params.sandboxBackend,
+    snapshotAlgorithm: params.snapshotAlgorithm,
+    snapshotExclusions: params.snapshotExclusions,
+    qualificationArtifactHash: params.qualificationArtifactHash,
     manifestHash,
   }
 }
@@ -122,6 +147,7 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     .sort()
     .join('|')
   const limitLine = `${fields.frozenRepairLimits.maxFlashAttempts}:${fields.frozenRepairLimits.maxProAttempts}:${fields.frozenRepairLimits.maxTotalAttempts}:${fields.frozenRepairLimits.maxTaskCostUsd ?? 'none'}:${fields.frozenRepairLimits.maxElapsedMs ?? 'none'}:${fields.frozenRepairLimits.maxOutputTokens ?? 'none'}`
+  const backendLine = `${fields.sandboxBackend.runner}:${fields.sandboxBackend.runnerPath}:${fields.sandboxBackend.runnerVersion}:${fields.sandboxBackend.enforcement}:${fields.sandboxBackend.networkDenied}`
   const manifestContent = [
     fields.experimentId,
     fields.sourceCommit,
@@ -138,6 +164,10 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     String(fields.taskCount),
     String(fields.repositoryCount),
     String(fields.benchmarkEligible),
+    backendLine,
+    fields.snapshotAlgorithm,
+    fields.snapshotExclusions,
+    fields.qualificationArtifactHash,
   ].join(':')
   return createHash('sha256').update(manifestContent).digest('hex')
 }

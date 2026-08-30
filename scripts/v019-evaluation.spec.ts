@@ -40,6 +40,10 @@ describe('v019-experiment-identity', () => {
       taskCount: 75,
       repositoryCount: 10,
       benchmarkEligible: true,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     const m2 = buildExperimentManifest({
       repairControllerVersion: '0.18.0',
@@ -52,6 +56,10 @@ describe('v019-experiment-identity', () => {
       taskCount: 75,
       repositoryCount: 10,
       benchmarkEligible: true,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     expect(m1.manifestHash).toBe(m2.manifestHash)
     expect(m1.manifestHash).toHaveLength(64)
@@ -69,6 +77,10 @@ describe('v019-experiment-identity', () => {
       taskCount: 5,
       repositoryCount: 1,
       benchmarkEligible: true,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     expect(m.frozenRepairLimits.maxFlashAttempts).toBe(3)
     expect(m.frozenRepairLimits.maxProAttempts).toBe(2)
@@ -423,6 +435,10 @@ describe('v019 B0 vs benchmark separation', () => {
       taskCount: 5,
       repositoryCount: 5,
       benchmarkEligible: false,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     expect(m.benchmarkEligible).toBe(false)
     expect(m.experimentId).toBe('v019-infra-validation-v1')
@@ -440,6 +456,10 @@ describe('v019 B0 vs benchmark separation', () => {
       taskCount: 75,
       repositoryCount: 10,
       benchmarkEligible: true,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     expect(m.benchmarkEligible).toBe(true)
     expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v1')
@@ -457,6 +477,10 @@ describe('v019 B0 vs benchmark separation', () => {
       taskCount: 5,
       repositoryCount: 5,
       benchmarkEligible: false,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     const bench = buildExperimentManifest({
       repairControllerVersion: '0.18.0',
@@ -469,6 +493,10 @@ describe('v019 B0 vs benchmark separation', () => {
       taskCount: 75,
       repositoryCount: 10,
       benchmarkEligible: true,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationArtifactHash: 'test-hash',
     })
     expect(b0.experimentId).not.toBe(bench.experimentId)
     expect(b0.manifestHash).not.toBe(bench.manifestHash)

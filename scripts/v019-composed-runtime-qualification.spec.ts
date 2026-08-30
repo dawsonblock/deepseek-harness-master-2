@@ -154,12 +154,10 @@ describe('v019 composed runtime qualification', () => {
   it('Batch A runner uses persisted freeze and composed qualification', () => {
     expect(batchRunnerSource).toContain('readFreezeRecord')
     expect(batchRunnerSource).toContain('writeFreezeRecord')
-    expect(batchRunnerSource).toContain('readComposedQualificationRecord')
     expect(batchRunnerSource).toContain('writeComposedQualificationRecord')
-    expect(batchRunnerSource).toContain('getSourceCommit')
   })
 
-  it('Batch A runner enforces the composed-runtime qualification gate', () => {
+  it('Batch A runner enforces the composed-runtime qualification gate on every launch', () => {
     expect(batchRunnerSource).toContain('runComposedRuntimeQualification')
     expect(batchRunnerSource).toContain('COMPOSED_QUALIFICATION_ID')
   })
@@ -203,6 +201,7 @@ describe('v019 composed runtime qualification', () => {
       holdout: { modelReadable: false },
       repair: { productionRuntime: true, rollbackRequired: true, provenanceRequired: true },
       environment: { platform: 'test', arch: 'x64', nodeVersion: 'v22.0.0', runner: 'test' },
+      snapshot: { algorithm: 'sha256-tree-v2', exclusions: 'verifier-snapshot-exclusions-v1' },
       ready: true,
     }
     expect(record.qualificationId).toBe(COMPOSED_QUALIFICATION_ID)

@@ -15,6 +15,7 @@
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -194,6 +195,18 @@ async function main(): Promise<void> {
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,
     benchmarkEligible,
+    sandboxBackend: {
+      runner: composedRecord.backend.runner,
+      runnerPath: composedRecord.backend.runnerPath,
+      runnerVersion: composedRecord.backend.runnerVersion,
+      enforcement: composedRecord.backend.enforcement,
+      networkDenied: composedRecord.backend.networkDenied,
+    },
+    snapshotAlgorithm: composedRecord.snapshot.algorithm,
+    snapshotExclusions: composedRecord.snapshot.exclusions,
+    qualificationArtifactHash: createHash('sha256')
+      .update(JSON.stringify(composedRecord))
+      .digest('hex'),
   })
 
   process.stderr.write(`Experiment ID: ${experimentManifest.experimentId}\n`)

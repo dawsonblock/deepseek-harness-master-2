@@ -79,7 +79,7 @@ import { handleVerificationPass, handleVerificationFailure, reconstructRepairSta
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 
 import { generateRepoConfig } from './v019-trajectory-collector.ts'
-import { hashWorkspaceContents } from './v019-repo-checkout.ts'
+import { hashWorkspaceContents, WORKSPACE_SNAPSHOT_ALGORITHM, WORKSPACE_SNAPSHOT_EXCLUSIONS } from './v019-repo-checkout.ts'
 
 /** Qualification artifact identifier. */
 export const COMPOSED_QUALIFICATION_ID = 'v019-composed-runtime-qualification-v1'
@@ -116,6 +116,8 @@ export interface ComposedQualificationRecord {
   readonly repair: { productionRuntime: boolean; rollbackRequired: boolean; provenanceRequired: boolean }
   /** Environment identity — persisted records must match the current environment to be reused. */
   readonly environment: { readonly platform: string; readonly arch: string; readonly nodeVersion: string; readonly runner: string }
+  /** Workspace snapshot algorithm and exclusion set versions — changes affect qualification and experiment identity. */
+  readonly snapshot: { readonly algorithm: string; readonly exclusions: string }
   readonly ready: boolean
 }
 
@@ -2206,6 +2208,8 @@ export function environmentMatches(record: ComposedQualificationRecord): boolean
     && record.environment.runner === current.runner
     && record.backend.runnerPath === currentRunnerInfo.runnerPath
     && record.backend.runnerVersion === currentRunnerInfo.runnerVersion
+    && record.snapshot.algorithm === WORKSPACE_SNAPSHOT_ALGORITHM
+    && record.snapshot.exclusions === WORKSPACE_SNAPSHOT_EXCLUSIONS
 }
 
 function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): ComposedQualificationRecord {
@@ -2254,6 +2258,10 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
       provenanceRequired: true,
     },
     environment: currentEnvironmentIdentity(),
+    snapshot: {
+      algorithm: WORKSPACE_SNAPSHOT_ALGORITHM,
+      exclusions: WORKSPACE_SNAPSHOT_EXCLUSIONS,
+    },
     ready: passed,
   }
 }

@@ -67,12 +67,26 @@ export function restoreBaseline(workspace: string, snapshot: BaselineSnapshot): 
   }
 }
 
+/** Workspace snapshot algorithm version. Changes to hashing or exclusion logic bump this. */
+export const WORKSPACE_SNAPSHOT_ALGORITHM = 'sha256-tree-v2'
+
+/** Workspace snapshot exclusion set version. Changes to the excluded directory set bump this. */
+export const WORKSPACE_SNAPSHOT_EXCLUSIONS = 'verifier-snapshot-exclusions-v1'
+
+/** Directories excluded from the workspace hash and snapshot content hash. */
+export const SNAPSHOT_EXCLUDED_DIRS = new Set(['node_modules', '.git', 'dist'])
+
 /**
- * Compute a SHA-256 hash of workspace source files, excluding node_modules,
- * .git, and dist. The canonical workspace hash used for verification,
- * completion authorization, baseline freeze/restore, rollback verification,
- * and composed qualification. All subsystems that need a workspace content
- * hash must use this function to ensure semantic consistency.
+ * Compute a SHA-256 hash of workspace source files, excluding the directories
+ * in {@link SNAPSHOT_EXCLUDED_DIRS}. The canonical workspace hash used for
+ * verification, completion authorization, baseline freeze/restore, rollback
+ * verification, and composed qualification. All subsystems that need a
+ * workspace content hash must use this function to ensure semantic consistency.
+ *
+ * The algorithm and exclusion set are versioned via
+ * {@link WORKSPACE_SNAPSHOT_ALGORITHM} and {@link WORKSPACE_SNAPSHOT_EXCLUSIONS}.
+ * Changes to either must bump the version so qualification and experiment
+ * identity reflect the change.
  *
  * @param workspace - the workspace root to hash.
  * @returns a hex SHA-256 digest.
@@ -83,7 +97,7 @@ export function hashWorkspaceContents(workspace: string): string {
     const entries = readdirSync(dir, { withFileTypes: true })
     entries.sort((a, b) => a.name.localeCompare(b.name))
     for (const entry of entries) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue
+      if (SNAPSHOT_EXCLUDED_DIRS.has(entry.name)) continue
       const fullPath = join(dir, entry.name)
       if (entry.isDirectory()) {
         walk(fullPath)
