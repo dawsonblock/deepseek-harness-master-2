@@ -134,6 +134,7 @@ export function diffWorkspaceAgainstBaseline(
 ): string[] {
   const tempDir = join(tmpdir(), `dsh-diff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   try {
+    mkdirSync(tempDir, { recursive: true })
     execSync(`tar xf "${baseline.archivePath}" -C "${tempDir}"`, { stdio: 'pipe' })
     const baselineFiles = collectWorkspaceFiles(tempDir)
     const currentFiles = collectWorkspaceFiles(workspace)

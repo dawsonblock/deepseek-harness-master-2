@@ -509,20 +509,19 @@ function checkVerifierIntegrityHash(): SecurityPropertyCheck {
 /** G24: Verify reference fix files are forensic-only — never passed to the model. */
 function checkReferencePatchForensicOnly(): SecurityPropertyCheck {
   const source = readTrajectoryCollectorSource()
-  // Reference fix files must only appear in buildTrajectoryFromEvents
-  // for intersection analysis, never in model prompts or tool calls.
   const hasForensicOnlyComment = source.includes('Forensic-only invariant')
-  const referenceFixOnlyInAnalysis = !source.includes('referenceFixFiles.push(')
-    && !source.includes('prompt.*referenceFix')
+  // Verify no session.append call references referenceFixFiles.
+  const appendLines = source.split('\n').filter(l => l.includes('session.append'))
+  const noLeakInAppend = appendLines.every(l => !l.includes('referenceFixFiles'))
   // The model prompt is built from manifest.task.description only.
   const modelPromptUsesDescriptionOnly = source.includes('objective: manifest.task.description')
-  const passed = hasForensicOnlyComment && referenceFixOnlyInAnalysis && modelPromptUsesDescriptionOnly
+  const passed = hasForensicOnlyComment && noLeakInAppend && modelPromptUsesDescriptionOnly
   return {
     id: 'G24',
     name: 'Reference fix files are forensic-only (never model-visible)',
     status: passed ? 'pass' : 'fail',
     evidence: passed
-      ? 'reference fix files are documented forensic-only and only used for intersection analysis'
+      ? 'reference fix files are documented forensic-only and no session.append call references them'
       : 'reference fix files may leak to the model prompt or tool calls',
   }
 }

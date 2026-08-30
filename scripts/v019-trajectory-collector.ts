@@ -210,6 +210,9 @@ export async function runTaskTrajectory(
           if (result.failedCommand !== undefined) {
             evidence.push(`Command: ${result.failedCommand}`)
           }
+          if (result.exitCode !== undefined) {
+            evidence.push(`ExitCode: ${result.exitCode}`)
+          }
           if (result.stdout.length > 0) {
             evidence.push(`stdout:\n${result.stdout}`)
           }
@@ -430,6 +433,7 @@ interface DiagnosticResult {
   readonly passed: boolean
   readonly failedCommand?: string
   readonly failedKind?: DiagnosticKind
+  readonly exitCode?: number
   readonly stdout: string
   readonly stderr: string
 }
@@ -441,7 +445,7 @@ interface DiagnosticResult {
  */
 function inferDiagnosticKind(command: string): DiagnosticKind {
   const cmd = command.toLowerCase()
-  if (/\b(vitest|jest|mocha|pytest|cargo test|go test|npm test|pnpm test|yarn test|\.test\.|test_)/.test(cmd)) return 'test'
+  if (/\b(vitest|jest|mocha|pytest|cargo test|go test|npm test|npm run test|pnpm test|pnpm run test|yarn test|\.test\.|test_)/.test(cmd)) return 'test'
   if (/\b(tsc|typecheck|type-check|pyright|mypy|cargo check)/.test(cmd)) return 'typecheck'
   if (/\b(eslint|oxlint|biome|ruff|flake8|clippy|golangci)/.test(cmd)) return 'lint'
   return 'build'
@@ -459,7 +463,7 @@ function runDiagnosticSync(workspace: string, manifest: TaskManifest): Diagnosti
     try {
       execSync(cmd.command, { cwd: workspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
     } catch (e) {
-      const err = e as { stdout?: string; stderr?: string; message?: string }
+      const err = e as { stdout?: string; stderr?: string; message?: string; status?: number }
       const stdout = typeof err.stdout === 'string' ? err.stdout : ''
       const stderr = typeof err.stderr === 'string' ? err.stderr : ''
       // Truncate to avoid overwhelming the model prompt; keep the tail
@@ -470,6 +474,7 @@ function runDiagnosticSync(workspace: string, manifest: TaskManifest): Diagnosti
         passed: false,
         failedCommand: cmd.command,
         failedKind: cmd.kind ?? inferDiagnosticKind(cmd.command),
+        ...typeof err.status === 'number' ? { exitCode: err.status } : {},
         stdout: truncate(stdout),
         stderr: truncate(stderr),
       }
@@ -1161,8 +1166,8 @@ function getChangedFiles(workspace: string, checkout?: RepoCheckout): string[] {
       const baseFiles = execSync(
         `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -t`,
         { encoding: 'utf8', timeout: 30000 },
-      ).trim().split('\n').filter(f => f.length > 0)
-      const workspaceFiles = execSync(`find "${workspace}" -type f -not -path '*/node_modules/*' -not -path '*/.git/*'`, {
+      ).trim().split('\n').filter(f => f.length > 0 && !f.endsWith('/'))
+      const workspaceFiles = execSync(`find "${workspace}" -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*'`, {
         encoding: 'utf8',
         timeout: 30000,
       }).trim().split('\n').filter(f => f.length > 0)

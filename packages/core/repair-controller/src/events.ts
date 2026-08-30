@@ -20,9 +20,11 @@ declare module '@deepseek-ai/dsh-session/types' {
      * Failure evidence collected after one verified-failed repair attempt.
      * @param repairId - the repair sequence this evidence belongs to.
      * @param attempt - 1-based attempt number within the repair sequence.
+     * @param attemptId - logical attempt ID joining all repair events for this attempt.
      * @param routingDecisionId - joins to the `model/routing-decision` for this attempt.
      * @param failureFingerprint - deterministic hash of the failure evidence.
      * @param progress - progress classification relative to the prior failed attempt.
+     * @param failedKind - diagnostic kind of the failing command (test/typecheck/build/lint).
      */
     'repair/evidence': RepairEvidenceEventData
 

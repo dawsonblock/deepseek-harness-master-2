@@ -315,6 +315,8 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
     .flatMap(check => check.evidence ?? [])
   const kindMatch = allEvidence.find(e => /^Kind: (test|typecheck|build|lint)$/.test(e))
   const failedKind = kindMatch !== undefined ? kindMatch.replace(/^Kind: /, '') : undefined
+  const exitCodeMatch = allEvidence.find(e => /^ExitCode: \d+$/.test(e))
+  const diagnosticExitCode = exitCodeMatch !== undefined ? Number(exitCodeMatch.replace(/^ExitCode: /, '')) : undefined
 
   return {
     failedCriteria,
@@ -325,6 +327,7 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
     ...testDetails.length > 0 ? { testDetails } : {},
     ...buildDetails.length > 0 ? { buildDetails } : {},
     ...failedKind !== undefined ? { failedKind } : {},
+    ...diagnosticExitCode !== undefined ? { diagnosticExitCode } : {},
   }
 }
 

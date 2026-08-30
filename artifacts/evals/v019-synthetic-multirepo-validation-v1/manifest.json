@@ -1,0 +1,44 @@
+{
+  "experimentId": "v019-infra-validation-v1",
+  "sourceCommit": "a10037e23afbc05b70ff8f9177b67342f60f2489",
+  "frozenV018Tag": "v0.18.0",
+  "repairControllerVersion": "0.18.0",
+  "repairRuntimeVersion": "0.18.0",
+  "eventSchemaVersion": 0,
+  "pricingVersion": "2026-08-25",
+  "sandboxPolicyVersion": "v1",
+  "sandboxQualificationId": "v018-sandbox-v1",
+  "modelRoutes": [
+    {
+      "alias": "flash",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "alias": "pro",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro"
+    }
+  ],
+  "frozenRepairLimits": {
+    "maxFlashAttempts": 3,
+    "maxProAttempts": 2,
+    "maxTotalAttempts": 5
+  },
+  "taskCorpusVersion": "v1",
+  "taskCount": 2,
+  "repositoryCount": 2,
+  "benchmarkEligible": false,
+  "repairStrategy": "transactional",
+  "sandboxBackend": {
+    "runner": "seatbelt",
+    "runnerPath": "/usr/bin/sandbox-exec",
+    "runnerVersion": "26.2",
+    "enforcement": "full",
+    "networkDenied": true
+  },
+  "snapshotAlgorithm": "sha256-tree-v2",
+  "snapshotExclusions": "verifier-snapshot-exclusions-v1",
+  "qualificationArtifactHash": "6a976548b339866f984ce65a00420a941a5cb43eb8fcfcad211b97c593bb5b1b",
+  "manifestHash": "b3fe9923967c6ffd3ca6d73f81b41143f95ed1328b0164f6955341824e1db0b4"
+}
