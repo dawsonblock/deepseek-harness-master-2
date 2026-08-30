@@ -154,7 +154,6 @@ export async function runTaskTrajectory(
   baseline?: BaselineSnapshot,
 ): Promise<TaskTrajectory> {
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
-  const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
 
   const wallClockStart = Date.now()
   const allEvents: SessionEvent[] = []
@@ -168,20 +167,9 @@ export async function runTaskTrajectory(
     uninstallFailLoud = installFailLoud('v019-evaluation')
     ctx = await boot('v019-evaluation', resolveConfigPath(configPath, undefined))
 
-    // Mount the repair-runtime plugin programmatically with full config,
-    // including function-type fields that cannot be expressed in YAML.
-    const repairConfig: RepairRuntimeConfig = {
-      enabled: true,
-      flashModel: { provider: flashModel.provider, model: flashModel.model },
-      proModel: { provider: proModel.provider, model: proModel.model },
-      maxFlashAttempts: manifest.limits.maxFlashAttempts,
-      maxProAttempts: manifest.limits.maxProAttempts,
-      maxTotalAttempts: manifest.limits.maxTotalAttempts,
-      holdoutVerifier: createHoldoutVerifier(workspace, manifest, baseline),
-      workspaceProvenanceProvider: createProvenanceProvider(workspace),
-      rollbackProvider: createRollbackProvider(workspace, checkout, baseline),
-      failOnMissingUsage: true,
-    }
+    // Mount the repair-runtime plugin using the shared factory so the
+    // live evaluator and composed qualification use the same configuration.
+    const repairConfig = createRepairRuntimeConfig(workspace, manifest, checkout, baseline)
     await ctx.plugin(repairRuntimePlugin, repairConfig)
 
     // Register a goal completion verifier that runs the task's diagnostic
@@ -766,6 +754,40 @@ function createRollbackProvider(
       const message = error instanceof Error ? error.message : String(error)
       return { success: false, rollbackTarget: baseline !== undefined ? 'baseline-snapshot' : 'base-commit', failureReason: message }
     }
+  }
+}
+
+/**
+ * Create the production `RepairRuntimeConfig` for a v019 evaluation task.
+ * Both the live Batch A evaluator and the composed runtime qualification
+ * call this factory to prevent configuration drift between the qualified
+ * and live compositions.
+ *
+ * @param workspace - the model workspace root.
+ * @param manifest - the task manifest with limits and verification config.
+ * @param checkout - the repository checkout (for legacy rollback fallback).
+ * @param baseline - the frozen post-setup baseline snapshot.
+ * @returns the `RepairRuntimeConfig` for `ctx.plugin(repairRuntimePlugin, config)`.
+ */
+export function createRepairRuntimeConfig(
+  workspace: string,
+  manifest: TaskManifest,
+  checkout?: RepoCheckout,
+  baseline?: BaselineSnapshot,
+): RepairRuntimeConfig {
+  const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
+  const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+  return {
+    enabled: true,
+    flashModel: { provider: flashModel.provider, model: flashModel.model },
+    proModel: { provider: proModel.provider, model: proModel.model },
+    maxFlashAttempts: manifest.limits.maxFlashAttempts,
+    maxProAttempts: manifest.limits.maxProAttempts,
+    maxTotalAttempts: manifest.limits.maxTotalAttempts,
+    holdoutVerifier: createHoldoutVerifier(workspace, manifest, baseline),
+    workspaceProvenanceProvider: createProvenanceProvider(workspace),
+    rollbackProvider: createRollbackProvider(workspace, checkout, baseline),
+    failOnMissingUsage: true,
   }
 }
 
