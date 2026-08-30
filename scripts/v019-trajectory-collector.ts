@@ -15,7 +15,7 @@
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { mkdirSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -42,7 +42,7 @@ import {
 } from './v019-session-extraction.ts'
 
 import type { TaskManifest } from './v019-task-manifest.ts'
-import { type RepoMetadata, type RepoCheckout } from './v019-repo-checkout.ts'
+import { type RepoMetadata, type RepoCheckout, type BaselineSnapshot, restoreBaseline } from './v019-repo-checkout.ts'
 
 /** Checkpoint state for one task during evaluation. */
 export type TaskState =
@@ -151,6 +151,7 @@ export async function runTaskTrajectory(
   repoMetadata: RepoMetadata,
   referenceFixFiles: readonly string[],
   checkout?: RepoCheckout,
+  baseline?: BaselineSnapshot,
 ): Promise<TaskTrajectory> {
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
@@ -178,7 +179,7 @@ export async function runTaskTrajectory(
       maxTotalAttempts: manifest.limits.maxTotalAttempts,
       holdoutVerifier: createHoldoutVerifier(workspace, manifest),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
-      rollbackProvider: createRollbackProvider(workspace, checkout),
+      rollbackProvider: createRollbackProvider(workspace, checkout, baseline),
       failOnMissingUsage: true,
     }
     await ctx.plugin(repairRuntimePlugin, repairConfig)
@@ -649,61 +650,44 @@ function createProvenanceProvider(workspace: string): repairRuntimePlugin.Worksp
 }
 
 /**
- * Create a rollback provider that restores the workspace to the base commit.
- * When a `RepoCheckout` is available (no `.git` in the workspace), uses
- * `git archive` re-extraction from the cached clone. Falls back to
- * `git checkout` for legacy worktree-based workspaces.
+ * Create a rollback provider that restores the workspace from a frozen
+ * post-setup baseline snapshot. When a `BaselineSnapshot` is available,
+ * restores exactly B0 and verifies the content hash matches. Falls back
+ * to `git checkout` for legacy worktree-based workspaces without a snapshot.
  */
-/**
- * Directories that are harness-owned or installed after checkout. Rollback
- * must preserve these so the runtime environment survives repair attempts.
- */
-const PRESERVE_DIRS = new Set(['node_modules', 'sessions', '.git'])
-
-function createRollbackProvider(workspace: string, checkout?: RepoCheckout): repairRuntimePlugin.RollbackProvider {
+function createRollbackProvider(
+  workspace: string,
+  checkout?: RepoCheckout,
+  baseline?: BaselineSnapshot,
+): repairRuntimePlugin.RollbackProvider {
   return () => {
     try {
+      if (baseline !== undefined) {
+        const result = restoreBaseline(workspace, baseline)
+        return {
+          success: result.success,
+          rollbackTarget: 'baseline-snapshot',
+          targetHash: baseline.hash,
+          ...result.resultHash !== undefined ? { resultHash: result.resultHash } : {},
+          ...!result.success ? { failureReason: 'baseline hash mismatch after restore' } : {},
+        }
+      }
       if (checkout !== undefined) {
-        // Restore only model-controlled source files, preserving installed
-        // dependencies and harness state. The previous implementation deleted
-        // the entire workspace and re-extracted from git archive, which
-        // destroyed node_modules, sessions, and generated configuration.
-        // Instead, snapshot the preserve directories, restore source from
-        // the archive, then restore the preserved directories.
-        const preserved: { name: string; path: string }[] = []
-        for (const name of PRESERVE_DIRS) {
-          const dirPath = join(workspace, name)
-          if (existsSync(dirPath)) {
-            preserved.push({ name, path: dirPath })
-          }
-        }
-        // Move preserved dirs to a temp location.
-        const tempBase = `${workspace}.rollback-preserve`
-        try { rmSync(tempBase, { recursive: true, force: true }) } catch { /* ignore */ }
-        mkdirSync(tempBase, { recursive: true })
-        for (const { name, path } of preserved) {
-          execSync(`mv "${path}" "${join(tempBase, name)}"`, { stdio: 'pipe', timeout: 30000 })
-        }
-        // Clear workspace and re-extract source from the base commit.
+        // Legacy fallback: re-extract from git archive without a frozen baseline.
         rmSync(workspace, { recursive: true, force: true })
         mkdirSync(workspace, { recursive: true })
         execSync(
           `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -x -C "${workspace}"`,
           { stdio: 'pipe', timeout: 60000 },
         )
-        // Restore preserved dirs.
-        for (const { name } of preserved) {
-          execSync(`mv "${join(tempBase, name)}" "${join(workspace, name)}"`, { stdio: 'pipe', timeout: 30000 })
-        }
-        try { rmSync(tempBase, { recursive: true, force: true }) } catch { /* ignore */ }
-      } else {
-        execSync('git checkout -- .', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
-        execSync('git clean -fd', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+        return { success: true, rollbackTarget: 'base-commit' }
       }
+      execSync('git checkout -- .', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
+      execSync('git clean -fd', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
       return { success: true, rollbackTarget: 'base-commit' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      return { success: false, rollbackTarget: 'base-commit', failureReason: message }
+      return { success: false, rollbackTarget: baseline !== undefined ? 'baseline-snapshot' : 'base-commit', failureReason: message }
     }
   }
 }

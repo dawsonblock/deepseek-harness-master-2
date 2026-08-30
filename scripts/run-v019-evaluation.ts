@@ -30,6 +30,7 @@ import {
   checkoutRepo,
   cleanupWorkspace,
   computeRepoMetadata,
+  freezeBaseline,
   installDependencies,
   type RepoCheckout,
 } from './v019-repo-checkout.ts'
@@ -184,6 +185,10 @@ async function main(): Promise<void> {
       process.stderr.write('  [SETUP] Installing dependencies...\n')
       await installDependencies(workspace)
 
+      // Freeze the exact post-setup baseline B0 for rollback restoration.
+      process.stderr.write('  [SETUP] Freezing baseline snapshot...\n')
+      const baseline = freezeBaseline(workspace)
+
       // Compute repo metadata
       const repoMetadata = computeRepoMetadata(workspace, {
         name: taskManifest.repository.name,
@@ -209,6 +214,7 @@ async function main(): Promise<void> {
         repoMetadata,
         referenceFixFiles,
         checkout,
+        baseline,
       )
 
       // Save trajectory

@@ -195,24 +195,32 @@ function createProvenanceProvider(workspace: string): WorkspaceProvenanceProvide
   return () => computeWorkspaceHashForDir(workspace)
 }
 
-/** Create a rollback provider that restores from a snapshot. */
+/** Create a rollback provider that restores from a snapshot directory. */
 function createRollbackProvider(workspace: string, snapshotDir: string): RollbackProvider {
+  const targetHash = computeWorkspaceHashForDir(snapshotDir)
   return () => {
     try {
       rmSync(workspace, { recursive: true, force: true })
       mkdirSync(workspace, { recursive: true })
       execSync(`cp -R "${snapshotDir}/." "${workspace}/"`, { stdio: 'pipe', timeout: 30000 })
-      return { success: true, rollbackTarget: 'base-commit' }
+      const resultHash = computeWorkspaceHashForDir(workspace)
+      return {
+        success: resultHash === targetHash,
+        rollbackTarget: 'baseline-snapshot',
+        targetHash,
+        resultHash,
+        ...resultHash !== targetHash ? { failureReason: 'baseline hash mismatch after restore' } : {},
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      return { success: false, rollbackTarget: 'base-commit', failureReason: message }
+      return { success: false, rollbackTarget: 'baseline-snapshot', failureReason: message, targetHash }
     }
   }
 }
 
 /** Create a failing rollback provider. */
 function createFailingRollbackProvider(): RollbackProvider {
-  return () => ({ success: false, rollbackTarget: 'base-commit', failureReason: 'forced rollback failure for qualification' })
+  return () => ({ success: false, rollbackTarget: 'baseline-snapshot', failureReason: 'forced rollback failure for qualification' })
 }
 
 /** Create a holdout verifier that always passes. */

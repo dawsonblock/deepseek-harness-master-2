@@ -14,12 +14,91 @@
  */
 
 import { mkdir, rm } from 'node:fs/promises'
-import { statSync } from 'node:fs'
-import { join } from 'node:path'
+import { statSync, readdirSync, readFileSync, rmSync, mkdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { join, relative } from 'node:path'
 import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
 const CLONE_CACHE = new Map<string, string>()
+
+/** A frozen post-setup baseline snapshot for exact rollback restoration. */
+export interface BaselineSnapshot {
+  /** Path to the tar archive containing the full workspace state at freeze time. */
+  readonly archivePath: string
+  /** SHA-256 hash of the workspace contents at freeze time (excludes node_modules/.git/dist). */
+  readonly hash: string
+}
+
+/**
+ * Freeze a deterministic baseline snapshot B0 after setup completes. Every
+ * repair attempt restores exactly B0, not a reconstruction from git archive
+ * plus preserved directories. The snapshot is a tar archive of the full
+ * workspace (including node_modules) plus a content hash for verification.
+ *
+ * @param workspace - the workspace root to snapshot.
+ * @returns the snapshot archive path and content hash.
+ */
+export function freezeBaseline(workspace: string): BaselineSnapshot {
+  const archivePath = `${workspace}.baseline.tar`
+  execSync(`tar -cf "${archivePath}" -C "${workspace}" .`, { stdio: 'pipe', timeout: 120000 })
+  const hash = hashWorkspaceContents(workspace)
+  return { archivePath, hash }
+}
+
+/**
+ * Restore a workspace from a frozen baseline snapshot. Extracts the tar
+ * archive over a clean workspace directory, then verifies the restored
+ * content hash matches the frozen hash.
+ *
+ * @param workspace - the workspace root to restore into.
+ * @param snapshot - the baseline snapshot to restore from.
+ * @returns the restored workspace content hash, or undefined if verification failed.
+ */
+export function restoreBaseline(workspace: string, snapshot: BaselineSnapshot): { success: boolean; resultHash?: string } {
+  try {
+    rmSync(workspace, { recursive: true, force: true })
+    mkdirSync(workspace, { recursive: true })
+    execSync(`tar -xf "${snapshot.archivePath}" -C "${workspace}"`, { stdio: 'pipe', timeout: 120000 })
+    const resultHash = hashWorkspaceContents(workspace)
+    return { success: resultHash === snapshot.hash, resultHash }
+  } catch {
+    return { success: false }
+  }
+}
+
+/**
+ * Compute a SHA-256 hash of workspace source files, excluding node_modules,
+ * .git, and dist. Used to verify baseline restoration is exact.
+ *
+ * @param workspace - the workspace root to hash.
+ * @returns a hex SHA-256 digest.
+ */
+function hashWorkspaceContents(workspace: string): string {
+  const hash = createHash('sha256')
+  const walk = (dir: string): void => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue
+      const fullPath = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(fullPath)
+      } else if (entry.isFile()) {
+        const rel = relative(workspace, fullPath)
+        hash.update(rel).update(':')
+        try {
+          hash.update(readFileSync(fullPath))
+        } catch {
+          hash.update('[unreadable]')
+        }
+        hash.update('\n')
+      }
+    }
+  }
+  walk(workspace)
+  return hash.digest('hex')
+}
 
 /** A repository checkout result: the model workspace and the verifier-only clone. */
 export interface RepoCheckout {

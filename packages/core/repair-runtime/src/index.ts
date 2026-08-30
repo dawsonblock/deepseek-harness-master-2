@@ -133,6 +133,10 @@ export interface RollbackResult {
   readonly rollbackTarget: string
   /** Human-readable reason when rollback failed. */
   readonly failureReason?: string
+  /** The expected baseline hash that rollback should restore. */
+  readonly targetHash?: string
+  /** The actual workspace hash after rollback. Must match `targetHash` for success. */
+  readonly resultHash?: string
 }
 
 /**
@@ -1224,6 +1228,8 @@ export function handleVerificationFailure(
       rollbackTarget: rollbackResult.rollbackTarget,
       success: rollbackResult.success,
       ...rollbackResult.failureReason !== undefined ? { failureReason: rollbackResult.failureReason } : {},
+      ...rollbackResult.targetHash !== undefined ? { targetHash: rollbackResult.targetHash } : {},
+      ...rollbackResult.resultHash !== undefined ? { resultHash: rollbackResult.resultHash } : {},
     }, { ignorable: true })
 
     // Fail closed: rollback failure stops repair immediately.

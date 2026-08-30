@@ -25,6 +25,7 @@ import {
   checkoutRepo,
   cleanupWorkspace,
   computeRepoMetadata,
+  freezeBaseline,
   installDependencies,
   type RepoCheckout,
 } from './v019-repo-checkout.ts'
@@ -265,6 +266,12 @@ async function main(): Promise<void> {
       process.stderr.write('  [SETUP] Installing dependencies...\n')
       await installDependencies(workspace)
 
+      // Freeze the exact post-setup baseline B0. Every repair attempt
+      // restores from this snapshot, not a reconstruction from git archive
+      // plus preserved directories. The hash verifies exact restoration.
+      process.stderr.write('  [SETUP] Freezing baseline snapshot...\n')
+      const baseline = freezeBaseline(workspace)
+
       const repoMetadata = computeRepoMetadata(workspace, {
         name: taskManifest.repository.name,
         url: taskManifest.repository.url,
@@ -287,6 +294,7 @@ async function main(): Promise<void> {
         repoMetadata,
         referenceFixFiles,
         checkout,
+        baseline,
       )
 
       const trajectoryPath = join(TRAJECTORIES_DIR, `${taskManifest.taskId}.json`)
