@@ -58,6 +58,13 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - 工作区绑定完成现在在 `completeVerified()` 中实现。验证事件携带绑定到验证时工作区状态的可选 `workspaceHash`。在完成时，插件重新计算工作区哈希并将其传递给 `completeVerified()`，后者以 `GOAL_WORKSPACE_MUTATED` 拒绝不匹配。修复提示现在正确说明工作区已回滚到可信基础状态。
 - 验证器完整性文件集现在覆盖组合资格认证脚本、冻结生成器、Batch A 运行器、repair-controller 类型和 goal 领域——将完整的评估器源闭包绑定到冻结哈希。
 - Landlock 不隔离网络。从 bwrap 回退到 Landlock 的 Linux 运行时具有文件系统隔离但没有网络隔离。探测的后端检查将此报告为 `partial` 执行，基准测试门要求 `full` 执行（网络拒绝的后端）。
+- 诊断验证器现在捕获失败验证命令的真实 stdout/stderr 并将其作为证据传递给修复模型。修复模型接收实际的测试失败输出、断言差异和构建错误，而非通用的"诊断验证命令失败"消息。
+- 轨迹重建按 `routingDecisionId` 分组 `model/usage` 事件，而非每个使用事件计为一次尝试。一个逻辑尝试内的提供者重试被聚合——其令牌和成本被汇总，尝试延迟从轮次开始到最后一个使用事件。这防止了重试对尝试计数、修复率和升级率的膨胀。
+- 控制平面和模型能力状态现在正确区分基础设施故障和模型故障。`rollback-failed`、`workspace-provenance-failed` 和 `unknown` 结果产生 `controlPlaneStatus=FAIL` 和 `modelCapabilityStatus=NOT_EVALUATED`，因为线束未完成评估管道，模型能力无法评估。
+- 分类指标现在应用与全局指标相同的 `benchmarkEligible` 过滤，防止非基准轨迹（如 B0 冒烟测试）污染分类结果。
+- 失败分类优先级已修正：F8（修复证据不足——相同指纹重复）在 F1/F17（模型推理/跨文件一致性）之前检查，因为重复的指纹比"做了修改但仍然失败"更具信息量。`v019-failure-taxonomy.spec.ts` 中的确定性夹具验证每个分类路径和优先级排序。
+- 当付费请求缺少规范使用证据时，轨迹收集器失败关闭：如果存在 `repair/evidence` 事件但未找到 `model/usage` 事件，收集器抛出 `MISSING_USAGE_EVIDENCE` 而非静默生成零成本尝试。
+- 验证器控制的任务文件（package.json、tsconfig.json、vitest 配置）在模型执行前被哈希。诊断验证器在每次验证调用时重新哈希这些文件，如果模型篡改了它们则拒绝任务，防止模型在最终验证前更改测试配置或模块解析。
 
 ## Alternatives considered
 

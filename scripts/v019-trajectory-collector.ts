@@ -181,17 +181,45 @@ export async function runTaskTrajectory(
     // Register a goal completion verifier that runs the task's diagnostic
     // commands. The repair-runtime plugin watches goal/verification events
     // emitted by verifyCompletion() and handles repair decisions.
+    // Hash verifier-controlled files before model execution. The diagnostic
+    // verifier re-hashes these files on each verification call and rejects
+    // the task if the model has tampered with them.
+    const verifierFileHash = hashVerifierControlledFiles(workspace)
+
     const diagnosticVerifier: GoalCompletionVerifier = {
       name: 'v019-diagnostic',
       version: '1',
       verify: () => {
-        const passed = runDiagnosticSync(workspace, manifest)
+        // Check verifier-controlled files have not been tampered with.
+        const currentHash = hashVerifierControlledFiles(workspace)
+        if (currentHash !== verifierFileHash) {
+          return {
+            name: 'v019-diagnostic',
+            role: 'acceptance',
+            passed: false,
+            reason: 'verifier-controlled files were modified by the model — task rejected',
+            evidence: [`expected hash: ${verifierFileHash}`, `actual hash: ${currentHash}`],
+          }
+        }
+        const result = runDiagnosticSync(workspace, manifest)
+        const evidence: string[] = []
+        if (!result.passed) {
+          if (result.failedCommand !== undefined) {
+            evidence.push(`Command: ${result.failedCommand}`)
+          }
+          if (result.stdout.length > 0) {
+            evidence.push(`stdout:\n${result.stdout}`)
+          }
+          if (result.stderr.length > 0) {
+            evidence.push(`stderr:\n${result.stderr}`)
+          }
+        }
         return {
           name: 'v019-diagnostic',
           role: 'acceptance',
-          passed,
-          reason: passed ? '' : 'diagnostic verification commands failed',
-          evidence: [],
+          passed: result.passed,
+          reason: result.passed ? '' : `diagnostic verification failed: ${result.failedCommand ?? 'unknown command'}`,
+          evidence,
         }
       },
     }
@@ -403,16 +431,75 @@ function computeWorkspaceHash(workspace: string): string {
 // Production RepairRuntime helpers: holdout, provenance, rollback, trajectory
 // ---------------------------------------------------------------------------
 
-/** Run diagnostic verification commands synchronously for the goal completion verifier. */
-function runDiagnosticSync(workspace: string, manifest: TaskManifest): boolean {
+/** Result of running diagnostic verification commands. */
+interface DiagnosticResult {
+  readonly passed: boolean
+  readonly failedCommand?: string
+  readonly stdout: string
+  readonly stderr: string
+}
+
+/**
+ * Run diagnostic verification commands synchronously for the goal completion
+ * verifier. Captures stdout/stderr from failed commands so the repair model
+ * receives real test failure output instead of a generic message.
+ */
+function runDiagnosticSync(workspace: string, manifest: TaskManifest): DiagnosticResult {
   for (const cmd of manifest.verification.diagnostic) {
     try {
       execSync(cmd.command, { cwd: workspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
-    } catch {
-      return false
+    } catch (e) {
+      const err = e as { stdout?: string; stderr?: string; message?: string }
+      const stdout = typeof err.stdout === 'string' ? err.stdout : ''
+      const stderr = typeof err.stderr === 'string' ? err.stderr : ''
+      // Truncate to avoid overwhelming the model prompt; keep the tail
+      // where stack traces and assertion failures typically appear.
+      const maxLen = 4000
+      const truncate = (s: string): string => s.length > maxLen ? `...(${s.length - maxLen} chars truncated)...\n${s.slice(-maxLen)}` : s
+      return {
+        passed: false,
+        failedCommand: cmd.command,
+        stdout: truncate(stdout),
+        stderr: truncate(stderr),
+      }
     }
   }
-  return true
+  return { passed: true, stdout: '', stderr: '' }
+}
+
+/**
+ * Compute a SHA-256 hash of verifier-controlled task files before model
+ * execution. This protects the verifier environment from model tampering:
+ * the diagnostic verifier re-hashes these files and rejects modifications
+ * before final verification.
+ *
+ * Verifier-controlled files are files the model should not alter: package
+ * manifests, test configurations, and test setup files. The model workspace
+ * is extracted from a git archive without .git, so the model cannot use git
+ * to inspect these — but it can still overwrite them with tool calls.
+ */
+function hashVerifierControlledFiles(workspace: string): string {
+  const hash = createHash('sha256')
+  const controlledFiles = [
+    'package.json',
+    'tsconfig.json',
+    'vitest.config.ts',
+    'vitest.config.mts',
+    'vitest.config.js',
+    'vite.config.ts',
+  ]
+  for (const file of controlledFiles) {
+    const absPath = join(workspace, file)
+    try {
+      const content = readFileSync(absPath)
+      hash.update(file).update(':').update(content).update('\n')
+    } catch {
+      // File doesn't exist in this workspace — include its absence in the hash
+      // so a model creating it would be detected.
+      hash.update(file).update(':absent\n')
+    }
+  }
+  return hash.digest('hex')
 }
 
 /** Create a holdout verifier for the production RepairRuntime. Stages holdout tests, runs them, and cleans up. */
@@ -537,45 +624,80 @@ function buildTrajectoryFromEvents(
   // Determine holdout pass from the outcome.
   const holdoutPass = outcome === 'qualification-failed' ? false : finalVerified
 
-  // Extract per-attempt data from model/usage events.
+  // Extract per-attempt data from model/usage events, grouped by
+  // routingDecisionId. Multiple usage events sharing the same routing
+  // decision represent provider retries within one logical attempt —
+  // they must be aggregated, not counted as separate attempts.
   const usageEvents = allEvents.filter(e => e.type === 'model/usage')
+  type UsageData = { usage: {
+    inputTokens?: number
+    outputTokens?: number
+    reasoningTokens?: number
+    totalTokens?: number
+    cacheReadTokens?: number
+    cacheMissTokens?: number
+  } }
+
+  // Group usage events by routingDecisionId, preserving order of first appearance.
+  const routingGroups: { routingDecisionId: string; events: typeof usageEvents }[] = []
+  for (const usageEvent of usageEvents) {
+    const turn = (usageEvent.data as { turn?: number }).turn ?? 0
+    // Prefer the usage event's own routingDecisionId when present; fall
+    // back to turn-based matching for legacy events that lack it.
+    const ownRoutingId = (usageEvent.data as { routingDecisionId?: string }).routingDecisionId
+    const routingEvent = allEvents.find(e => e.type === 'model/routing-decision' && (e.data as { turn?: number }).turn === turn) as
+      | Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+    const routingDecisionId = ownRoutingId ?? routingEvent?.data.routingDecisionId ?? `unrouted-turn-${turn}`
+    const existing = routingGroups.find(g => g.routingDecisionId === routingDecisionId)
+    if (existing !== undefined) {
+      existing.events.push(usageEvent)
+    } else {
+      routingGroups.push({ routingDecisionId, events: [usageEvent] })
+    }
+  }
+
   const attempts: AttemptTrajectory[] = []
   let totalOutputTokens = 0
   let totalCacheReadTokens = 0
   let totalCacheMissTokens = 0
 
-  for (let i = 0; i < usageEvents.length; i++) {
-    const usageEvent = usageEvents[i] as Extract<SessionEvent, { type: 'model/usage' }>
-    type UsageData = { usage: {
-      inputTokens?: number
-      outputTokens?: number
-      reasoningTokens?: number
-      totalTokens?: number
-      cacheReadTokens?: number
-      cacheMissTokens?: number
-    } }
-    const usage = (usageEvent.data as unknown as UsageData).usage
-    const inputTokens = usage.inputTokens ?? 0
-    const outputTokens = usage.outputTokens ?? 0
-    const reasoningTokens = usage.reasoningTokens ?? 0
-    const totalTokens = usage.totalTokens ?? 0
-    const cacheReadTokens = usage.cacheReadTokens ?? 0
-    const cacheMissTokens = usage.cacheMissTokens ?? 0
+  for (let i = 0; i < routingGroups.length; i++) {
+    const group = routingGroups[i]
+    if (group === undefined) continue
+    const firstUsageEvent = group.events[0] as Extract<SessionEvent, { type: 'model/usage' }>
+
+    // Aggregate usage across all provider retries in this logical attempt.
+    let inputTokens = 0
+    let outputTokens = 0
+    let reasoningTokens = 0
+    let totalTokens = 0
+    let cacheReadTokens = 0
+    let cacheMissTokens = 0
+    for (const evt of group.events) {
+      const usage = (evt.data as unknown as UsageData).usage
+      inputTokens += usage.inputTokens ?? 0
+      outputTokens += usage.outputTokens ?? 0
+      reasoningTokens += usage.reasoningTokens ?? 0
+      totalTokens += usage.totalTokens ?? 0
+      cacheReadTokens += usage.cacheReadTokens ?? 0
+      cacheMissTokens += usage.cacheMissTokens ?? 0
+    }
     totalOutputTokens += outputTokens
     totalCacheReadTokens += cacheReadTokens
     totalCacheMissTokens += cacheMissTokens
 
-    // Compute cost for this attempt using the pricing registry.
-    const turn = (usageEvent.data as { turn?: number }).turn ?? 0
+    const turn = (firstUsageEvent.data as { turn?: number }).turn ?? 0
+    const routingDecisionId = group.routingDecisionId
     const routingEvent = allEvents.find(e => e.type === 'model/routing-decision' && (e.data as { turn?: number }).turn === turn) as
       | Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
-    const routingDecisionId = routingEvent?.data.routingDecisionId ?? 'unrouted'
-    const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model ?? 'unknown'
+    const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model
+      ?? (firstUsageEvent.data as { model?: string }).model
+      ?? 'unknown'
 
     // Fail loud on unpriced model usage: unknown pricing must not silently
     // become $0, which would make economic metrics look artificially better.
     // Use the event's actual timestamp for historical pricing accuracy.
-    const eventTimestamp = new Date(usageEvent.time)
+    const eventTimestamp = new Date(firstUsageEvent.time)
     const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, eventTimestamp)
     if (pricing === undefined) {
       throw new Error(`UNPRICED_USAGE: no pricing found for model ${model}`)
@@ -614,11 +736,13 @@ function buildTrajectoryFromEvents(
       progress,
       usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens },
       costUsd,
-      // Per-attempt model latency: time from turn/start to model/usage event.
+      // Per-attempt model latency: time from turn/start to last usage event.
       latencyMs: (() => {
         const turnStart = allEvents.find(e => e.type === 'turn/start' && (e.data as { turn?: number }).turn === turn)
         if (turnStart === undefined) return 0
-        return Math.max(0, usageEvent.time - turnStart.time)
+        const lastUsage = group.events[group.events.length - 1]
+        if (lastUsage === undefined) return 0
+        return Math.max(0, lastUsage.time - turnStart.time)
       })(),
       repairAction,
       repairReason,
@@ -627,6 +751,16 @@ function buildTrajectoryFromEvents(
       filesInspected: attemptObservation.filesInspected,
       terminalOutcome: outcome,
     })
+  }
+
+  // Fail closed: if repair evidence or decision events indicate paid
+  // attempts occurred but no canonical model/usage events exist, the
+  // evaluation pipeline is broken. A paid request without usage evidence
+  // means cost and token accounting is incomplete — this is a control-plane
+  // failure, not a model capability failure.
+  const repairEvidenceEvents = allEvents.filter(e => e.type === 'repair/evidence')
+  if (repairEvidenceEvents.length > 0 && usageEvents.length === 0) {
+    throw new Error(`MISSING_USAGE_EVIDENCE: ${repairEvidenceEvents.length} repair/evidence event(s) but 0 model/usage events for task ${manifest.taskId}`)
   }
 
   const changedFiles = getChangedFiles(workspace, checkout)
@@ -649,13 +783,29 @@ function buildTrajectoryFromEvents(
   // Control plane status measures whether the harness itself behaved
   // correctly: routing, verification, repair, rollback, and event emission
   // all worked as designed. A model capability failure (couldn't solve the
-  // task, failed holdout) is NOT a control plane failure.
+  // task, failed holdout) is NOT a control plane failure. An unknown
+  // terminal state is a control-plane failure — the harness could not
+  // determine the outcome, which is itself a harness defect.
   const controlPlaneStatus: ControlPlaneStatus =
-    outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed'
+    outcome === 'authority-undecidable'
+      || outcome === 'model-unavailable'
+      || outcome === 'rollback-failed'
+      || outcome === 'workspace-provenance-failed'
+      || outcome === 'unknown'
       ? 'FAIL'
       : 'PASS'
+  // Model capability is NOT_EVALUATED when the control plane failed before
+  // the model had a fair chance to demonstrate capability. For rollback
+  // failures and unknown outcomes, the model's capability cannot be assessed
+  // because the harness did not complete the evaluation pipeline.
   const modelCapabilityStatus: 'PASS' | 'FAIL' | 'NOT_EVALUATED' =
-    outcome === 'authority-undecidable' || outcome === 'model-unavailable' ? 'NOT_EVALUATED' : finalVerified ? 'PASS' : 'FAIL'
+    outcome === 'authority-undecidable'
+      || outcome === 'model-unavailable'
+      || outcome === 'rollback-failed'
+      || outcome === 'workspace-provenance-failed'
+      || outcome === 'unknown'
+      ? 'NOT_EVALUATED'
+      : finalVerified ? 'PASS' : 'FAIL'
 
   return {
     taskId: manifest.taskId,

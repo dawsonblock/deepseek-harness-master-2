@@ -216,7 +216,10 @@ function groupByCategory(trajectories: readonly TaskTrajectory[]): CategoryMetri
     categories.set(t.category, list)
   }
   return [...categories.entries()].map(([category, tasks]) => {
-    const evalTasks = tasks.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
+    // Apply the same benchmarkEligible filter as global metrics so
+    // category metrics exclude non-benchmark trajectories (e.g. B0).
+    const eligibleTasks = tasks.filter(t => t.benchmarkEligible)
+    const evalTasks = eligibleTasks.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
     return {
       category,
       count: tasks.length,

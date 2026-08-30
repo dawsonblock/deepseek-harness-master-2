@@ -123,7 +123,23 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
     }
   }
 
-  // F1: model reasoning failure (all attempts failed, no specific pattern)
+  // F8: repair evidence inadequate (same failure fingerprint across
+  // attempts). Check before F1/F17 because a repeated fingerprint is
+  // more informative than "made changes but still fails" — it indicates
+  // the repair evidence did not help the model make progress.
+  const fingerprints = t.attempts
+    .map(a => a.failureFingerprint)
+    .filter((f): f is string => f !== undefined)
+  if (fingerprints.length > 1 && new Set(fingerprints).size === 1) {
+    return {
+      taskId: t.taskId,
+      category: 'F8-repair-evidence',
+      reason: 'Same failure fingerprint across multiple attempts — repair evidence did not help',
+      evidence: `fingerprints=${fingerprints.length}, unique=${new Set(fingerprints).size}`,
+    }
+  }
+
+  // F1: model reasoning failure (all attempts failed, no changes produced)
   const allFailed = t.attempts.every(a => !a.verified)
   if (allFailed && t.changedFiles.length === 0) {
     return {
@@ -141,19 +157,6 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       category: 'F17-cross-file-consistency',
       reason: 'Model made changes but verification still fails — likely missed a dependent file',
       evidence: `attempts=${t.attempts.length}, changedFiles=${t.changedFiles.length}`,
-    }
-  }
-
-  // F8: repair evidence inadequate (same failure fingerprint across attempts)
-  const fingerprints = t.attempts
-    .map(a => a.failureFingerprint)
-    .filter(f => f !== undefined) as string[]
-  if (fingerprints.length > 1 && new Set(fingerprints).size === 1) {
-    return {
-      taskId: t.taskId,
-      category: 'F8-repair-evidence',
-      reason: 'Same failure fingerprint across multiple attempts — repair evidence did not help',
-      evidence: `fingerprints=${fingerprints.length}, unique=${new Set(fingerprints).size}`,
     }
   }
 
