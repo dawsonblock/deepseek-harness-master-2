@@ -526,6 +526,9 @@ importers:
       '@deepseek-ai/dsh-llm-deepseek':
         specifier: workspace:*
         version: link:../packages/llm/llm-deepseek
+      '@deepseek-ai/dsh-llm-model-router':
+        specifier: workspace:*
+        version: link:../packages/llm/llm-model-router
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:*
         version: link:../packages/llm/llm-pi-ai
@@ -550,6 +553,12 @@ importers:
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../packages/shell/pwsh-local
+      '@deepseek-ai/dsh-repair-controller':
+        specifier: workspace:*
+        version: link:../packages/core/repair-controller
+      '@deepseek-ai/dsh-repair-runtime':
+        specifier: workspace:*
+        version: link:../packages/core/repair-runtime
       '@deepseek-ai/dsh-repeat-tool-reminder':
         specifier: workspace:*
         version: link:../packages/guard/repeat-tool-reminder

@@ -280,6 +280,7 @@ export type RepairOutcome =
   | 'authority-undecidable'
   | 'model-unavailable'
   | 'workspace-provenance-failed'
+  | 'repair-handler-error'
 
 /**
  * Durable record of repair sequence completion. Emitted as the

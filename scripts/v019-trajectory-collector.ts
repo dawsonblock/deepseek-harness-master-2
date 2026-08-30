@@ -251,6 +251,23 @@ export async function runTaskTrajectory(
       // Send the task to the agent. The agent works on it and becomes idle.
       await runFixtureTurn(ctx, { task: manifest.task.description })
 
+      // Detect turn-end errors that the agent-loop driver boundary
+      // silently contains. The agent goes idle even when the model call
+      // failed (e.g., authentication error, empty response). The turn/end
+      // event records the failure reason — check it here so the trajectory
+      // reflects the actual error rather than masking it as a repair failure.
+      const turnEnds = allEvents.filter(e => e.type === 'turn/end')
+      const errorTurnEnd = turnEnds.find((e) => {
+        const reason = (e.data as { reason?: { kind?: string } }).reason
+        return reason?.kind === 'error'
+      })
+      if (errorTurnEnd !== undefined) {
+        const reason = (errorTurnEnd.data as { reason: { kind: string; error?: { message?: string; code?: string } } }).reason
+        const message = reason.error?.message ?? 'unknown model error'
+        const code = reason.error?.code ?? 'UNKNOWN'
+        throw new Error(`MODEL_ERROR: ${code}: ${message}`)
+      }
+
       // After each agent idle, trigger goal verification. The repair-runtime
       // plugin handles repair decisions: flash-repair sends a followup, pro-
       // escalate sends a followup with a different model, stop blocks the goal.
@@ -293,7 +310,7 @@ export async function runTaskTrajectory(
   // Extract trajectory from session events.
   return buildTrajectoryFromEvents(
     allEvents, manifest, workspace, experimentId, benchmarkEligible,
-    repoMetadata, referenceFixFiles, wallClockStart, checkout,
+    repoMetadata, referenceFixFiles, wallClockStart, checkout, baseline,
   )
 }
 
@@ -386,6 +403,26 @@ export async function generateRepoConfig(model: string, workspace: string): Prom
     /- id: fs-local\n  name: '@deepseek-ai\/dsh-fs-local'/,
     `- id: fs-sandbox
   name: '@deepseek-ai/dsh-fs-sandbox'`,
+  )
+  // Add the model router before the agent-spine so it joins the
+  // agent/request waterfall. The router emits model/routing-decision and
+  // model/usage events that the repair runtime requires for attempt
+  // accounting and routing authority resolution.
+  base = base.replace(
+    /- id: agent-spine/,
+    `- id: model-router
+  name: '@deepseek-ai/dsh-llm-model-router'
+  config:
+    fastRoute:
+      provider: deepseek-official
+      model: deepseek-v4-flash
+    heavyRoute:
+      provider: deepseek-official
+      model: deepseek-v4-pro
+      reasoningEffort: max
+    escalationThreshold: 4
+    recordAllDecisions: true
+- id: agent-spine`,
   )
   // Add goal, tool-goal, and repair-controller plugins so the production
   // RepairRuntime can hook into goal/verification events. The repair-runtime
@@ -855,6 +892,7 @@ function buildTrajectoryFromEvents(
   referenceFixFiles: readonly string[],
   wallClockStart: number,
   checkout?: RepoCheckout,
+  baseline?: BaselineSnapshot,
 ): TaskTrajectory {
   // Extract repair attempts from repair/evidence and repair/decision events.
   const repairEvents = allEvents.filter(e => e.type === 'repair/evidence' || e.type === 'repair/decision' || e.type === 'repair/completed')
@@ -1064,7 +1102,13 @@ function buildTrajectoryFromEvents(
     }
   }
 
-  const changedFiles = getChangedFiles(workspace, checkout)
+  // Use the same diffWorkspaceAgainstBaseline function as the repair runtime's
+  // ChangedFilesProvider so the trajectory record and the repair evidence
+  // agree on what changed. Fall back to the git-based getChangedFiles only
+  // when no baseline snapshot is available (legacy worktree-based checkout).
+  const changedFiles = baseline !== undefined
+    ? diffWorkspaceAgainstBaseline(workspace, baseline)
+    : getChangedFiles(workspace, checkout)
   const allSessionEvents = allEvents
   const observation = extractRepositoryObservation(allSessionEvents, workspace)
   const referenceFixFilesInspected = intersectPaths(observation.filesInspected, referenceFixFiles)
@@ -1079,7 +1123,8 @@ function buildTrajectoryFromEvents(
               : outcome === 'authority-undecidable' ? 'authority-undecidable'
                 : outcome === 'model-unavailable' ? 'model-unavailable'
                   : outcome === 'rollback-failed' ? 'rollback-failed'
-                    : 'failed-no-rescue'
+                    : outcome === 'repair-handler-error' ? 'repair-handler-error'
+                      : 'failed-no-rescue'
 
   // Control plane status measures whether the harness itself behaved
   // correctly: routing, verification, repair, rollback, and event emission
@@ -1092,6 +1137,7 @@ function buildTrajectoryFromEvents(
       || outcome === 'model-unavailable'
       || outcome === 'rollback-failed'
       || outcome === 'workspace-provenance-failed'
+      || outcome === 'repair-handler-error'
       || outcome === 'unknown'
       ? 'FAIL'
       : 'PASS'
@@ -1104,6 +1150,7 @@ function buildTrajectoryFromEvents(
       || outcome === 'model-unavailable'
       || outcome === 'rollback-failed'
       || outcome === 'workspace-provenance-failed'
+      || outcome === 'repair-handler-error'
       || outcome === 'unknown'
       ? 'NOT_EVALUATED'
       : finalVerified ? 'PASS' : 'FAIL'

@@ -1863,7 +1863,7 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           proAttempts: repairState.proAttempts,
           totalCostUsd: repairState.totalCostUsd,
           elapsedMs: Date.now() - repairState.startedAt,
-          outcome: 'workspace-provenance-failed',
+          outcome: 'repair-handler-error',
         }, { ignorable: true })
         releaseToAuto(session, 'system')
         repairStates.delete(key)
