@@ -539,6 +539,32 @@ function hashVerifierControlledFiles(workspace: string): string {
       hash.update(file).update(':absent\n')
     }
   }
+
+  // Hash node_modules integrity: the lockfile metadata and the top-level
+  // package directory listing. A model that modifies installed dependencies
+  // (e.g. patching vitest internals) would change this hash. Full content
+  // hashing of node_modules is impractical; this detects structural tampering.
+  const nodeModulesPath = join(workspace, 'node_modules')
+  try {
+    const nmEntries = readdirSync(nodeModulesPath, { withFileTypes: true })
+    nmEntries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of nmEntries) {
+      hash.update('node_modules/').update(entry.name).update(':').update(entry.isDirectory() ? 'dir' : 'file').update('\n')
+    }
+    // Hash the package-lock metadata inside node_modules if present.
+    for (const lockFile of ['.package-lock.json', '.modules.yaml', '.pnpm/lock.yaml']) {
+      const lockPath = join(nodeModulesPath, lockFile)
+      try {
+        const content = readFileSync(lockPath)
+        hash.update('node_modules/').update(lockFile).update(':').update(content).update('\n')
+      } catch {
+        hash.update('node_modules/').update(lockFile).update(':absent\n')
+      }
+    }
+  } catch {
+    hash.update('node_modules:absent\n')
+  }
+
   return hash.digest('hex')
 }
 
@@ -614,7 +640,7 @@ function createProvenanceProvider(workspace: string): repairRuntimePlugin.Worksp
  * Directories that are harness-owned or installed after checkout. Rollback
  * must preserve these so the runtime environment survives repair attempts.
  */
-const PRESERVE_DIRS = new Set(['node_modules', 'sessions', '.git', 'dist'])
+const PRESERVE_DIRS = new Set(['node_modules', 'sessions', '.git'])
 
 function createRollbackProvider(workspace: string, checkout?: RepoCheckout): repairRuntimePlugin.RollbackProvider {
   return () => {
@@ -839,34 +865,38 @@ function buildTrajectoryFromEvents(
     })
   }
 
-  // Fail closed: if repair evidence or decision events indicate paid
-  // attempts occurred but no canonical model/usage events exist, the
-  // evaluation pipeline is broken. A paid request without usage evidence
-  // means cost and token accounting is incomplete — this is a control-plane
+  // Fail closed: every paid model routing decision must reconcile with
+  // canonical model/usage evidence. A routing decision represents a paid
+  // request to the provider. Missing usage for any routing decision means
+  // cost and token accounting is incomplete — this is a control-plane
   // failure, not a model capability failure.
-  const repairEvidenceEvents = allEvents.filter(e => e.type === 'repair/evidence')
-  if (repairEvidenceEvents.length > 0 && usageEvents.length === 0) {
-    throw new Error(`MISSING_USAGE_EVIDENCE: ${repairEvidenceEvents.length} repair/evidence event(s) but 0 model/usage events for task ${manifest.taskId}`)
+  //
+  // This is broader than checking only repair/evidence events: one-shot
+  // success and the final successful repair attempt also have routing
+  // decisions but may not have repair/evidence events. Every paid request
+  // must be accounted for.
+  const routingDecisionEvents = allEvents.filter(e => e.type === 'model/routing-decision')
+  if (routingDecisionEvents.length > 0 && usageEvents.length === 0) {
+    throw new Error(`MISSING_USAGE_EVIDENCE: ${routingDecisionEvents.length} model/routing-decision event(s) but 0 model/usage events for task ${manifest.taskId}`)
   }
 
-  // Per-request reconciliation: each repair/evidence event implies a paid
-  // attempt. Verify that each has at least one corresponding model/usage
-  // event. A repair/evidence event with a routingDecisionId must have a
-  // matching usage event; one without must have a usage event on the same
-  // turn. Missing per-attempt usage is a control-plane failure.
-  for (const evidenceEvent of repairEvidenceEvents) {
-    const evidenceData = evidenceEvent.data as { routingDecisionId?: string; turn?: number }
-    const evidenceRdId = evidenceData.routingDecisionId
-    const evidenceTurn = evidenceData.turn
+  // Per-request reconciliation: each routing decision must have at least
+  // one matching model/usage event by routingDecisionId. This catches
+  // missing usage for one-shot success, final successful repair, and
+  // failed attempts alike.
+  for (const routingEvent of routingDecisionEvents) {
+    const routingData = routingEvent.data as { routingDecisionId?: string; turn?: number }
+    const routingRdId = routingData.routingDecisionId
+    const routingTurn = routingData.turn
     const hasMatchingUsage = usageEvents.some((usageEvent) => {
       const usageData = usageEvent.data as { routingDecisionId?: string; turn?: number }
-      if (evidenceRdId !== undefined && usageData.routingDecisionId !== undefined) {
-        return usageData.routingDecisionId === evidenceRdId
+      if (routingRdId !== undefined && usageData.routingDecisionId !== undefined) {
+        return usageData.routingDecisionId === routingRdId
       }
-      return usageData.turn === evidenceTurn
+      return usageData.turn === routingTurn
     })
     if (!hasMatchingUsage) {
-      throw new Error(`MISSING_USAGE_EVIDENCE: repair/evidence event (routingDecisionId=${evidenceRdId ?? 'undefined'}, turn=${evidenceTurn ?? 'undefined'}) has no matching model/usage event for task ${manifest.taskId}`)
+      throw new Error(`MISSING_USAGE_EVIDENCE: model/routing-decision (routingDecisionId=${routingRdId ?? 'undefined'}, turn=${routingTurn ?? 'undefined'}) has no matching model/usage event for task ${manifest.taskId}`)
     }
   }
 

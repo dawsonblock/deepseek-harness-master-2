@@ -85,6 +85,12 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - `RepairCompletedEventData` 现在声明可选的 `workspaceHash` 字段，使绑定到终态事件的工作区内容哈希成为类型化事件模式的一部分。
 - 失败分类现在有 F2（repo-context：参考修复文件未检查，无更改）、F3（wrong-file：更改不重叠参考修复）、F7（dependency：进度提及模块解析错误）和 F12（timeout-latency：终态结果或中止原因指示超时）的检测路径。F4、F5、F15 和 F16 通过 `MANUAL_ONLY_CATEGORIES` 标记为仅手动，因为它们无法从轨迹证据自动检测。
 - `CategoryMetric` 现在在 `count`（所有任务）和 `evaluated`（合格 + 已评估）旁边包含 `eligibleCount`（基准合格任务）。之前的实现仅暴露 `count`（原始）和 `evaluated`，使 `count` 是否包含非基准任务变得模糊。
+- 组合资格认证的来源提供程序现在使用 `computeWorkspaceHashForDir(workspace)`（完整工作区 SHA-256），与实时评估器的 `createProvenanceProvider` 完全匹配。之前的组合认证提供程序仅哈希 `context.changedFiles`，永远无法匹配完整工作区验证哈希，导致 S5 因错误原因失败。
+- 环境身份现在通过探测平台特定二进制文件检测实际沙箱运行器（`bwrap`、`landlock`、`seatbelt` 或 `none`），而非硬编码 `sandbox-local`。`environmentMatches()` 现在除了比较 `platform`、`arch` 和 `nodeVersion` 外还比较 `runner`，防止跨不同沙箱后端重用资格认证。
+- `PRESERVE_DIRS` 不再包含 `dist`。`dist` 目录是模型/构建生成的输出，而非线束状态。在回滚间保留它可能污染下一次尝试或最终资格认证。仅保留 `node_modules`、`sessions` 和 `.git`。
+- 验证器控制文件哈希现在包含 `node_modules` 完整性：顶级包目录列表和锁文件元数据（`.package-lock.json`、`.modules.yaml`、`.pnpm/lock.yaml`）。修改已安装依赖项（如修补 vitest 内部）的模型将被检测到。`node_modules` 的完整内容哈希不切实际；这检测结构性篡改。
+- S3 现在在快照提供程序内部修改工作区（在计算修改前哈希之后但在返回之前），因此修改发生在验证和第一次完成授权之间——而非目标已经终态之后。测试断言 `outcome === 'workspace-provenance-failed'` 和 `goalPhase === 'blocked'`，证明特定的 `GOAL_WORKSPACE_MUTATED` 路径被执行，而非仅 `completeVerified` 因任何原因抛出。
+- 使用对账现在使用 `model/routing-decision` 事件作为会计人口，而非 `repair/evidence`。每个路由决策代表一个付费请求，必须有匹配的 `model/usage`。这捕获一次性成功和最终成功修复尝试的缺失使用，这些有路由决策但无修复证据。
 
 ## Alternatives considered
 

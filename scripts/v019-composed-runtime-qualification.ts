@@ -174,22 +174,14 @@ function createHoldoutDir(): string {
   return holdoutDir
 }
 
-/** Create a provenance provider for the workspace. */
+/** Create a provenance provider for the workspace.
+ * Uses the same full-workspace SHA-256 algorithm as the live evaluator's
+ * `createProvenanceProvider` in `v019-trajectory-collector.ts`. The composed
+ * qualification must use the exact same provenance semantics as the live
+ * evaluator, not a changed-file-only hash.
+ */
 function createProvenanceProvider(workspace: string): WorkspaceProvenanceProvider {
-  return (context) => {
-    const files = context.changedFiles
-    if (files.length === 0) return 'empty'
-    const hash = createHash('sha256')
-    for (const file of files) {
-      try {
-        const content = readFileSync(join(workspace, file))
-        hash.update(file).update(':').update(content).update('\n')
-      } catch {
-        hash.update(file).update(':missing\n')
-      }
-    }
-    return hash.digest('hex')
-  }
+  return () => computeWorkspaceHashForDir(workspace)
 }
 
 /** Create a rollback provider that restores from a snapshot. */
@@ -1419,45 +1411,53 @@ async function checkScenarioPostMutationDenied(ctx: Context, workspace: string):
         return { id: 'S3', name: 'Scenario G: post-verification mutation→DENIED (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
 
-      // Verify with a workspace snapshot provider. The hash is computed
-      // AFTER the verifier runs, binding the verified state.
+      // Capture the pre-mutation workspace hash. The snapshot provider
+      // returns this hash (binding the verified state) and then mutates
+      // the workspace. The plugin's async pass handler will compute the
+      // current (post-mutation) hash and find it differs from the
+      // verification hash, triggering GOAL_WORKSPACE_MUTATED.
+      const preMutationHash = computeWorkspaceHashForDir(workspace)
       await goals.verifyCompletion(
         agent,
         { id: goal.id, revision: goal.revision },
-        () => computeWorkspaceHashForDir(workspace),
+        () => {
+          // Mutate the workspace AFTER the hash is captured but BEFORE
+          // the provider returns. The verification event records
+          // preMutationHash. The plugin will compute a different hash
+          // at completion time.
+          writeFileSync(join(workspace, 'src.ts'), 'export const POST_VERIFICATION_MUTATION = true\n')
+          return preMutationHash
+        },
       )
 
-      // Wait for the plugin's async pass handler to run. The plugin will
-      // compute the current workspace hash and compare it to the
-      // verification's hash. Since we haven't mutated yet, the plugin
-      // should complete the goal.
+      // Wait for the plugin to process the PASS event. The plugin will
+      // compute the current workspace hash (post-mutation) and compare
+      // it to the verification hash (pre-mutation). They differ, so
+      // completeVerified throws GOAL_WORKSPACE_MUTATED, which the plugin
+      // catches and terminalizes as workspace-provenance-failed.
       await waitForEvent(agent.session, 'repair/completed')
-
-      // Now mutate the workspace and try to call completeVerified directly.
-      // The verification event recorded a workspace hash, but the current
-      // workspace state no longer matches. completeVerified must deny.
-      writeFileSync(join(workspace, 'src.ts'), 'export const POST_VERIFICATION_MUTATION = true\n')
-
-      let denied = false
-      let deniedCode = ''
-      try {
-        goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, computeWorkspaceHashForDir(workspace))
-      } catch (e) {
-        denied = true
-        deniedCode = (e as { code?: string }).code ?? (e as Error).message
-      }
 
       // Restore the workspace
       writeFileSync(join(workspace, 'src.ts'), 'export const x = 1\n')
 
-      const passed = denied
+      // Assert the specific outcome: workspace-provenance-failed.
+      const completedEvents = findEvents(agent.session.events, 'repair/completed')
+      const completedData = completedEvents.length > 0 && completedEvents[0] !== undefined
+        ? eventData(completedEvents[0])
+        : undefined
+      const outcome = typeof completedData?.outcome === 'string' ? completedData.outcome : undefined
+      const postGoal = goals.get(agent)
+
+      const passed = outcome === 'workspace-provenance-failed'
+        && postGoal?.phase === 'blocked'
+
       return {
         id: 'S3',
         name: 'Scenario G: post-verification mutation→DENIED (composed)',
         status: passed ? 'pass' : 'fail',
         evidence: passed
-          ? `completeVerified correctly rejected post-verification mutation (${deniedCode})`
-          : 'completeVerified did not reject post-verification mutation',
+          ? 'outcome=workspace-provenance-failed, goalPhase=blocked (GOAL_WORKSPACE_MUTATED caught and terminalized)'
+          : `outcome=${outcome ?? 'undefined'}, goalPhase=${postGoal?.phase ?? 'undefined'} (expected workspace-provenance-failed/blocked)`,
       }
     } finally {
       disposeVerifier()
@@ -2019,13 +2019,45 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
 }
 
 /** Build the qualification record from checks. */
+/** Detect the actual sandbox runner available on this platform.
+ * Matches the selection logic in `packages/sandbox/sandbox-local/src/index.ts`:
+ * Linux prefers bwrap, falls back to landlock; macOS uses seatbelt.
+ * The runner identity is part of the environment binding so a qualification
+ * generated with bwrap is not reused on a machine that falls back to landlock.
+ */
+function detectSandboxRunner(): string {
+  if (process.platform === 'linux') {
+    try {
+      execSync('which bwrap', { stdio: 'pipe', timeout: 5000 })
+      return 'bwrap'
+    } catch {
+      // bwrap not available; check for landlock via the native addon
+      try {
+        execSync('which landlock-run', { stdio: 'pipe', timeout: 5000 })
+        return 'landlock'
+      } catch {
+        return 'none'
+      }
+    }
+  }
+  if (process.platform === 'darwin') {
+    try {
+      execSync('which sandbox-exec', { stdio: 'pipe', timeout: 5000 })
+      return 'seatbelt'
+    } catch {
+      return 'none'
+    }
+  }
+  return 'none'
+}
+
 /** Compute the current environment identity for qualification binding. */
 function currentEnvironmentIdentity(): { platform: string; arch: string; nodeVersion: string; runner: string } {
   return {
     platform: process.platform,
     arch: process.arch,
     nodeVersion: process.version,
-    runner: 'sandbox-local',
+    runner: detectSandboxRunner(),
   }
 }
 
@@ -2035,6 +2067,7 @@ export function environmentMatches(record: ComposedQualificationRecord): boolean
   return record.environment.platform === current.platform
     && record.environment.arch === current.arch
     && record.environment.nodeVersion === current.nodeVersion
+    && record.environment.runner === current.runner
 }
 
 function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): ComposedQualificationRecord {
