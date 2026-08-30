@@ -28,7 +28,7 @@ import { claimModelSelection, reconstructSelectionState, releaseToAuto } from '@
 import type { GoalRef, GoalVerificationCheck, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { BuildErrorDetail, EscalationReason, FailurePackage, ModelRef, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits, RepairOutcome, TestFailureDetail } from '@deepseek-ai/dsh-repair-controller'
+import type { BuildErrorDetail, EscalationReason, FailurePackage, ModelRef, ProgressClass, RepairAttempt, RepairDecision, RepairDecisionInput, RepairLimits, RepairOutcome, TestFailureDetail } from '@deepseek-ai/dsh-repair-controller'
 import { classifyProgress, computeFailureFingerprint, computeFailurePackageId, decideRepair } from '@deepseek-ai/dsh-repair-controller'
 // Import the events module to trigger declaration merging for repair/* and model/escalation events.
 import '@deepseek-ai/dsh-repair-controller/events'
@@ -338,6 +338,12 @@ export interface ModelVisibleFailureProjection {
   readonly buildErrors: readonly string[]
   /** Changed file paths, sanitized to human-readable strings. */
   readonly changedFiles: readonly string[]
+  /** Structured test failure details: test names, assertion diffs, exit codes. */
+  readonly testDetails?: readonly TestFailureDetail[]
+  /** Structured build/type error details: file paths, line numbers, exit codes. */
+  readonly buildDetails?: readonly BuildErrorDetail[]
+  /** Diagnostic exit code from the verification process. */
+  readonly diagnosticExitCode?: number
 }
 
 /**
@@ -404,53 +410,92 @@ export function projectFailureForModel(failure: FailurePackage): ModelVisibleFai
     typeErrors: Object.freeze(failure.typeErrors.map(sanitizeEvidenceString)),
     buildErrors: Object.freeze(failure.buildErrors.map(sanitizeEvidenceString)),
     changedFiles: Object.freeze([...failure.changedFiles]),
+    ...failure.testDetails !== undefined ? { testDetails: Object.freeze(failure.testDetails) } : {},
+    ...failure.buildDetails !== undefined ? { buildDetails: Object.freeze(failure.buildDetails) } : {},
+    ...failure.diagnosticExitCode !== undefined ? { diagnosticExitCode: failure.diagnosticExitCode } : {},
   })
 }
 
 /** Render a repair prompt for the model from a sanitized failure projection. */
-function renderRepairPrompt(projection: ModelVisibleFailureProjection, attempt: number): ContentBlock[] {
-  const lines: string[] = [
-    `Repair attempt ${attempt}: the previous attempt failed verification.`,
-    '',
-    'Failed criteria:',
-    ...projection.failedCriteria.map(c => `- ${c}`),
-    '',
-    'Failing tests:',
-    ...projection.failingTests.map(t => `- ${t}`),
-    '',
-    'Type errors:',
-    ...projection.typeErrors.map(e => `- ${e}`),
-    '',
-    'Build errors:',
-    ...projection.buildErrors.map(e => `- ${e}`),
-    '',
-    'Fix the issues above. The workspace has been rolled back to the trusted base state before this repair attempt. Start your fix from the base source, not from the failed attempt.',
-  ]
-  return [{ type: 'text', text: lines.join('\n') }]
+function renderRepairPrompt(projection: ModelVisibleFailureProjection, attempt: number, progress?: ProgressClass): ContentBlock[] {
+  const sections: string[] = [`Repair attempt ${attempt}: the previous attempt failed verification.`]
+  if (progress !== undefined && progress !== 'none') {
+    sections.push(`Progress: ${progress} — the failure changed from the prior attempt.`)
+  }
+  if (projection.failedCriteria.length > 0) {
+    sections.push('', 'Failed criteria:', ...projection.failedCriteria.map(c => `- ${c}`))
+  }
+  if (projection.failingTests.length > 0) {
+    sections.push('', 'Failing tests:', ...projection.failingTests.map(t => `- ${t}`))
+  }
+  if (projection.testDetails !== undefined && projection.testDetails.length > 0) {
+    sections.push('', 'Test details:')
+    for (const d of projection.testDetails) {
+      sections.push(`- ${d.testName}${d.assertionDiff !== undefined ? `: ${d.assertionDiff}` : ''}`)
+    }
+  }
+  if (projection.typeErrors.length > 0) {
+    sections.push('', 'Type errors:', ...projection.typeErrors.map(e => `- ${e}`))
+  }
+  if (projection.buildErrors.length > 0) {
+    sections.push('', 'Build errors:', ...projection.buildErrors.map(e => `- ${e}`))
+  }
+  if (projection.buildDetails !== undefined && projection.buildDetails.length > 0) {
+    sections.push('', 'Build details:')
+    for (const d of projection.buildDetails) {
+      sections.push(`- ${d.file}${d.line !== undefined ? `:${d.line}` : ''}${d.message !== undefined ? `: ${d.message}` : ''}`)
+    }
+  }
+  if (projection.changedFiles.length > 0) {
+    sections.push('', 'Files changed in the failed attempt:', ...projection.changedFiles.map(f => `- ${f}`))
+  }
+  sections.push('', 'Fix the issues above. The workspace has been rolled back to the trusted base state before this repair attempt. Start your fix from the base source, not from the failed attempt.')
+  return [{ type: 'text', text: sections.join('\n') }]
 }
 
 /** Render a Pro escalation prompt with sanitized context. */
-function renderProEscalationPrompt(projection: ModelVisibleFailureProjection, flashAttempts: number): ContentBlock[] {
-  const lines: string[] = [
+function renderProEscalationPrompt(
+  projection: ModelVisibleFailureProjection,
+  flashAttempts: number,
+  progress?: ProgressClass,
+): ContentBlock[] {
+  const sections: string[] = [
     `Escalation from Flash after ${flashAttempts} failed attempt(s).`,
     'You are taking over a task that Flash could not complete.',
     'The workspace state from the previous attempts is preserved.',
-    '',
-    'Failed criteria:',
-    ...projection.failedCriteria.map(c => `- ${c}`),
-    '',
-    'Failing tests:',
-    ...projection.failingTests.map(t => `- ${t}`),
-    '',
-    'Type errors:',
-    ...projection.typeErrors.map(e => `- ${e}`),
-    '',
-    'Build errors:',
-    ...projection.buildErrors.map(e => `- ${e}`),
-    '',
-    'Repair the work. You may rewrite the previous attempts\' changes or start fresh.',
   ]
-  return [{ type: 'text', text: lines.join('\n') }]
+  if (progress !== undefined && progress !== 'none') {
+    sections.push(`Progress: ${progress} — the failure changed across attempts.`)
+  }
+  if (projection.failedCriteria.length > 0) {
+    sections.push('', 'Failed criteria:', ...projection.failedCriteria.map(c => `- ${c}`))
+  }
+  if (projection.failingTests.length > 0) {
+    sections.push('', 'Failing tests:', ...projection.failingTests.map(t => `- ${t}`))
+  }
+  if (projection.testDetails !== undefined && projection.testDetails.length > 0) {
+    sections.push('', 'Test details:')
+    for (const d of projection.testDetails) {
+      sections.push(`- ${d.testName}${d.assertionDiff !== undefined ? `: ${d.assertionDiff}` : ''}`)
+    }
+  }
+  if (projection.typeErrors.length > 0) {
+    sections.push('', 'Type errors:', ...projection.typeErrors.map(e => `- ${e}`))
+  }
+  if (projection.buildErrors.length > 0) {
+    sections.push('', 'Build errors:', ...projection.buildErrors.map(e => `- ${e}`))
+  }
+  if (projection.buildDetails !== undefined && projection.buildDetails.length > 0) {
+    sections.push('', 'Build details:')
+    for (const d of projection.buildDetails) {
+      sections.push(`- ${d.file}${d.line !== undefined ? `:${d.line}` : ''}${d.message !== undefined ? `: ${d.message}` : ''}`)
+    }
+  }
+  if (projection.changedFiles.length > 0) {
+    sections.push('', 'Files changed in the failed attempt:', ...projection.changedFiles.map(f => `- ${f}`))
+  }
+  sections.push('', 'Repair the work. You may rewrite the previous attempts\' changes or start fresh.')
+  return [{ type: 'text', text: sections.join('\n') }]
 }
 
 /** Extract the model ref from a routing decision event. */
@@ -1306,7 +1351,7 @@ export function handleVerificationFailure(
     case 'flash-repair': {
       state.flashAttempts += 1
       claimModel = deps.flashModel
-      followupContent = renderRepairPrompt(projectFailureForModel(decision.evidence), state.attempts.length + 1)
+      followupContent = renderRepairPrompt(projectFailureForModel(decision.evidence), state.attempts.length + 1, progress)
       break
     }
     case 'pro-escalate': {
@@ -1327,7 +1372,7 @@ export function handleVerificationFailure(
         turn,
       }
       claimModel = deps.proModel
-      followupContent = renderProEscalationPrompt(projectFailureForModel(decision.evidence), state.flashAttempts)
+      followupContent = renderProEscalationPrompt(projectFailureForModel(decision.evidence), state.flashAttempts, progress)
       break
     }
     case 'stop': {
