@@ -909,10 +909,12 @@ function buildTrajectoryFromEvents(
   // Determine holdout pass from the outcome.
   const holdoutPass = outcome === 'qualification-failed' ? false : finalVerified
 
-  // Extract per-attempt data from model/usage events, grouped by
-  // routingDecisionId. Multiple usage events sharing the same routing
-  // decision represent provider retries within one logical attempt —
-  // they must be aggregated, not counted as separate attempts.
+  // Extract per-attempt data from model/usage events, grouped by turn.
+  // A turn is one logical attempt: the model makes multiple steps (tool
+  // calls) within a turn, each with its own routing decision and usage
+  // event, but they all belong to one attempt at the task. Grouping by
+  // turn prevents inflating the attempt count when the model makes many
+  // tool calls in a single turn.
   const usageEvents = allEvents.filter(e => e.type === 'model/usage')
   type UsageData = { usage: {
     inputTokens?: number
@@ -923,21 +925,15 @@ function buildTrajectoryFromEvents(
     cacheMissTokens?: number
   } }
 
-  // Group usage events by routingDecisionId, preserving order of first appearance.
-  const routingGroups: { routingDecisionId: string; events: typeof usageEvents }[] = []
+  // Group usage events by turn, preserving order of first appearance.
+  const turnGroups: { turn: number; events: typeof usageEvents }[] = []
   for (const usageEvent of usageEvents) {
     const turn = (usageEvent.data as { turn?: number }).turn ?? 0
-    // Prefer the usage event's own routingDecisionId when present; fall
-    // back to turn-based matching for legacy events that lack it.
-    const ownRoutingId = (usageEvent.data as { routingDecisionId?: string }).routingDecisionId
-    const routingEvent = allEvents.find(e => e.type === 'model/routing-decision' && (e.data as { turn?: number }).turn === turn) as
-      | Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
-    const routingDecisionId = ownRoutingId ?? routingEvent?.data.routingDecisionId ?? `unrouted-turn-${turn}`
-    const existing = routingGroups.find(g => g.routingDecisionId === routingDecisionId)
+    const existing = turnGroups.find(g => g.turn === turn)
     if (existing !== undefined) {
       existing.events.push(usageEvent)
     } else {
-      routingGroups.push({ routingDecisionId, events: [usageEvent] })
+      turnGroups.push({ turn, events: [usageEvent] })
     }
   }
 
@@ -946,12 +942,12 @@ function buildTrajectoryFromEvents(
   let totalCacheReadTokens = 0
   let totalCacheMissTokens = 0
 
-  for (let i = 0; i < routingGroups.length; i++) {
-    const group = routingGroups[i]
+  for (let i = 0; i < turnGroups.length; i++) {
+    const group = turnGroups[i]
     if (group === undefined) continue
     const firstUsageEvent = group.events[0] as Extract<SessionEvent, { type: 'model/usage' }>
 
-    // Aggregate usage across all provider retries in this logical attempt.
+    // Aggregate usage across all steps in this turn.
     let inputTokens = 0
     let outputTokens = 0
     let reasoningTokens = 0
@@ -971,19 +967,16 @@ function buildTrajectoryFromEvents(
     totalCacheReadTokens += cacheReadTokens
     totalCacheMissTokens += cacheMissTokens
 
-    const turn = (firstUsageEvent.data as { turn?: number }).turn ?? 0
-    const routingDecisionId = group.routingDecisionId
-    // Use routingDecisionId as the primary join key for model lookup.
-    // Fall back to turn-based matching only for legacy events without
-    // a routingDecisionId.
+    const turn = group.turn
+    // Use the first routing decision for this turn as the representative
+    // routing decision for the attempt. All steps in the turn share the
+    // same turn number, and the first routing decision establishes the
+    // model that was selected.
     const routingEvent = allEvents.find(e =>
       e.type === 'model/routing-decision'
-      && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+      && (e.data as { turn?: number }).turn === turn,
     ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
-      ?? allEvents.find(e =>
-        e.type === 'model/routing-decision'
-        && (e.data as { turn?: number }).turn === turn,
-      ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+    const routingDecisionId = routingEvent?.data.routingDecisionId ?? `unrouted-turn-${turn}`
     const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model
       ?? (firstUsageEvent.data as { model?: string }).model
       ?? 'unknown'
@@ -1002,19 +995,27 @@ function buildTrajectoryFromEvents(
     }, pricing)
     const costUsd = cost.amount
 
-    // Find repair evidence and decision for this attempt. Use
-    // routingDecisionId as the primary join key; fall back to attempt
-    // ordinal for legacy events that lack routingDecisionId.
+    // Find repair evidence and decision for this attempt. Join by turn
+    // first (all steps in a turn share the same repair cycle), then fall
+    // back to routingDecisionId and attempt ordinal for legacy events.
     const repairEvidence = allEvents.find(e =>
       e.type === 'repair/evidence'
-      && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+      && (e.data as { turn?: number }).turn === turn,
     ) as Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
+      ?? allEvents.find(e =>
+        e.type === 'repair/evidence'
+        && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+      ) as Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
       ?? allEvents.find(e => e.type === 'repair/evidence' && (e.data as { attempt?: number }).attempt === i + 1) as
         | Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
     const repairDecision = allEvents.find(e =>
       e.type === 'repair/decision'
-      && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+      && (e.data as { turn?: number }).turn === turn,
     ) as Extract<SessionEvent, { type: 'repair/decision' }> | undefined
+      ?? allEvents.find(e =>
+        e.type === 'repair/decision'
+        && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+      ) as Extract<SessionEvent, { type: 'repair/decision' }> | undefined
       ?? allEvents.find(e => e.type === 'repair/decision' && (e.data as { attempt?: number }).attempt === i + 1) as
         | Extract<SessionEvent, { type: 'repair/decision' }> | undefined
     const repairAction = repairDecision?.data.action ?? 'complete'
