@@ -31,6 +31,18 @@ export type FailureCategory =
   | 'F17-cross-file-consistency'
   | 'F18-holdout-edge-case'
 
+/**
+ * Categories that cannot be automatically detected from trajectory evidence
+ * alone and require manual review. `classifyFailure` will never return these;
+ * they exist in the union so manual classifications can use them.
+ */
+export const MANUAL_ONLY_CATEGORIES: ReadonlySet<FailureCategory> = new Set([
+  'F4-verifier-false-negative',
+  'F5-verifier-false-positive',
+  'F15-ambiguous-task',
+  'F16-decomposition',
+])
+
 export interface FailureClassification {
   readonly taskId: string
   readonly category: FailureCategory
@@ -84,12 +96,23 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
   const proAttempts = t.attempts.filter(a => a.model === 'deepseek-v4-pro')
 
   // F18: holdout edge-case failure (diagnostic PASS, holdout FAIL)
-  if (lastAttempt?.diagnosticPass === true && lastAttempt?.holdoutPass === false) {
+  if (lastAttempt !== undefined && lastAttempt.diagnosticPass && lastAttempt.holdoutPass === false) {
     return {
       taskId: t.taskId,
       category: 'F18-holdout-edge-case',
       reason: 'Diagnostic passed but unseen holdout detected an edge case',
       evidence: `diagnosticPass=true, holdoutPass=false, attempts=${t.attempts.length}`,
+    }
+  }
+
+  // F12: timeout/latency — task hit a time limit without completing.
+  // Detected from terminalOutcome or abort reason containing timeout.
+  if (t.terminalOutcome === 'timeout' || (t.abortReason !== undefined && /timeout|timed out|deadline/i.test(t.abortReason))) {
+    return {
+      taskId: t.taskId,
+      category: 'F12-timeout-latency',
+      reason: `Task timed out: ${t.abortReason ?? 'terminalOutcome=timeout'}`,
+      evidence: `terminalOutcome=${t.terminalOutcome}, latency=${t.totalLatencyMs}ms, abortReason=${t.abortReason ?? 'undefined'}`,
     }
   }
 
@@ -136,6 +159,45 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       category: 'F8-repair-evidence',
       reason: 'Same failure fingerprint across multiple attempts — repair evidence did not help',
       evidence: `fingerprints=${fingerprints.length}, unique=${new Set(fingerprints).size}`,
+    }
+  }
+
+  // F3: wrong file — model modified files but none overlap with the
+  // reference fix files. Only detectable when a reference fix exists.
+  if (t.referenceFixFiles.length > 0 && t.changedFiles.length > 0 && t.referenceFixFilesModified.length === 0) {
+    return {
+      taskId: t.taskId,
+      category: 'F3-wrong-file',
+      reason: 'Model modified files but none matched the reference fix files',
+      evidence: `changedFiles=${t.changedFiles.length}, referenceFixFiles=${t.referenceFixFiles.length}, referenceFixFilesModified=0`,
+    }
+  }
+
+  // F2: repo context — model inspected none of the reference fix files
+  // despite having a reference fix to guide discovery. Indicates the
+  // model failed to explore the relevant parts of the repository.
+  if (t.referenceFixFiles.length > 0 && t.referenceFixFilesInspected.length === 0 && t.changedFiles.length === 0) {
+    return {
+      taskId: t.taskId,
+      category: 'F2-repo-context',
+      reason: 'Model inspected none of the reference fix files and produced no changes',
+      evidence: `referenceFixFiles=${t.referenceFixFiles.length}, referenceFixFilesInspected=0, changedFiles=0`,
+    }
+  }
+
+  // F7: dependency — model's changes reference missing imports or
+  // modules. Detected from progress strings mentioning dependency,
+  // import, or module resolution errors.
+  const progressText = t.attempts
+    .map(a => a.progress)
+    .filter((p): p is string => p !== undefined)
+    .join('\n')
+  if (/cannot find module|module not found|unresolved dependency|npm error|pnpm error|package not found/i.test(progressText)) {
+    return {
+      taskId: t.taskId,
+      category: 'F7-dependency',
+      reason: 'Dependency resolution failure detected in attempt progress',
+      evidence: `progressMatch=dependency-error, attempts=${t.attempts.length}, changedFiles=${t.changedFiles.length}`,
     }
   }
 

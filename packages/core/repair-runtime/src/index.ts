@@ -219,11 +219,15 @@ export interface PendingEscalation {
 function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFiles: readonly string[]): FailurePackage {
   const failedCriteria = checks
     .filter(check => check.role === 'acceptance' && !check.passed)
-    .map(check => check.reason)
+    .flatMap(check => check.evidence !== undefined && check.evidence.length > 0
+      ? [check.reason, ...check.evidence]
+      : [check.reason])
   const failingTests = checks
     .filter(check => check.name.includes('test'))
     .filter(check => !check.passed)
-    .map(check => check.reason)
+    .flatMap(check => check.evidence !== undefined && check.evidence.length > 0
+      ? [check.reason, ...check.evidence]
+      : [check.reason])
   const typeErrors = checks
     .filter(check => check.name.includes('type'))
     .filter(check => !check.passed)
@@ -233,20 +237,42 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
     .filter(check => !check.passed)
     .flatMap(check => check.evidence ?? [check.reason])
 
+  // For diagnostic verifiers whose name does not contain 'test', 'type',
+  // or 'build' (e.g. 'v019-diagnostic'), classify the failure using the
+  // evidence content. This ensures captured stdout/stderr reaches the
+  // model-visible failure arrays rather than being discarded.
+  const unclassifiedChecks = checks.filter(check =>
+    !check.passed
+    && !check.name.includes('test')
+    && !check.name.includes('type')
+    && !check.name.includes('build'),
+  )
+  for (const check of unclassifiedChecks) {
+    const evidence = check.evidence ?? []
+    const combined = evidence.join('\n')
+    if (/test|vitest|jest|mocha|pytest/i.test(combined)) {
+      failingTests.push(check.reason, ...evidence)
+    } else if (/error TS\d|tsc|type error|typeError/i.test(combined)) {
+      typeErrors.push(...evidence.length > 0 ? evidence : [check.reason])
+    } else if (/build failed|npm run build|webpack|vite build|cargo build|make:/i.test(combined)) {
+      buildErrors.push(...evidence.length > 0 ? evidence : [check.reason])
+    }
+  }
+
   // Extract structured test failure details: test names, assertion diffs, exit codes.
   const testDetails: TestFailureDetail[] = checks
-    .filter(check => check.name.includes('test') && !check.passed)
+    .filter(check => !check.passed)
     .map(check => ({
       testName: check.name,
       ...check.evidence !== undefined && check.evidence.length > 0
         ? { assertionDiff: check.evidence.join('\n') }
         : {},
-      ...check.reason !== undefined ? { assertionDiff: check.reason } : {},
+      ...check.reason.length > 0 ? { assertionDiff: check.reason } : {},
     }))
 
   // Extract structured build/type error details: file paths, line numbers, exit codes.
   const buildDetails: BuildErrorDetail[] = checks
-    .filter(check => (check.name.includes('build') || check.name.includes('type')) && !check.passed)
+    .filter(check => !check.passed)
     .map((check) => {
       const evidence = (check.evidence ?? [check.reason]).join('\n')
       // Parse file:line patterns from the evidence.

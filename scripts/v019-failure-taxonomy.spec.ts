@@ -216,4 +216,55 @@ describe('v019-failure-taxonomy precedence', () => {
     const result = classifyFailure(t)
     expect(result?.category).toBe('F1-model-reasoning')
   })
+
+  it('classifies F12-timeout-latency on timeout terminal outcome', () => {
+    const t = makeTrajectory({
+      terminalOutcome: 'timeout',
+      abortReason: 'task timed out',
+      attempts: [makeAttempt({ terminalOutcome: 'timeout' })],
+    })
+    const result = classifyFailure(t)
+    expect(result?.category).toBe('F12-timeout-latency')
+  })
+
+  it('classifies F3-wrong-file when changes do not overlap reference fix files', () => {
+    const t = makeTrajectory({
+      changedFiles: ['src/unrelated.ts'],
+      referenceFixFiles: ['src/fix.ts'],
+      referenceFixFilesInspected: ['src/fix.ts'],
+      referenceFixFilesModified: [],
+      attempts: [
+        makeAttempt({ attempt: 1, failureFingerprint: 'fp-1', changedFiles: ['src/unrelated.ts'] }),
+        makeAttempt({ attempt: 2, failureFingerprint: 'fp-2', changedFiles: ['src/unrelated.ts'] }),
+      ],
+    })
+    const result = classifyFailure(t)
+    expect(result?.category).toBe('F3-wrong-file')
+  })
+
+  it('classifies F2-repo-context when reference fix files not inspected and no changes', () => {
+    const t = makeTrajectory({
+      changedFiles: [],
+      referenceFixFiles: ['src/fix.ts'],
+      referenceFixFilesInspected: [],
+      referenceFixFilesModified: [],
+      attempts: [
+        makeAttempt({ attempt: 1, failureFingerprint: 'fp-1', changedFiles: [] }),
+        makeAttempt({ attempt: 2, failureFingerprint: 'fp-2', changedFiles: [] }),
+      ],
+    })
+    const result = classifyFailure(t)
+    expect(result?.category).toBe('F2-repo-context')
+  })
+
+  it('classifies F7-dependency when progress mentions module resolution errors', () => {
+    const t = makeTrajectory({
+      changedFiles: ['src/a.ts'],
+      attempts: [
+        makeAttempt({ attempt: 1, failureFingerprint: 'fp-1', progress: 'Cannot find module ./utils' }),
+      ],
+    })
+    const result = classifyFailure(t)
+    expect(result?.category).toBe('F7-dependency')
+  })
 })

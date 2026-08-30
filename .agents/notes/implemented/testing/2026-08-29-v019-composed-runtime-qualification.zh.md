@@ -78,6 +78,13 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - S3 现在在验证和完成之间真正修改工作区，在验证后写入 `src.ts`，然后使用当前（不匹配的）哈希调用 `completeVerified()`。之前的实现测试幂等性（两次调用 `completeVerified`），而非验证后修改拒绝。
 - S6 现在启动带有失败回滚提供程序的新组合上下文，以测试回滚失败 → 终态 `rollback-failed` → 无新付费调用。之前的实现使用主上下文的成功回滚提供程序，仅检查 `repair/decision` 是否触发。
 - S8（新增）通过启动带有诊断验证器（失败两次后通过）的新组合上下文来测试两次 Flash 失败 → 真实 Pro 路由 → Pro PASS，验证发出 `pro-escalate` 动作的 `repair/decision`、发生 `model/escalation`，且目标在 Pro 尝试后完成。
+- 验证器控制文件哈希现在包括锁文件（`package-lock.json`、`pnpm-lock.yaml`、`yarn.lock`）、测试设置文件（`tests/setup.ts` 等）和标准测试目录（`tests/`、`test/`、`__tests__/`、`src/__tests__/`）中的所有测试文件。之前的实现仅哈希 `package.json`、`tsconfig.json` 和 vitest/vite 配置，允许模型篡改测试文件或设置而不被发现。
+- `buildFailurePackage` 现在在 `failedCriteria` 和 `failingTests` 中包含 `check.evidence`（捕获的 stdout/stderr），不仅是 `typeErrors` 和 `buildErrors`。对于名称不包含 'test'、'type' 或 'build' 的诊断验证器（如 `v019-diagnostic`），证据内容通过模式匹配分类（测试运行器输出、TypeScript 错误、构建失败），因此修复模型无论验证器命名如何都能接收真实诊断输出。
+- 每请求使用对账：每个 `repair/evidence` 事件现在通过 `routingDecisionId`（或回退到 turn）检查对应的 `model/usage` 事件。没有匹配使用的修复证据事件抛出 `MISSING_USAGE_EVIDENCE`，包含特定路由决策和 turn，而非仅检查聚合计数。
+- 轨迹连接现在使用 `routingDecisionId` 作为模型查找和修复证据/决策关联的主连接键，仅对缺少 `routingDecisionId` 的遗留事件回退到尝试序号。之前的实现使用基于 turn 的匹配作为主连接，当同一 turn 发生多个路由决策时可能不匹配。
+- `RepairCompletedEventData` 现在声明可选的 `workspaceHash` 字段，使绑定到终态事件的工作区内容哈希成为类型化事件模式的一部分。
+- 失败分类现在有 F2（repo-context：参考修复文件未检查，无更改）、F3（wrong-file：更改不重叠参考修复）、F7（dependency：进度提及模块解析错误）和 F12（timeout-latency：终态结果或中止原因指示超时）的检测路径。F4、F5、F15 和 F16 通过 `MANUAL_ONLY_CATEGORIES` 标记为仅手动，因为它们无法从轨迹证据自动检测。
+- `CategoryMetric` 现在在 `count`（所有任务）和 `evaluated`（合格 + 已评估）旁边包含 `eligibleCount`（基准合格任务）。之前的实现仅暴露 `count`（原始）和 `evaluated`，使 `count` 是否包含非基准任务变得模糊。
 
 ## Alternatives considered
 

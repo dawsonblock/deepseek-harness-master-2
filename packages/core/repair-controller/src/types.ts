@@ -299,6 +299,8 @@ export interface RepairCompletedEventData {
     /** Evidence lines from the holdout verifier, when provided. */
     readonly evidence?: readonly string[]
   }
+  /** Workspace content hash bound to the verification event, when workspace-bound completion is active. */
+  readonly workspaceHash?: string
 }
 
 /**

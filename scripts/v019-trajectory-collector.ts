@@ -491,13 +491,44 @@ function hashVerifierControlledFiles(workspace: string): string {
   const hash = createHash('sha256')
   const controlledFiles = [
     'package.json',
+    'package-lock.json',
+    'pnpm-lock.yaml',
+    'yarn.lock',
     'tsconfig.json',
     'vitest.config.ts',
     'vitest.config.mts',
     'vitest.config.js',
     'vite.config.ts',
   ]
-  for (const file of controlledFiles) {
+  // Also include diagnostic test files and test setup. A model modifying
+  // these files could make diagnostic verification pass without actually
+  // solving the task. Walk common test directories to find test files.
+  const testDirs = ['tests', 'test', '__tests__', 'src/__tests__']
+  const testFilePatterns = [
+    /\.test\.ts$/, /\.test\.tsx$/, /\.test\.js$/, /\.test\.jsx$/,
+    /\.spec\.ts$/, /\.spec\.tsx$/, /\.spec\.js$/, /\.spec\.jsx$/,
+    /\.test\.py$/, /\.test\.rs$/,
+  ]
+  const testSetupFiles = ['tests/setup.ts', 'tests/setup.js', 'test/setup.ts', 'test/setup.js', 'tests/setup.mts', '__tests__/setup.ts']
+
+  const allFiles = [...controlledFiles, ...testSetupFiles]
+
+  // Walk test directories for test files.
+  for (const dir of testDirs) {
+    const dirPath = join(workspace, dir)
+    try {
+      const entries = readdirSync(dirPath, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isFile() && testFilePatterns.some(p => p.test(entry.name))) {
+          allFiles.push(join(dir, entry.name))
+        }
+      }
+    } catch {
+      // Test directory doesn't exist — skip.
+    }
+  }
+
+  for (const file of allFiles) {
     const absPath = join(workspace, file)
     try {
       const content = readFileSync(absPath)
@@ -724,8 +755,17 @@ function buildTrajectoryFromEvents(
 
     const turn = (firstUsageEvent.data as { turn?: number }).turn ?? 0
     const routingDecisionId = group.routingDecisionId
-    const routingEvent = allEvents.find(e => e.type === 'model/routing-decision' && (e.data as { turn?: number }).turn === turn) as
-      | Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+    // Use routingDecisionId as the primary join key for model lookup.
+    // Fall back to turn-based matching only for legacy events without
+    // a routingDecisionId.
+    const routingEvent = allEvents.find(e =>
+      e.type === 'model/routing-decision'
+      && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+    ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+      ?? allEvents.find(e =>
+        e.type === 'model/routing-decision'
+        && (e.data as { turn?: number }).turn === turn,
+      ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
     const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model
       ?? (firstUsageEvent.data as { model?: string }).model
       ?? 'unknown'
@@ -744,11 +784,21 @@ function buildTrajectoryFromEvents(
     }, pricing)
     const costUsd = cost.amount
 
-    // Find repair evidence and decision for this attempt.
-    const repairEvidence = allEvents.find(e => e.type === 'repair/evidence' && (e.data as { attempt?: number }).attempt === i + 1) as
-      | Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
-    const repairDecision = allEvents.find(e => e.type === 'repair/decision' && (e.data as { attempt?: number }).attempt === i + 1) as
-      | Extract<SessionEvent, { type: 'repair/decision' }> | undefined
+    // Find repair evidence and decision for this attempt. Use
+    // routingDecisionId as the primary join key; fall back to attempt
+    // ordinal for legacy events that lack routingDecisionId.
+    const repairEvidence = allEvents.find(e =>
+      e.type === 'repair/evidence'
+      && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+    ) as Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
+      ?? allEvents.find(e => e.type === 'repair/evidence' && (e.data as { attempt?: number }).attempt === i + 1) as
+        | Extract<SessionEvent, { type: 'repair/evidence' }> | undefined
+    const repairDecision = allEvents.find(e =>
+      e.type === 'repair/decision'
+      && (e.data as { routingDecisionId?: string }).routingDecisionId === routingDecisionId,
+    ) as Extract<SessionEvent, { type: 'repair/decision' }> | undefined
+      ?? allEvents.find(e => e.type === 'repair/decision' && (e.data as { attempt?: number }).attempt === i + 1) as
+        | Extract<SessionEvent, { type: 'repair/decision' }> | undefined
     const repairAction = repairDecision?.data.action ?? 'complete'
     const repairReason = repairDecision?.data.reason
     const failureFingerprint = repairEvidence?.data.failureFingerprint as string | undefined
@@ -797,6 +847,27 @@ function buildTrajectoryFromEvents(
   const repairEvidenceEvents = allEvents.filter(e => e.type === 'repair/evidence')
   if (repairEvidenceEvents.length > 0 && usageEvents.length === 0) {
     throw new Error(`MISSING_USAGE_EVIDENCE: ${repairEvidenceEvents.length} repair/evidence event(s) but 0 model/usage events for task ${manifest.taskId}`)
+  }
+
+  // Per-request reconciliation: each repair/evidence event implies a paid
+  // attempt. Verify that each has at least one corresponding model/usage
+  // event. A repair/evidence event with a routingDecisionId must have a
+  // matching usage event; one without must have a usage event on the same
+  // turn. Missing per-attempt usage is a control-plane failure.
+  for (const evidenceEvent of repairEvidenceEvents) {
+    const evidenceData = evidenceEvent.data as { routingDecisionId?: string; turn?: number }
+    const evidenceRdId = evidenceData.routingDecisionId
+    const evidenceTurn = evidenceData.turn
+    const hasMatchingUsage = usageEvents.some((usageEvent) => {
+      const usageData = usageEvent.data as { routingDecisionId?: string; turn?: number }
+      if (evidenceRdId !== undefined && usageData.routingDecisionId !== undefined) {
+        return usageData.routingDecisionId === evidenceRdId
+      }
+      return usageData.turn === evidenceTurn
+    })
+    if (!hasMatchingUsage) {
+      throw new Error(`MISSING_USAGE_EVIDENCE: repair/evidence event (routingDecisionId=${evidenceRdId ?? 'undefined'}, turn=${evidenceTurn ?? 'undefined'}) has no matching model/usage event for task ${manifest.taskId}`)
+    }
   }
 
   const changedFiles = getChangedFiles(workspace, checkout)

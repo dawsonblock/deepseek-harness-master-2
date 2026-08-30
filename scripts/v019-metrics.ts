@@ -56,7 +56,11 @@ export interface MetricsReport {
 
 export interface CategoryMetric {
   readonly category: string
+  /** Total tasks in the category, including non-benchmark and infrastructure failures. */
   readonly count: number
+  /** Benchmark-eligible tasks in the category (excludes B0 smoke, etc.). */
+  readonly eligibleCount: number
+  /** Eligible tasks that completed model evaluation (excludes NOT_EVALUATED). */
   readonly evaluated: number
   readonly verified: number
   readonly oneShotFlash: number
@@ -223,6 +227,7 @@ function groupByCategory(trajectories: readonly TaskTrajectory[]): CategoryMetri
     return {
       category,
       count: tasks.length,
+      eligibleCount: eligibleTasks.length,
       evaluated: evalTasks.length,
       verified: evalTasks.filter(t => t.finalVerified).length,
       oneShotFlash: evalTasks.filter(t =>
