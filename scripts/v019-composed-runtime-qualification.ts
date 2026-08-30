@@ -102,7 +102,7 @@ export interface ComposedQualificationRecord {
   readonly failedCount: number
   readonly skipCount: number
   readonly passed: boolean
-  readonly backend: { enforcement: string; networkDenied: boolean; probed: boolean }
+  readonly backend: { runner: string; enforcement: string; networkDenied: boolean; probed: boolean }
   readonly filesystem: { modelReadFence: boolean; modelWriteFence: boolean }
   readonly holdout: { modelReadable: boolean }
   readonly repair: { productionRuntime: boolean; rollbackRequired: boolean; provenanceRequired: boolean }
@@ -300,6 +300,7 @@ async function bootComposedRuntime(
     holdoutVerifier: createPassingHoldoutVerifier(),
     workspaceProvenanceProvider: createProvenanceProvider(workspace),
     rollbackProvider: createRollbackProvider(workspace, snapshotDir),
+    failOnMissingUsage: true,
   }
   await ctx.plugin(repairRuntimePlugin, repairConfig)
 
@@ -1323,6 +1324,7 @@ async function checkScenarioHoldoutFail(_ctx: Context, workspace: string, snapsh
       holdoutVerifier: createFailingHoldoutVerifier(),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
       rollbackProvider: createRollbackProvider(workspace, snapshotDir),
+      failOnMissingUsage: true,
     }
     await freshCtx.plugin(repairRuntimePlugin, repairConfig)
 
@@ -1625,6 +1627,7 @@ async function checkScenarioRollbackFailureStops(_ctx: Context, workspace: strin
       holdoutVerifier: createPassingHoldoutVerifier(),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
       rollbackProvider: createFailingRollbackProvider(),
+      failOnMissingUsage: true,
     }
     await freshCtx.plugin(repairRuntimePlugin, repairConfig)
 
@@ -1807,6 +1810,7 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
       holdoutVerifier: createPassingHoldoutVerifier(),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
       rollbackProvider: createRollbackProvider(workspace, snapshotDir),
+      failOnMissingUsage: true,
     }
     await freshCtx.plugin(repairRuntimePlugin, repairConfig)
 
@@ -2116,6 +2120,7 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
     skipCount,
     passed,
     backend: {
+      runner: detectSandboxRunner(),
       enforcement: c3?.status === 'pass' ? 'full' : 'unknown',
       networkDenied: c3?.status === 'pass',
       probed: c3?.status === 'pass',

@@ -96,6 +96,8 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - 验证器控制文件发现现在是递归和语言感知的。测试目录（`tests/`、`test/`、`__tests__/`、`src/__tests__/`）递归遍历，模式覆盖 Python（`test_foo.py`、`foo_test.py`）、Go（`foo_test.go`）、Java（`FooTest.java`）和 Rust（`foo_test.rs`），除 JS/TS 外。之前的实现仅检查直接目录条目和以 JS/TS 为中心的模式。
 - S8 现在断言确切路由链接：`model/escalation.toRoutingDecisionId` 必须等于实际 Pro `model/routing-decision.routingDecisionId`。之前的实现仅检查升级事件存在且目标完成，未验证路由链已链接。
 - C3 网络隔离测试现在使用 Node 二进制文件（`process.execPath` 与 `net.connect`）而非 `nc`/`curl`/`python3`。Node 保证在此运行时存在；之前的实现如果三个外部命令都不可用，可能产生假阳性网络拒绝。
+- `RepairRuntime` 现在在运行时内部强制缺失使用作为控制平面失败，而非仅在轨迹提取中。`computeAttemptAccounting` 接受 `failOnMissingUsage` 参数；启用时，没有匹配 `model/usage` 事件的付费路由决策抛出 `MISSING_USAGE` 而非静默坍缩为 `$0`/`0` token/`0` 延迟。`RepairRuntimeConfig.failOnMissingUsage` 和 `RepairHandlerDeps.failOnMissingUsage` 传播该标志。实时评估器和所有组合资格场景启用它；单元测试默认为 `false` 以避免为非会计场景注入使用事件。
+- `ComposedQualificationRecord` 中的 `backend` 字段现在包含 `runner`——实际检测到的沙箱运行器（`bwrap`、`landlock`、`seatbelt`、`windows-acl`）——而非仅从 C3 测试成功推断强制。`enforcement` 和 `networkDenied` 字段仍从 C3 派生，但运行器身份现在是持久资格记录的一部分。
 
 ## Alternatives considered
 

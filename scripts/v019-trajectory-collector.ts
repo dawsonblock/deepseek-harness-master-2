@@ -179,6 +179,7 @@ export async function runTaskTrajectory(
       holdoutVerifier: createHoldoutVerifier(workspace, manifest),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
       rollbackProvider: createRollbackProvider(workspace, checkout),
+      failOnMissingUsage: true,
     }
     await ctx.plugin(repairRuntimePlugin, repairConfig)
 

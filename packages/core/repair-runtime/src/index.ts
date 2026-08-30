@@ -85,6 +85,13 @@ export interface RepairRuntimeConfig {
    * verify the workspace was restored by the harness, not by the model.
    */
   rollbackProvider?: RollbackProvider
+  /**
+   * Whether to throw on missing `model/usage` events for paid routing
+   * decisions. When true, a paid request without usage evidence is a
+   * control-plane failure rather than a zero-cost attempt. Production
+   * qualification enables this; unit tests may disable it. Default: false.
+   */
+  failOnMissingUsage?: boolean
 }
 
 /** Context passed to a workspace provenance provider. */
@@ -690,11 +697,13 @@ export function computeAttemptAccounting(
   routingDecisionId: string,
   pricingRegistry: readonly ModelPricing[] = DEFAULT_PRICING_REGISTRY,
   failOnUnpriced = false,
+  failOnMissingUsage = false,
 ): { costUsd: number; latencyMs: number; outputTokens: number } {
   let routingTime: number | undefined
   let usageTime: number | undefined
   let costUsd = 0
   let outputTokens = 0
+  let usageFound = false
 
   for (const event of events) {
     if ((event.type as string) === 'model/routing-decision') {
@@ -713,6 +722,7 @@ export function computeAttemptAccounting(
       }
       // Match by routingDecisionId when present.
       if (data.routingDecisionId === routingDecisionId) {
+        usageFound = true
         usageTime = event.time
         outputTokens = data.usage.outputTokens
         const pricing = lookupPricingAt(
@@ -729,6 +739,10 @@ export function computeAttemptAccounting(
         break
       }
     }
+  }
+
+  if (failOnMissingUsage && !usageFound) {
+    throw new Error(`MISSING_USAGE: no model/usage event found for routingDecisionId ${routingDecisionId}`)
   }
 
   const latencyMs = routingTime !== undefined && usageTime !== undefined
@@ -1012,6 +1026,12 @@ export interface RepairHandlerDeps {
   readonly manualModelSelection: boolean
   /** Pricing registry for cost calculation. Defaults to {@link DEFAULT_PRICING_REGISTRY}. */
   readonly pricingRegistry?: readonly ModelPricing[]
+  /** Whether to throw on missing model/usage events. When true, a paid
+   * request without usage evidence is a control-plane failure. Production
+   * qualification enables this; unit tests may disable it to avoid
+   * injecting usage events for non-accounting scenarios. Default: false.
+   */
+  readonly failOnMissingUsage?: boolean
   /** Optional workspace provenance provider for SHA-256 file content hashing. */
   readonly workspaceProvenanceProvider?: WorkspaceProvenanceProvider
   /** Optional harness-owned rollback provider for workspace restoration. */
@@ -1072,8 +1092,10 @@ export function handleVerificationFailure(
 
   // Compute real cost and latency from the durable model/usage event.
   // Fail closed on unpriced usage: unknown pricing must not silently become $0.
+  // Fail closed on missing usage when enabled: a paid request without usage
+  // evidence is a control-plane failure, not a zero-cost attempt.
   const { costUsd, latencyMs, outputTokens } = computeAttemptAccounting(
-    session.events, routingDecisionId, deps.pricingRegistry, true,
+    session.events, routingDecisionId, deps.pricingRegistry, true, deps.failOnMissingUsage ?? false,
   )
 
   // Compute workspace provenance hash when a provider is configured.
@@ -1359,10 +1381,15 @@ export async function handleVerificationPass(
   goalId?: string,
   workspaceProvenanceProvider?: WorkspaceProvenanceProvider,
   changedFiles: readonly string[] = [],
+  failOnMissingUsage = false,
 ): Promise<VerificationPassResult> {
   // Account for the passing attempt's cost and output tokens from the durable model/usage event.
   // Fail closed on unpriced usage: unknown pricing must not silently become $0.
-  const { costUsd, latencyMs, outputTokens } = computeAttemptAccounting(session.events, routingDecisionId, pricingRegistry, true)
+  // Fail closed on missing usage when enabled: a paid request without usage
+  // evidence is a control-plane failure, not a zero-cost attempt.
+  const { costUsd, latencyMs, outputTokens } = computeAttemptAccounting(
+    session.events, routingDecisionId, pricingRegistry, true, failOnMissingUsage,
+  )
   state.totalCostUsd += costUsd
   state.totalOutputTokens += outputTokens
 
@@ -1505,6 +1532,7 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           goal.id,
           config.workspaceProvenanceProvider,
           passChangedFiles,
+          config.failOnMissingUsage ?? false,
         ).then((result) => {
           // Transition the goal while goal/verification PASS is still the
           // latest event. completeVerified() checks this freshness.
