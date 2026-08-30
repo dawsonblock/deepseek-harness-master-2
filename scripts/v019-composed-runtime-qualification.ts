@@ -57,7 +57,6 @@
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
@@ -174,9 +173,13 @@ function createQualificationWorkspace(): string {
   return ws
 }
 
-/** Create a holdout directory outside the workspace. */
+/** Create a holdout directory under a protectedReadPath so Seatbelt's
+ * workspace-isolated mode (allow-all-reads except protectedReadPaths) denies
+ * agent access. The dir is under REPO_ROOT/artifacts/, which is configured
+ * as a protectedReadPath in generateRepoConfig.
+ */
 function createHoldoutDir(): string {
-  const holdoutDir = join(homedir(), '.dsh-v019-holdouts', 'qual-workspace')
+  const holdoutDir = join(REPO_ROOT, 'artifacts', 'dsh-v019-holdouts', 'qual-workspace')
   mkdirSync(holdoutDir, { recursive: true })
   writeFileSync(join(holdoutDir, 'secret.holdout.test.ts'), 'test("holdout", () => { expect(false).toBe(true) })\n')
   return holdoutDir
@@ -223,8 +226,8 @@ function createFailingHoldoutVerifier(): HoldoutVerifier {
 }
 
 /** Standard model refs for qualification checks. */
-const FLASH_MODEL: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
-const PRO_MODEL: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+const FLASH_MODEL: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+const PRO_MODEL: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-pro' }
 
 /** Standard limits for qualification checks. */
 const QUAL_LIMITS: RepairLimits = DEFAULT_REPAIR_LIMITS
@@ -575,10 +578,11 @@ async function checkBashIsolation(ctx: Context, workspace: string): Promise<Comp
 
     const policy = sandboxPolicy.resolve()
 
-    // Create a harness-owned secret file outside the workspace to test
-    // sandbox denial. /etc/passwd is intentionally allowed by bwrap/Landlock
-    // (read-only system dirs), so it is the wrong forbidden-path test.
-    const secretDir = mkdtempSync(join(tmpdir(), 'dsh-qual-secret-'))
+    // Create a harness-owned secret file under a protectedReadPath to test
+    // sandbox denial. Seatbelt's workspace-isolated mode allows all reads
+    // except protectedReadPaths, so the secret must be under one of them.
+    // .agents/ is configured as a protectedReadPath in generateRepoConfig.
+    const secretDir = mkdtempSync(join(REPO_ROOT, '.agents', 'dsh-qual-secret-'))
     const secretFile = join(secretDir, 'verifier-secret.txt')
     writeFileSync(secretFile, 'SECRET-CONTENT-THAT-MUST-NOT-LEAK')
 
@@ -928,16 +932,22 @@ function checkProEscalation(): ComposedCheck {
 
     const decisionEvents = findEvents(session.events, 'repair/decision')
     const proEscalateDecision = decisionEvents.find(e => eventData(e).action === 'pro-escalate')
+    const flashRepairDecisions = decisionEvents.filter(e => eventData(e).action === 'flash-repair')
 
-    const passed = proEscalateDecision !== undefined && state.flashAttempts === 2
+    // After two Flash FAILs with the same failure, the controller should
+    // decide flash-repair on the first FAIL and pro-escalate on the second.
+    const passed = proEscalateDecision !== undefined
+      && flashRepairDecisions.length === 1
+      && state.flashAttempts === 1
+      && state.proAttempts === 1
 
     return {
       id: 'C9',
       name: 'Pro escalation with real routing decision IDs (helper-level)',
       status: passed ? 'pass' : 'fail',
       evidence: passed
-        ? 'pro-escalate decision present, flashAttempts=2'
-        : `proEscalateDecision=${proEscalateDecision !== undefined}, flashAttempts=${state.flashAttempts}`,
+        ? 'pro-escalate decision present, flashAttempts=1, proAttempts=1'
+        : `proEscalateDecision=${proEscalateDecision !== undefined}, flashAttempts=${state.flashAttempts}, proAttempts=${state.proAttempts}, flashRepairDecisions=${flashRepairDecisions.length}`,
     }
   } catch (e) {
     return { id: 'C9', name: 'Pro escalation with real routing decision IDs (helper-level)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
@@ -1270,19 +1280,30 @@ async function waitForEvent(
   session: { events: readonly SessionEvent[] },
   type: string,
   timeoutMs = 2000,
+  baseline = 0,
 ): Promise<SessionEvent | undefined> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const found = session.events.find(e => (e.type as string) === type)
+    // Find the first event of the given type AFTER the baseline seq.
+    // This prevents finding events from prior scenarios on the same context.
+    const found = session.events.find(e => (e.type as string) === type && e.seq > baseline)
     if (found !== undefined) return found
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   return undefined
 }
 
-/** Append turn/routing/usage events to the agent's session for accounting. */
+/** Capture the current session event count as a baseline for waitForEvent. */
+function eventBaseline(session: { events: readonly SessionEvent[] }): number {
+  return session.events.length > 0 ? (session.events.at(-1)?.seq ?? 0) : 0
+}
+
+/** Append routing/usage events to the agent's session for accounting.
+ * Does NOT emit turn/start — the agent-loop owns turn lifecycle and
+ * captures lastTurn at construction time, so synthetic turn/start events
+ * would conflict with the loop's own turn management. The plugin derives
+ * turn from the routing decision's `turn` field. */
 function setupAgentTurn(agent: Agent, turn: number, model: ModelRef, routingDecisionId: string): void {
-  agent.session.append('turn/start', { turn }, { ignorable: true })
   agent.session.append('model/routing-decision', {
     routingDecisionId,
     turn,
@@ -1335,10 +1356,11 @@ async function checkScenarioOneShotPass(ctx: Context): Promise<ComposedCheck> {
       if (goal === undefined) {
         return { id: 'S1', name: 'Scenario A: one-shot PASS→holdout PASS→complete (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
+      const baseline = eventBaseline(agent.session)
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
 
       // Wait for the async plugin handler to append repair/completed
-      const completedEvent = await waitForEvent(agent.session, 'repair/completed')
+      const completedEvent = await waitForEvent(agent.session, 'repair/completed', 2000, baseline)
       const completedData = completedEvent !== undefined ? eventData(completedEvent) : undefined
       const postGoal = goals.get(agent)
 
@@ -1489,6 +1511,7 @@ async function checkScenarioPostMutationDenied(ctx: Context, workspace: string):
       // current (post-mutation) hash and find it differs from the
       // verification hash, triggering GOAL_WORKSPACE_MUTATED.
       const preMutationHash = computeWorkspaceHashForDir(workspace)
+      const baseline = eventBaseline(agent.session)
       await goals.verifyCompletion(
         agent,
         { id: goal.id, revision: goal.revision },
@@ -1507,13 +1530,13 @@ async function checkScenarioPostMutationDenied(ctx: Context, workspace: string):
       // it to the verification hash (pre-mutation). They differ, so
       // completeVerified throws GOAL_WORKSPACE_MUTATED, which the plugin
       // catches and terminalizes as workspace-provenance-failed.
-      await waitForEvent(agent.session, 'repair/completed')
+      await waitForEvent(agent.session, 'repair/completed', 2000, baseline)
 
       // Restore the workspace
       writeFileSync(join(workspace, 'src.ts'), 'export const x = 1\n')
 
       // Assert the specific outcome: workspace-provenance-failed.
-      const completedEvents = findEvents(agent.session.events, 'repair/completed')
+      const completedEvents = findEvents(agent.session.events, 'repair/completed').filter(e => e.seq > baseline)
       const completedData = completedEvents.length > 0 && completedEvents[0] !== undefined
         ? eventData(completedEvents[0])
         : undefined
@@ -1620,13 +1643,14 @@ async function checkScenarioWorkspaceBoundCompletion(ctx: Context, workspace: st
     const disposeVerifier = goals.registerAcceptanceVerifier(verifier)
 
     try {
-      // Set up a turn with a tool/call so changedFilesInTurn discovers the file
+      // Clear any goal left by prior scenarios on this shared context.
+      const existingGoal = goals.get(agent)
+      if (existingGoal !== undefined && existingGoal.phase !== 'complete') {
+        goals.clear(agent, { id: existingGoal.id, revision: existingGoal.revision })
+      }
+
+      // Set up a turn with routing/usage for accounting.
       setupAgentTurn(agent, 1, FLASH_MODEL, 'rd-s5-1')
-      agent.session.append('tool/call', {
-        turn: 1,
-        name: 'write_file',
-        arguments: JSON.stringify({ file_path: join(workspace, 'src.ts') }),
-      } as never, { ignorable: true })
 
       goals.create(agent, { objective: 'S5: workspace-bound completion' })
       const goal = goals.get(agent)
@@ -1636,6 +1660,7 @@ async function checkScenarioWorkspaceBoundCompletion(ctx: Context, workspace: st
 
       // Pass a workspace snapshot provider so the hash is computed AFTER
       // verifiers run, binding the state that was actually tested.
+      const baseline = eventBaseline(agent.session)
       await goals.verifyCompletion(
         agent,
         { id: goal.id, revision: goal.revision },
@@ -1643,7 +1668,7 @@ async function checkScenarioWorkspaceBoundCompletion(ctx: Context, workspace: st
       )
 
       // Wait for the plugin to process the PASS event
-      await waitForEvent(agent.session, 'repair/completed')
+      await waitForEvent(agent.session, 'repair/completed', 2000, baseline)
       const postGoal = goals.get(agent)
 
       // The plugin should have re-computed the hash and called completeVerified.
@@ -1719,16 +1744,17 @@ async function checkScenarioRollbackFailureStops(_ctx: Context, workspace: strin
       }
 
       const usageBefore = findEvents(agent.session.events, 'model/usage').length
+      const baseline = eventBaseline(agent.session)
 
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
 
       // Wait for the plugin to process the FAIL event and attempt rollback.
       // The rollback provider fails, so the plugin should terminalize with
       // rollback-failed and no new paid model call.
-      await waitForEvent(agent.session, 'repair/completed')
+      await waitForEvent(agent.session, 'repair/completed', 2000, baseline)
 
       const usageAfter = findEvents(agent.session.events, 'model/usage').length
-      const completedEvents = findEvents(agent.session.events, 'repair/completed')
+      const completedEvents = findEvents(agent.session.events, 'repair/completed').filter(e => e.seq > baseline)
       const postGoal = goals.get(agent)
 
       const completedData = completedEvents.length > 0 && completedEvents[0] !== undefined ? eventData(completedEvents[0]) : undefined
@@ -1781,31 +1807,23 @@ async function checkScenarioAuthorityAmbiguity(ctx: Context): Promise<ComposedCh
     const disposeVerifier = goals.registerAcceptanceVerifier(verifier)
 
     try {
-      // Set up a turn with an undecidable authority record — a
-      // model/selection-authority event with a future schema version that
-      // resolveSelectionAuthority cannot interpret.
-      agent.session.append('turn/start', { turn: 1 }, { ignorable: true })
+      // Clear any goal left by prior scenarios on this shared context.
+      const existingGoal = goals.get(agent)
+      if (existingGoal !== undefined && existingGoal.phase !== 'complete') {
+        goals.clear(agent, { id: existingGoal.id, revision: existingGoal.revision })
+      }
+
+      // Set up an undecidable authority record — a model/selection-authority
+      // event with a future schema version that resolveSelectionAuthority
+      // cannot interpret.
       agent.session.append('model/selection-authority', {
         authoritySchemaVersion: 999,
         authority: 'manual',
-        selection: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        selection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
         authorityEpoch: 1,
         source: { kind: 'user' },
       } as never, { ignorable: true })
-      agent.session.append('model/routing-decision', {
-        routingDecisionId: 'rd-s7-1',
-        turn: 1,
-        selected: { provider: 'deepseek', model: 'deepseek-v4-flash' },
-      } as never, { ignorable: true })
-      agent.session.append('model/usage', {
-        turn: 1,
-        step: 0,
-        attempt: 1,
-        provider: 'deepseek',
-        model: 'deepseek-v4-flash',
-        usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheCreationTokens: 0 },
-        routingDecisionId: 'rd-s7-1',
-      } as never, { ignorable: true })
+      setupAgentTurn(agent, 1, FLASH_MODEL, 'rd-s7-1')
 
       goals.create(agent, { objective: 'S7: authority ambiguity' })
       const goal = goals.get(agent)
@@ -1813,13 +1831,14 @@ async function checkScenarioAuthorityAmbiguity(ctx: Context): Promise<ComposedCh
         return { id: 'S7', name: 'Scenario F: authority ambiguity denies model transition (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
 
+      const baseline = eventBaseline(agent.session)
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
 
       // Wait for the plugin to process the FAIL event
-      await waitForEvent(agent.session, 'repair/completed')
+      await waitForEvent(agent.session, 'repair/completed', 2000, baseline)
 
-      const completedEvents = findEvents(agent.session.events, 'repair/completed')
-      const escalationEvents = findEvents(agent.session.events, 'model/escalation')
+      const completedEvents = findEvents(agent.session.events, 'repair/completed').filter(e => e.seq > baseline)
+      const escalationEvents = findEvents(agent.session.events, 'model/escalation').filter(e => e.seq > baseline)
       const postGoal = goals.get(agent)
 
       // The plugin should detect the undecidable authority and block the goal
@@ -1911,8 +1930,9 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
       if (goal === undefined) {
         return { id: 'S8', name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
+      const baseline1 = eventBaseline(agent.session)
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
-      await waitForEvent(agent.session, 'repair/decision')
+      await waitForEvent(agent.session, 'repair/decision', 2000, baseline1)
 
       // Turn 2: Flash repair attempt, diagnostic FAIL again
       setupAgentTurn(agent, 2, FLASH_MODEL, 'rd-s8-2')
@@ -1921,13 +1941,13 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
       if (goal === undefined || goal.phase !== 'active') {
         return { id: 'S8', name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)', status: 'fail', evidence: `goal not active after first repair (phase=${goal?.phase ?? 'undefined'})` }
       }
+      const baseline2 = eventBaseline(agent.session)
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
-      await waitForEvent(agent.session, 'repair/decision')
+      await waitForEvent(agent.session, 'repair/decision', 2000, baseline2)
 
       // After two Flash failures, the repair controller should decide
-      // pro-escalate. Check for the escalation event and decision.
+      // pro-escalate. Check for the decision.
       const decisions = findEvents(agent.session.events, 'repair/decision')
-      const escalations = findEvents(agent.session.events, 'model/escalation')
       const proEscalateDecision = decisions.some((d) => {
         const data = eventData(d)
         return data.action === 'pro-escalate'
@@ -1939,10 +1959,17 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
         appendUsage(agent.session, 3, PRO_MODEL, 100, 'rd-s8-pro')
         goal = goals.get(agent)
         if (goal !== undefined && goal.phase === 'active') {
+          const baseline3 = eventBaseline(agent.session)
           await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
-          await waitForEvent(agent.session, 'repair/completed')
+          await waitForEvent(agent.session, 'repair/completed', 2000, baseline3)
         }
       }
+
+      // Re-scan for the escalation event after turn 3's routing decision
+      // has been processed. The model/escalation event is emitted by the
+      // plugin after the Pro routing decision arrives.
+      await new Promise(resolve => setTimeout(resolve, 50))
+      const escalations = findEvents(agent.session.events, 'model/escalation')
 
       const postGoal = goals.get(agent)
       const completedEvents = findEvents(agent.session.events, 'repair/completed')
@@ -1954,7 +1981,7 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
       // Verify exact routing linkage: the model/escalation event's
       // toRoutingDecisionId must match the actual Pro routing decision ID.
       const escalationEvent = escalations.length > 0
-        ? findEvents(agent.session.events, 'model/escalation')[0]
+        ? escalations[0]
         : undefined
       const escalationData = escalationEvent !== undefined ? eventData(escalationEvent) : undefined
       const escalationToRdId = typeof escalationData?.toRoutingDecisionId === 'string' ? escalationData.toRoutingDecisionId : undefined

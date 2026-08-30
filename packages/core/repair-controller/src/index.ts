@@ -77,3 +77,5 @@ export type {
   RepairRollbackEventData,
   RepairOutcome,
 } from './types.ts'
+
+export default RepairControllerService

@@ -499,6 +499,27 @@ function latestRoutingDecisionId(events: readonly SessionEvent[], turn: number):
   return undefined
 }
 
+/** Derive the current turn number from the session log. Prefers the latest
+ * turn/start event; falls back to the latest model/routing-decision's turn
+ * field so repair works when the agent-loop has not yet opened a turn (e.g.
+ * qualification fixtures that emit routing decisions without a turn/start). */
+function currentTurn(events: readonly SessionEvent[]): number {
+  let fromTurnStart = 0
+  let fromRouting = 0
+  for (const event of events) {
+    if (event.type === 'turn/start') {
+      fromTurnStart = Math.max(fromTurnStart, event.data.turn)
+    }
+    if ((event.type as string) === 'model/routing-decision') {
+      const data = event.data as unknown as { turn?: number }
+      if (typeof data.turn === 'number') {
+        fromRouting = Math.max(fromRouting, data.turn)
+      }
+    }
+  }
+  return Math.max(fromTurnStart, fromRouting)
+}
+
 /**
  * Result of validating repair event ordering and idempotency for one repair
  * sequence. Used to detect duplicate or out-of-order events during replay.
@@ -1406,10 +1427,12 @@ export async function handleVerificationPass(
     costUsd,
     latencyMs,
   })
-  // Increment the model-specific counter.
-  if (model.provider === 'deepseek' && model.model === 'deepseek-v4-flash') {
+  // Increment the model-specific counter. Match by model name across
+  // provider aliases (deepseek, deepseek-official) so the counter works
+  // regardless of which provider alias the routing decision used.
+  if (model.model === 'deepseek-v4-flash') {
     state.flashAttempts += 1
-  } else if (model.provider === 'deepseek' && model.model === 'deepseek-v4-pro') {
+  } else if (model.model === 'deepseek-v4-pro') {
     state.proAttempts += 1
   }
 
@@ -1449,6 +1472,12 @@ export async function handleVerificationPass(
   }
 }
 
+/** Plugin name. */
+export const name = 'repair-runtime'
+
+/** Services required before the plugin can register its event handlers. */
+export const inject = ['agents', 'goals', 'sessions', 'repairController']
+
 /** Plugin entry point. */
 export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: false }): void {
   if (!config.enabled) return
@@ -1472,9 +1501,7 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     }
     // Derive a deterministic repairId from stable execution identity. The
     // originating routing decision is the latest one for the current turn.
-    const turn = agent.session.events.reduce(
-      (max, e) => e.type === 'turn/start' ? Math.max(max, e.data.turn) : max, 0,
-    )
+    const turn = currentTurn(agent.session.events)
     const originatingRoutingDecisionId = latestRoutingDecisionId(agent.session.events, turn) ?? 'unknown'
     const state: RepairState = {
       repairId: computeRepairId(agent.session.id, goal.id, goal.revision, originatingRoutingDecisionId),
@@ -1490,97 +1517,68 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     return state
   }
 
-  ctx.effect(function* () {
-    // Watch goal/verification for both PASS and FAIL.
-    ctx.on('session/event', (session: Session, event: SessionEvent) => {
-      if (event.type !== 'goal/verification') return
-      const data = event.data as {
-        goal: GoalRef
-        passed: boolean
-        checks: readonly GoalVerificationCheck[]
-      }
+  // Watch goal/verification for both PASS and FAIL. Global so the
+  // handler fires for every agent session regardless of which fiber
+  // created it.
+  ctx.on('session/event', (session: Session, event: SessionEvent) => {
+    if (event.type !== 'goal/verification') return
+    const data = event.data as {
+      goal: GoalRef
+      passed: boolean
+      checks: readonly GoalVerificationCheck[]
+    }
 
-      const agent = ctx.agents.get(session.id)
-      if (agent === undefined || agent.session !== session) return
+    const agent = ctx.agents.get(session.id)
+    if (agent === undefined || agent.session !== session) return
 
-      const goal = ctx.goals.get(agent)
-      if (goal === undefined || goal.id !== data.goal.id) return
+    const goal = ctx.goals.get(agent)
+    if (goal === undefined || goal.id !== data.goal.id) return
 
-      const turn = session.events.reduce(
-        (max, e) => e.type === 'turn/start' ? Math.max(max, e.data.turn) : max, 0,
-      )
+    const turn = currentTurn(session.events)
 
-      const key = `${agent.id}:${goal.id}`
-      const state = repairStates.get(key)
+    const key = `${agent.id}:${goal.id}`
+    const state = repairStates.get(key)
 
-      // PASS: run holdout (if configured), transition the goal, then emit
-      // repair/completed. The goal transition MUST happen before
-      // repair/completed is appended, because completeVerified() requires
-      // goal/verification PASS as the latest durable event. Holdout failures
-      // do NOT trigger repair — they block the goal as qualification-failed.
-      // On a one-shot success (no prior repair state), create fresh state so
-      // the same completion pipeline owns one-shot success, repair success,
-      // and Pro success.
-      if (data.passed) {
-        const passState = state ?? stateFor(agent, goal)
-        const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
-        const passChangedFiles = changedFilesInTurn(session.events, turn)
-        void handleVerificationPass(
-          session, passState, turn, routingDecisionId,
-          DEFAULT_PRICING_REGISTRY,
-          config.holdoutVerifier,
-          goal.id,
-          config.workspaceProvenanceProvider,
-          passChangedFiles,
-          config.failOnMissingUsage ?? false,
-        ).then((result) => {
-          // Transition the goal while goal/verification PASS is still the
-          // latest event. completeVerified() checks this freshness.
-          if (result.verified) {
-            // Re-compute the workspace hash at completion time. If the
-            // workspace mutated between verification and completion, the
-            // hash will differ and completeVerified() will reject.
-            let currentWorkspaceHash: string | undefined
-            if (config.workspaceProvenanceProvider !== undefined && result.workspaceHash !== undefined) {
-              try {
-                currentWorkspaceHash = config.workspaceProvenanceProvider({
-                  session,
-                  changedFiles: passChangedFiles,
-                })
-              } catch {
-                // Provenance failure at completion is fatal — the workspace
-                // state cannot be verified, so refuse completion.
-                ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
-                  code: 'workspace-provenance-failed',
-                  message: 'workspace provenance provider failed at completion time',
-                })
-                session.append('repair/completed', {
-                  repairId: passState.repairId,
-                  turn,
-                  step: 0,
-                  finalRoutingDecisionId: routingDecisionId,
-                  verified: false,
-                  totalAttempts: passState.attempts.length,
-                  flashAttempts: passState.flashAttempts,
-                  proAttempts: passState.proAttempts,
-                  totalCostUsd: passState.totalCostUsd,
-                  elapsedMs: Date.now() - passState.startedAt,
-                  outcome: 'workspace-provenance-failed',
-                }, { ignorable: true })
-                releaseToAuto(session, 'system')
-                repairStates.delete(key)
-                return
-              }
-            }
+    // PASS: run holdout (if configured), transition the goal, then emit
+    // repair/completed. The goal transition MUST happen before
+    // repair/completed is appended, because completeVerified() requires
+    // goal/verification PASS as the latest durable event. Holdout failures
+    // do NOT trigger repair — they block the goal as qualification-failed.
+    // On a one-shot success (no prior repair state), create fresh state so
+    // the same completion pipeline owns one-shot success, repair success,
+    // and Pro success.
+    if (data.passed) {
+      const passState = state ?? stateFor(agent, goal)
+      const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
+      const passChangedFiles = changedFilesInTurn(session.events, turn)
+      void handleVerificationPass(
+        session, passState, turn, routingDecisionId,
+        DEFAULT_PRICING_REGISTRY,
+        config.holdoutVerifier,
+        goal.id,
+        config.workspaceProvenanceProvider,
+        passChangedFiles,
+        config.failOnMissingUsage ?? false,
+      ).then((result) => {
+        // Transition the goal while goal/verification PASS is still the
+        // latest event. completeVerified() checks this freshness.
+        if (result.verified) {
+          // Re-compute the workspace hash at completion time. If the
+          // workspace mutated between verification and completion, the
+          // hash will differ and completeVerified() will reject.
+          let currentWorkspaceHash: string | undefined
+          if (config.workspaceProvenanceProvider !== undefined && result.workspaceHash !== undefined) {
             try {
-              ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, currentWorkspaceHash)
-            } catch (completionError: unknown) {
-              // GOAL_WORKSPACE_MUTATED or other completion failure must
-              // terminalize explicitly rather than escaping as an
-              // unhandled promise rejection.
+              currentWorkspaceHash = config.workspaceProvenanceProvider({
+                session,
+                changedFiles: passChangedFiles,
+              })
+            } catch {
+              // Provenance failure at completion is fatal — the workspace
+              // state cannot be verified, so refuse completion.
               ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
                 code: 'workspace-provenance-failed',
-                message: completionError instanceof Error ? completionError.message : String(completionError),
+                message: 'workspace provenance provider failed at completion time',
               })
               session.append('repair/completed', {
                 repairId: passState.repairId,
@@ -1599,62 +1597,96 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
               repairStates.delete(key)
               return
             }
-          } else {
-            ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
-              code: 'qualification-failed',
-              message: result.qualificationFailure?.reason ?? 'holdout verification failed',
-            })
           }
-
-          // Now append repair/completed after the goal transition.
-          session.append('repair/completed', {
-            repairId: passState.repairId,
-            turn,
-            step: 0,
-            finalRoutingDecisionId: routingDecisionId,
-            verified: result.verified,
-            totalAttempts: passState.attempts.length,
-            flashAttempts: passState.flashAttempts,
-            proAttempts: passState.proAttempts,
-            totalCostUsd: passState.totalCostUsd,
-            elapsedMs: Date.now() - passState.startedAt,
-            outcome: result.outcome,
-            ...result.qualificationFailure !== undefined ? { qualificationFailure: result.qualificationFailure } : {},
-            ...result.workspaceHash !== undefined ? { workspaceHash: result.workspaceHash } : {},
-          }, { ignorable: true })
-
-          // Release the model selection back to automatic routing.
-          releaseToAuto(session, 'system')
-          repairStates.delete(key)
-        }).catch((handlerError: unknown) => {
-          // Catch any unhandled errors from the pass handler chain so they
-          // do not escape as unhandled promise rejections.
-          ctx.logger.error(`repair-runtime: verification pass handler error: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`)
+          try {
+            ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, currentWorkspaceHash)
+          } catch (completionError: unknown) {
+            // GOAL_WORKSPACE_MUTATED or other completion failure must
+            // terminalize explicitly rather than escaping as an
+            // unhandled promise rejection.
+            ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+              code: 'workspace-provenance-failed',
+              message: completionError instanceof Error ? completionError.message : String(completionError),
+            })
+            session.append('repair/completed', {
+              repairId: passState.repairId,
+              turn,
+              step: 0,
+              finalRoutingDecisionId: routingDecisionId,
+              verified: false,
+              totalAttempts: passState.attempts.length,
+              flashAttempts: passState.flashAttempts,
+              proAttempts: passState.proAttempts,
+              totalCostUsd: passState.totalCostUsd,
+              elapsedMs: Date.now() - passState.startedAt,
+              outcome: 'workspace-provenance-failed',
+            }, { ignorable: true })
+            releaseToAuto(session, 'system')
+            repairStates.delete(key)
+            return
+          }
+        } else {
           ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
-            code: 'workspace-provenance-failed',
-            message: handlerError instanceof Error ? handlerError.message : String(handlerError),
+            code: 'qualification-failed',
+            message: result.qualificationFailure?.reason ?? 'holdout verification failed',
           })
-          session.append('repair/completed', {
-            repairId: passState.repairId,
-            turn,
-            step: 0,
-            finalRoutingDecisionId: routingDecisionId,
-            verified: false,
-            totalAttempts: passState.attempts.length,
-            flashAttempts: passState.flashAttempts,
-            proAttempts: passState.proAttempts,
-            totalCostUsd: passState.totalCostUsd,
-            elapsedMs: Date.now() - passState.startedAt,
-            outcome: 'workspace-provenance-failed',
-          }, { ignorable: true })
-          releaseToAuto(session, 'system')
-          repairStates.delete(key)
-        })
-        return
-      }
+        }
 
-      // FAIL: proceed with repair logic.
-      const repairController = ctx.get('repairController') as { decide: (input: object) => RepairDecision } | undefined
+        // Now append repair/completed after the goal transition.
+        session.append('repair/completed', {
+          repairId: passState.repairId,
+          turn,
+          step: 0,
+          finalRoutingDecisionId: routingDecisionId,
+          verified: result.verified,
+          totalAttempts: passState.attempts.length,
+          flashAttempts: passState.flashAttempts,
+          proAttempts: passState.proAttempts,
+          totalCostUsd: passState.totalCostUsd,
+          elapsedMs: Date.now() - passState.startedAt,
+          outcome: result.outcome,
+          ...result.qualificationFailure !== undefined ? { qualificationFailure: result.qualificationFailure } : {},
+          ...result.workspaceHash !== undefined ? { workspaceHash: result.workspaceHash } : {},
+        }, { ignorable: true })
+
+        // Release the model selection back to automatic routing.
+        releaseToAuto(session, 'system')
+        repairStates.delete(key)
+      }).catch((handlerError: unknown) => {
+        // Catch any unhandled errors from the pass handler chain so they
+        // do not escape as unhandled promise rejections.
+        ctx.logger.error(`repair-runtime: verification pass handler error: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`)
+        ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+          code: 'workspace-provenance-failed',
+          message: handlerError instanceof Error ? handlerError.message : String(handlerError),
+        })
+        session.append('repair/completed', {
+          repairId: passState.repairId,
+          turn,
+          step: 0,
+          finalRoutingDecisionId: routingDecisionId,
+          verified: false,
+          totalAttempts: passState.attempts.length,
+          flashAttempts: passState.flashAttempts,
+          proAttempts: passState.proAttempts,
+          totalCostUsd: passState.totalCostUsd,
+          elapsedMs: Date.now() - passState.startedAt,
+          outcome: 'workspace-provenance-failed',
+        }, { ignorable: true })
+        releaseToAuto(session, 'system')
+        repairStates.delete(key)
+      })
+      return
+    }
+
+    // FAIL: proceed with repair logic. Defer to a microtask so the
+    // goal/verification append completes before the failure handler
+    // appends repair/evidence, repair/decision, repair/rollback, and
+    // repair/completed events. Running synchronously inside the
+    // session/event publish cycle would reenter session.append.
+    const repairController = ctx.get('repairController') as { decide: (input: object) => RepairDecision } | undefined
+    const failChecks = data.checks
+    void Promise.resolve().then(() => {
       if (repairController === undefined) {
         ctx.logger.warn(`repair-runtime: RepairController service not available; blocking goal "${goal.id}"`)
         ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
@@ -1707,14 +1739,40 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           ...config.maxElapsedMs !== undefined ? { maxElapsedMs: config.maxElapsedMs } : {},
           ...config.maxOutputTokens !== undefined ? { maxOutputTokens: config.maxOutputTokens } : {},
         },
-        decide: repairController.decide,
+        decide: repairController.decide.bind(repairController),
         proModelAvailable: config.proModelAvailable ?? true,
         manualModelSelection: authority.kind === 'manual',
+        ...config.failOnMissingUsage !== undefined ? { failOnMissingUsage: config.failOnMissingUsage } : {},
         ...config.workspaceProvenanceProvider !== undefined ? { workspaceProvenanceProvider: config.workspaceProvenanceProvider } : {},
         ...config.rollbackProvider !== undefined ? { rollbackProvider: config.rollbackProvider } : {},
       }
 
-      const result = handleVerificationFailure(session, repairState, deps, turn, data.checks)
+      let result: RepairHandlerResult
+      try {
+        result = handleVerificationFailure(session, repairState, deps, turn, failChecks)
+      } catch (handlerError) {
+        ctx.logger.error(`repair-runtime: verification failure handler error: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`)
+        ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+          code: 'repair-handler-error',
+          message: handlerError instanceof Error ? handlerError.message : String(handlerError),
+        })
+        session.append('repair/completed', {
+          repairId: repairState.repairId,
+          turn,
+          step: 0,
+          finalRoutingDecisionId: latestRoutingDecisionId(session.events, turn) ?? 'unknown',
+          verified: false,
+          totalAttempts: repairState.attempts.length,
+          flashAttempts: repairState.flashAttempts,
+          proAttempts: repairState.proAttempts,
+          totalCostUsd: repairState.totalCostUsd,
+          elapsedMs: Date.now() - repairState.startedAt,
+          outcome: 'workspace-provenance-failed',
+        }, { ignorable: true })
+        releaseToAuto(session, 'system')
+        repairStates.delete(key)
+        return
+      }
 
       switch (result.action) {
         case 'complete': {
@@ -1769,40 +1827,44 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
         }
       }
     })
+  }, { global: true })
 
-    // Watch model/routing-decision to resolve pending escalations with the
-    // real toRoutingDecisionId.
-    ctx.on('session/event', (session: Session, event: SessionEvent) => {
-      if ((event.type as string) !== 'model/routing-decision') return
-      const pending = pendingEscalations.get(session.id)
-      if (pending === undefined) return
-      const rdData = event.data as { routingDecisionId?: string }
-      const realRoutingDecisionId = rdData.routingDecisionId
-      if (realRoutingDecisionId === undefined) return
-      // Emit the model/escalation event with the real destination routing
-      // decision id, now that the router has created it.
+  // Watch model/routing-decision to resolve pending escalations with the
+  // real toRoutingDecisionId. Global so the handler fires for every
+  // agent session regardless of which fiber created it.
+  ctx.on('session/event', (session: Session, event: SessionEvent) => {
+    if ((event.type as string) !== 'model/routing-decision') return
+    const pending = pendingEscalations.get(session.id)
+    if (pending === undefined) return
+    const rdData = event.data as { routingDecisionId?: string }
+    const realRoutingDecisionId = rdData.routingDecisionId
+    if (realRoutingDecisionId === undefined) return
+    // Defer the model/escalation append to avoid reentering session.append
+    // while the model/routing-decision event is still being published.
+    const escalationPending = pending
+    pendingEscalations.delete(session.id)
+    void Promise.resolve().then(() => {
       session.append('model/escalation', {
-        repairId: pending.repairId,
-        turn: pending.turn,
+        repairId: escalationPending.repairId,
+        turn: escalationPending.turn,
         step: 0,
-        fromRoutingDecisionId: pending.fromRoutingDecisionId,
+        fromRoutingDecisionId: escalationPending.fromRoutingDecisionId,
         toRoutingDecisionId: realRoutingDecisionId,
-        repairOf: pending.fromRoutingDecisionId,
-        fromModel: pending.fromModel,
-        toModel: pending.toModel,
-        reason: pending.reason,
-        failureFingerprint: pending.failureFingerprint,
-        flashAttempts: pending.flashAttempts,
+        repairOf: escalationPending.fromRoutingDecisionId,
+        fromModel: escalationPending.fromModel,
+        toModel: escalationPending.toModel,
+        reason: escalationPending.reason,
+        failureFingerprint: escalationPending.failureFingerprint,
+        flashAttempts: escalationPending.flashAttempts,
       }, { ignorable: true })
-      pendingEscalations.delete(session.id)
     })
+  }, { global: true })
 
-    ctx.on('agent/disposed', ({ agent }) => {
-      for (const key of repairStates.keys()) {
-        if (key.startsWith(`${agent.id}:`)) repairStates.delete(key)
-      }
-      pendingEscalations.delete(agent.session.id)
-    })
+  ctx.on('agent/disposed', ({ agent }) => {
+    for (const key of repairStates.keys()) {
+      if (key.startsWith(`${agent.id}:`)) repairStates.delete(key)
+    }
+    pendingEscalations.delete(agent.session.id)
   })
 }
 
