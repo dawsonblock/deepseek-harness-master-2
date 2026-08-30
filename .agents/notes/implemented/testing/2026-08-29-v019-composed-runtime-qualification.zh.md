@@ -99,6 +99,7 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - `RepairRuntime` 现在在运行时内部强制缺失使用作为控制平面失败，而非仅在轨迹提取中。`computeAttemptAccounting` 接受 `failOnMissingUsage` 参数；启用时，没有匹配 `model/usage` 事件的付费路由决策抛出 `MISSING_USAGE` 而非静默坍缩为 `$0`/`0` token/`0` 延迟。`RepairRuntimeConfig.failOnMissingUsage` 和 `RepairHandlerDeps.failOnMissingUsage` 传播该标志。实时评估器和所有组合资格场景启用它；单元测试默认为 `false` 以避免为非会计场景注入使用事件。
 - `ComposedQualificationRecord` 中的 `backend` 字段现在包含 `runner`——实际检测到的沙箱运行器（`bwrap`、`landlock`、`seatbelt`、`windows-acl`）——而非仅从 C3 测试成功推断强制。`enforcement` 和 `networkDenied` 字段仍从 C3 派生，但运行器身份现在是持久资格记录的一部分。
 - `node_modules` 现在通过 `SandboxExecutionPolicy` 上的新 `readOnlyPaths` 字段对模型只读。进程内 FS 围栏（`dsh-fs-sandbox`）拒绝写入 `readOnlyPaths` 下的路径；bwrap 配置使用 `--ro-bind` 重新挂载；Seatbelt 配置添加 `(deny file-write* (subpath ...))` 规则；Landlock 配置将它们添加到 `readOnly` 授权。v019 评估配置 `readOnlyPaths: [workspace/node_modules]`。新的组合资格检查 C2b 验证模型无法写入 `node_modules` 但可以读取。这满足审计的 P0.3 要求：从工作区哈希中排除但能够影响验证的任何内容必须受到保护，防止模型突变。
+- `ComposedQualificationRecord` 中的 `backend` 字段现在除了 `runner` 外还包含 `runnerPath`、`runnerVersion` 和 `networkIsolation`。`runnerPath` 是运行器二进制文件的绝对路径；`runnerVersion` 是运行器的版本字符串（或 seatbelt 的 macOS 产品版本）；`networkIsolation` 命名机制（bwrap 为 `netns`，seatbelt 为 `sandbox-denied`，landlock 为 `no-network-grant`）。`environmentMatches()` 现在除了平台、架构、Node 版本和运行器名称外，还比较运行器路径和版本，因此使用一个运行器二进制或版本生成的资格在选择不同运行器时不会被重用。
 
 ## Alternatives considered
 

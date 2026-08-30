@@ -102,7 +102,15 @@ export interface ComposedQualificationRecord {
   readonly failedCount: number
   readonly skipCount: number
   readonly passed: boolean
-  readonly backend: { runner: string; enforcement: string; networkDenied: boolean; probed: boolean }
+  readonly backend: {
+    runner: string
+    runnerPath: string
+    runnerVersion: string
+    networkIsolation: string
+    enforcement: string
+    networkDenied: boolean
+    probed: boolean
+  }
   readonly filesystem: { modelReadFence: boolean; modelWriteFence: boolean }
   readonly holdout: { modelReadable: boolean }
   readonly repair: { productionRuntime: boolean; rollbackRequired: boolean; provenanceRequired: boolean }
@@ -2115,29 +2123,53 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
  * generated with bwrap is not reused on a machine that falls back to landlock.
  */
 function detectSandboxRunner(): string {
+  return detectSandboxRunnerInfo().runner
+}
+
+/** Detect the actual sandbox runner and its path/version on this platform.
+ * Matches the selection logic in `packages/sandbox/sandbox-local/src/index.ts`:
+ * Linux prefers bwrap, falls back to landlock; macOS uses seatbelt.
+ * The runner identity, path, and version are part of the environment
+ * binding so a qualification generated with one runner is not reused
+ * when a different runner or version is selected.
+ */
+function detectSandboxRunnerInfo(): { runner: string; runnerPath: string; runnerVersion: string } {
   if (process.platform === 'linux') {
     try {
-      execSync('which bwrap', { stdio: 'pipe', timeout: 5000 })
-      return 'bwrap'
-    } catch {
-      // bwrap not available; check for landlock via the native addon
+      const runnerPath = execSync('which bwrap', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+      let runnerVersion = 'unknown'
       try {
-        execSync('which landlock-run', { stdio: 'pipe', timeout: 5000 })
-        return 'landlock'
+        runnerVersion = execSync('bwrap --version', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+      } catch { /* version probe failed */ }
+      return { runner: 'bwrap', runnerPath, runnerVersion }
+    } catch {
+      try {
+        const runnerPath = execSync('which landlock-run', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+        let runnerVersion = 'unknown'
+        try {
+          runnerVersion = execSync('landlock-run --version', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+        } catch { /* version probe failed */ }
+        return { runner: 'landlock', runnerPath, runnerVersion }
       } catch {
-        return 'none'
+        return { runner: 'none', runnerPath: '', runnerVersion: '' }
       }
     }
   }
   if (process.platform === 'darwin') {
     try {
-      execSync('which sandbox-exec', { stdio: 'pipe', timeout: 5000 })
-      return 'seatbelt'
+      const runnerPath = execSync('which sandbox-exec', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+      // sandbox-exec does not have a --version flag; record the macOS
+      // product version as the runner version proxy.
+      let runnerVersion = 'unknown'
+      try {
+        runnerVersion = execSync('sw_vers -productVersion', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+      } catch { /* version probe failed */ }
+      return { runner: 'seatbelt', runnerPath, runnerVersion }
     } catch {
-      return 'none'
+      return { runner: 'none', runnerPath: '', runnerVersion: '' }
     }
   }
-  return 'none'
+  return { runner: 'none', runnerPath: '', runnerVersion: '' }
 }
 
 /** Compute the current environment identity for qualification binding. */
@@ -2153,10 +2185,13 @@ function currentEnvironmentIdentity(): { platform: string; arch: string; nodeVer
 /** Check whether a persisted record's environment matches the current environment. */
 export function environmentMatches(record: ComposedQualificationRecord): boolean {
   const current = currentEnvironmentIdentity()
+  const currentRunnerInfo = detectSandboxRunnerInfo()
   return record.environment.platform === current.platform
     && record.environment.arch === current.arch
     && record.environment.nodeVersion === current.nodeVersion
     && record.environment.runner === current.runner
+    && record.backend.runnerPath === currentRunnerInfo.runnerPath
+    && record.backend.runnerVersion === currentRunnerInfo.runnerVersion
 }
 
 function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): ComposedQualificationRecord {
@@ -2165,6 +2200,7 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
   const skipCount = checks.filter(c => c.status === 'skip').length
   const passed = failedCount === 0
 
+  const runnerInfo = detectSandboxRunnerInfo()
   const c1 = checks.find(c => c.id === 'C1')
   const c2 = checks.find(c => c.id === 'C2')
   const c3 = checks.find(c => c.id === 'C3')
@@ -2180,7 +2216,13 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
     skipCount,
     passed,
     backend: {
-      runner: detectSandboxRunner(),
+      runner: runnerInfo.runner,
+      runnerPath: runnerInfo.runnerPath,
+      runnerVersion: runnerInfo.runnerVersion,
+      networkIsolation: runnerInfo.runner === 'bwrap' ? 'netns'
+        : runnerInfo.runner === 'seatbelt' ? 'sandbox-denied'
+          : runnerInfo.runner === 'landlock' ? 'no-network-grant'
+            : 'unknown',
       enforcement: c3?.status === 'pass' ? 'full' : 'unknown',
       networkDenied: c3?.status === 'pass',
       probed: c3?.status === 'pass',
