@@ -102,6 +102,12 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - `ComposedQualificationRecord` 中的 `backend` 字段现在除了 `runner` 外还包含 `runnerPath`、`runnerVersion` 和 `networkIsolation`。`runnerPath` 是运行器二进制文件的绝对路径；`runnerVersion` 是运行器的版本字符串（或 seatbelt 的 macOS 产品版本）；`networkIsolation` 命名机制（bwrap 为 `netns`，seatbelt 为 `sandbox-denied`，landlock 为 `no-network-grant`）。`environmentMatches()` 现在除了平台、架构、Node 版本和运行器名称外，还比较运行器路径和版本，因此使用一个运行器二进制或版本生成的资格在选择不同运行器时不会被重用。
 - repair-runtime 的 FAIL 处理程序现在延迟到微任务（`void Promise.resolve().then(...)`），以便 `goal/verification` 追加在失败处理程序追加 `repair/evidence`、`repair/decision`、`repair/rollback` 和 `repair/completed` 之前完成。在 `session/event` 发布周期内同步运行会导致 `session.append` 重入错误。PASS 处理程序已通过 `handleVerificationPass().then(...)` 延迟；现在将相同模式应用于 FAIL 分支和在 `model/routing-decision` 上触发的 `model/escalation` 处理程序。插件还在其 `inject` 数组中声明 `repairController` 并正确绑定 `decide`，以便 FAIL 处理程序可以调用修复控制器。
 - 组合资格认证的 `waitForEvent` 辅助函数现在接受基线 `seq` 参数，以查找在给定序列号之后追加的事件，防止它返回同一共享上下文上先前场景的事件。场景 S5 和 S7 在创建自己的目标之前清除先前场景留下的阻塞目标。S8 在第 3 轮路由决策到达后重新扫描 `model/escalation`。C9 期望 `flashAttempts=1`/`proAttempts=1`（而非 `flashAttempts=2`），因为第二次 Flash 失败升级到 Pro。
+- Batch A 运行器现在在每次启动时重新运行 `runComposedRuntimeQualification()`，而不是重用持久化记录。持久化记录保留为审计证据，但绝不替代新鲜的后端探测。持久化记录无法安全替代，因为后端行为取决于实际的沙箱运行器、网络隔离机制和环境——这些都不能保证在启动之间稳定。
+- 基准合格任务要求 `backend.enforcement === 'full'` 和 `backend.networkDenied === true`。部分后端（例如没有网络隔离的 Landlock）可用于产品操作，但不能用于基准合格评估。当强制执行不足时，Batch A 门以 `process.exit(1)` 拒绝执行。
+- `RepairAttempt`、`RepairEvidenceEventData`、`RepairDecisionEventData` 和 `RepairRollbackEventData` 现在携带显式 `attemptId` 字段（`${repairId}#attempt-${attemptNumber}`）。这为属于同一修复尝试的所有事件提供单一确定性连接键，补充现有的 `routingDecisionId` 和尝试编号。轨迹重建从 `repairId` 和尝试编号合成相同的 `attemptId`。
+- `RepairRollbackEventData` 现在声明 `targetHash` 和 `resultHash` 字段，与为回滚收据验证添加的运行时发射匹配。该类型之前省略了这些字段，尽管运行时已发射它们。
+- 工作区快照算法和排除集通过 `scripts/v019-repo-checkout.ts` 中的 `WORKSPACE_SNAPSHOT_ALGORITHM`（`sha256-tree-v2`）和 `WORKSPACE_SNAPSHOT_EXCLUSIONS`（`verifier-snapshot-exclusions-v1`）进行版本化。组合资格记录包含 `snapshot: { algorithm, exclusions }`，`environmentMatches()` 检查两个版本，因此哈希或排除的更改会使持久化记录失效。
+- 实验清单（`ExperimentManifest`）现在绑定实际的沙箱后端（运行器、路径、版本、强制执行、网络拒绝）、快照算法和排除集版本，以及组合资格工件的 SHA-256 哈希。这些包含在清单哈希中，因此每个轨迹引用捕获确切测量系统的实验身份。通用评估运行器（`run-v019-evaluation.ts`）也在构建清单之前运行组合资格认证。
 
 ## Alternatives considered
 

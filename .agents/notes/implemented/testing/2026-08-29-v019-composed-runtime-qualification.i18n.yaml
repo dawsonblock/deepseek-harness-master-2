@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-29-v019-composed-runtime-qualification.md
-2026-08-29-v019-composed-runtime-qualification.md: 40e8ce156e7caac4d9e542a6e8acb872bc266fa8
-2026-08-29-v019-composed-runtime-qualification.zh.md: 592d5e9b3359a44ebbb110bea52b4e11786c4a2d
+2026-08-29-v019-composed-runtime-qualification.md: b28f1f203c44e19926c8bbb5380571b6de170260
+2026-08-29-v019-composed-runtime-qualification.zh.md: fd03384df2ac29bef2336934f054e1daac5df0a9
