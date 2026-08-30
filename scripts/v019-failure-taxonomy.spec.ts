@@ -36,6 +36,10 @@ function makeAttempt(over: Partial<AttemptTrajectory>): AttemptTrajectory {
     holdoutPass: undefined,
     failureFingerprint: undefined,
     progress: undefined,
+    failedCriteria: [],
+    failingTests: [],
+    typeErrors: [],
+    buildErrors: [],
     usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 0 },
     costUsd: 0.001,
     latencyMs: 1000,
@@ -227,7 +231,7 @@ describe('v019-failure-taxonomy precedence', () => {
     expect(result?.category).toBe('F12-timeout-latency')
   })
 
-  it('classifies F3-wrong-file when changes do not overlap reference fix files', () => {
+  it('does not auto-classify F3-wrong-file (manual-only: reference patches are forensic, not grading authority)', () => {
     const t = makeTrajectory({
       changedFiles: ['src/unrelated.ts'],
       referenceFixFiles: ['src/fix.ts'],
@@ -239,10 +243,10 @@ describe('v019-failure-taxonomy precedence', () => {
       ],
     })
     const result = classifyFailure(t)
-    expect(result?.category).toBe('F3-wrong-file')
+    expect(result?.category).not.toBe('F3-wrong-file')
   })
 
-  it('classifies F2-repo-context when reference fix files not inspected and no changes', () => {
+  it('does not auto-classify F2-repo-context (manual-only: no inspection is a proxy, not proof)', () => {
     const t = makeTrajectory({
       changedFiles: [],
       referenceFixFiles: ['src/fix.ts'],
@@ -254,14 +258,20 @@ describe('v019-failure-taxonomy precedence', () => {
       ],
     })
     const result = classifyFailure(t)
-    expect(result?.category).toBe('F2-repo-context')
+    expect(result?.category).not.toBe('F2-repo-context')
   })
 
-  it('classifies F7-dependency when progress mentions module resolution errors', () => {
+  it('classifies F7-dependency when error evidence mentions module resolution errors', () => {
     const t = makeTrajectory({
       changedFiles: ['src/a.ts'],
       attempts: [
-        makeAttempt({ attempt: 1, failureFingerprint: 'fp-1', progress: 'Cannot find module ./utils' }),
+        makeAttempt({
+          attempt: 1,
+          failureFingerprint: 'fp-1',
+          failedCriteria: ['Cannot find module ./utils'],
+          typeErrors: [],
+          buildErrors: [],
+        }),
       ],
     })
     const result = classifyFailure(t)

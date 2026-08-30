@@ -108,6 +108,10 @@ export interface AttemptTrajectory {
   readonly holdoutPass: boolean | undefined
   readonly failureFingerprint: string | undefined
   readonly progress: string | undefined
+  readonly failedCriteria: readonly string[]
+  readonly failingTests: readonly string[]
+  readonly typeErrors: readonly string[]
+  readonly buildErrors: readonly string[]
   readonly usage: {
     readonly inputTokens: number
     readonly outputTokens: number
@@ -508,24 +512,35 @@ function hashVerifierControlledFiles(workspace: string): string {
     /\.test\.ts$/, /\.test\.tsx$/, /\.test\.js$/, /\.test\.jsx$/,
     /\.spec\.ts$/, /\.spec\.tsx$/, /\.spec\.js$/, /\.spec\.jsx$/,
     /\.test\.py$/, /\.test\.rs$/,
+    /^test_.*\.py$/, /_test\.py$/, /^test_.*\.rs$/, /_test\.rs$/,
+    /\.test\.go$/, /_test\.go$/,
+    /\.test\.java$/, /Test\.java$/,
   ]
-  const testSetupFiles = ['tests/setup.ts', 'tests/setup.js', 'test/setup.ts', 'test/setup.js', 'tests/setup.mts', '__tests__/setup.ts']
+  const testSetupFiles = ['tests/setup.ts', 'tests/setup.js', 'test/setup.ts', 'test/setup.js', 'tests/setup.mts', '__tests__/setup.ts', 'tests/setup.py', 'conftest.py']
 
   const allFiles = [...controlledFiles, ...testSetupFiles]
 
-  // Walk test directories for test files.
-  for (const dir of testDirs) {
-    const dirPath = join(workspace, dir)
+  // Walk test directories recursively for test files. Historical
+  // repositories commonly organize tests in nested subdirectories
+  // (e.g. tests/unit/foo.test.ts, tests/integration/api/bar.spec.ts).
+  const walkTestDir = (dirRel: string, dirAbs: string): void => {
     try {
-      const entries = readdirSync(dirPath, { withFileTypes: true })
+      const entries = readdirSync(dirAbs, { withFileTypes: true })
       for (const entry of entries) {
-        if (entry.isFile() && testFilePatterns.some(p => p.test(entry.name))) {
-          allFiles.push(join(dir, entry.name))
+        const entryAbs = join(dirAbs, entry.name)
+        const entryRel = join(dirRel, entry.name)
+        if (entry.isDirectory()) {
+          walkTestDir(entryRel, entryAbs)
+        } else if (entry.isFile() && testFilePatterns.some(p => p.test(entry.name))) {
+          allFiles.push(entryRel)
         }
       }
     } catch {
       // Test directory doesn't exist — skip.
     }
+  }
+  for (const dir of testDirs) {
+    walkTestDir(dir, join(workspace, dir))
   }
 
   for (const file of allFiles) {
@@ -829,6 +844,10 @@ function buildTrajectoryFromEvents(
     const repairReason = repairDecision?.data.reason
     const failureFingerprint = repairEvidence?.data.failureFingerprint as string | undefined
     const progress = repairEvidence?.data.progress as string | undefined
+    const failedCriteria = repairEvidence?.data.failedCriteria ?? []
+    const failingTests = repairEvidence?.data.failingTests ?? []
+    const typeErrors = repairEvidence?.data.typeErrors ?? []
+    const buildErrors = repairEvidence?.data.buildErrors ?? []
 
     // Extract per-attempt session events for repository observation.
     const turnEvents = allEvents.filter((e) => {
@@ -846,6 +865,10 @@ function buildTrajectoryFromEvents(
       holdoutPass: repairAction === 'complete' ? holdoutPass : undefined,
       failureFingerprint,
       progress,
+      failedCriteria,
+      failingTests,
+      typeErrors,
+      buildErrors,
       usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens },
       costUsd,
       // Per-attempt model latency: time from turn/start to last usage event.

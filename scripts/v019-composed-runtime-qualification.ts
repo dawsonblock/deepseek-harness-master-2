@@ -555,8 +555,13 @@ async function checkBashIsolation(ctx: Context, workspace: string): Promise<Comp
           })
         })
         if (listenPort > 0) {
+          // Use the Node binary (guaranteed to exist for this runtime)
+          // rather than nc/curl/python3, whose absence could masquerade
+          // as network isolation. Node's net.connect is a deterministic
+          // probe that does not depend on external command availability.
+          const nodeBin = process.execPath
           const spec = shell.resolve({
-            command: `sh -c 'echo test | nc -w 2 127.0.0.1 ${listenPort} 2>&1 || (echo test | curl -s --connect-timeout 2 telnet://127.0.0.1:${listenPort} 2>&1) || python3 -c "import socket; s=socket.socket(); s.settimeout(2); s.connect((\\"127.0.0.1\\",${listenPort})); s.close()" 2>&1'`,
+            command: `${nodeBin} -e "const n=require('net');const s=n.connect(${listenPort},'127.0.0.1');s.setTimeout(2000);s.on('connect',()=>{s.end('test');process.exit(0)});s.on('error',()=>process.exit(1));s.on('timeout',()=>{s.destroy();process.exit(1)})"`,
             workdir: workspace,
             sandboxPolicy: policy,
           })
@@ -1877,8 +1882,28 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
         : undefined
       const finalOutcome = typeof completedData?.outcome === 'string' ? completedData.outcome : undefined
 
+      // Verify exact routing linkage: the model/escalation event's
+      // toRoutingDecisionId must match the actual Pro routing decision ID.
+      const escalationEvent = escalations.length > 0
+        ? findEvents(agent.session.events, 'model/escalation')[0]
+        : undefined
+      const escalationData = escalationEvent !== undefined ? eventData(escalationEvent) : undefined
+      const escalationToRdId = typeof escalationData?.toRoutingDecisionId === 'string' ? escalationData.toRoutingDecisionId : undefined
+      const proRoutingDecision = findEvents(agent.session.events, 'model/routing-decision')
+        .find((e) => {
+          const data = eventData(e)
+          return data.model === PRO_MODEL || data.routingDecisionId === 'rd-s8-pro'
+        })
+      const proRoutingRdId = proRoutingDecision !== undefined
+        ? (eventData(proRoutingDecision).routingDecisionId as string | undefined)
+        : undefined
+      const routingLinked = escalationToRdId !== undefined
+        && proRoutingRdId !== undefined
+        && escalationToRdId === proRoutingRdId
+
       const passed = proEscalateDecision
         && escalations.length > 0
+        && routingLinked
         && finalOutcome === 'verified'
         && postGoal?.phase === 'complete'
 
@@ -1887,8 +1912,8 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
         name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)',
         status: passed ? 'pass' : 'fail',
         evidence: passed
-          ? `pro-escalate decision emitted, model/escalation=${escalations.length}, outcome=verified, goalPhase=complete`
-          : `proEscalateDecision=${proEscalateDecision}, escalations=${escalations.length}, outcome=${finalOutcome ?? 'undefined'}, goalPhase=${postGoal?.phase ?? 'undefined'}`,
+          ? `pro-escalate decision emitted, model/escalation=${escalations.length}, escalationToRdId=${escalationToRdId}, proRoutingRdId=${proRoutingRdId}, outcome=verified, goalPhase=complete`
+          : `proEscalateDecision=${proEscalateDecision}, escalations=${escalations.length}, routingLinked=${routingLinked}, escalationToRdId=${escalationToRdId ?? 'undefined'}, proRoutingRdId=${proRoutingRdId ?? 'undefined'}, outcome=${finalOutcome ?? 'undefined'}, goalPhase=${postGoal?.phase ?? 'undefined'}`,
       }
     } finally {
       disposeVerifier()

@@ -91,6 +91,11 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - 验证器控制文件哈希现在包含 `node_modules` 完整性：顶级包目录列表和锁文件元数据（`.package-lock.json`、`.modules.yaml`、`.pnpm/lock.yaml`）。修改已安装依赖项（如修补 vitest 内部）的模型将被检测到。`node_modules` 的完整内容哈希不切实际；这检测结构性篡改。
 - S3 现在在快照提供程序内部修改工作区（在计算修改前哈希之后但在返回之前），因此修改发生在验证和第一次完成授权之间——而非目标已经终态之后。测试断言 `outcome === 'workspace-provenance-failed'` 和 `goalPhase === 'blocked'`，证明特定的 `GOAL_WORKSPACE_MUTATED` 路径被执行，而非仅 `completeVerified` 因任何原因抛出。
 - 使用对账现在使用 `model/routing-decision` 事件作为会计人口，而非 `repair/evidence`。每个路由决策代表一个付费请求，必须有匹配的 `model/usage`。这捕获一次性成功和最终成功修复尝试的缺失使用，这些有路由决策但无修复证据。
+- F7-dependency 分类现在检查实际错误证据（`repair/evidence` 事件中的 `failedCriteria`、`failingTests`、`typeErrors`、`buildErrors`），而非 `progress`（即 `ProgressClass` 枚举：`none`/`partial`/`regression`/`resolved`）。之前的实现对 `progress` 匹配正则表达式，在生产中永远无法匹配，因为 `ProgressClass` 值是枚举字符串，而非自由文本错误消息。`AttemptTrajectory` 现在携带四个错误证据数组。
+- F2-repo-context 和 F3-wrong-file 现在是仅手动分类。参考修复文件是取证证据，而非评分权威——有效的替代解决方案可以触及与历史维护者补丁完全不同的文件。之前的自动 F2/F3 路径从代理信号产生认识论上不安全的分类。
+- 验证器控制文件发现现在是递归和语言感知的。测试目录（`tests/`、`test/`、`__tests__/`、`src/__tests__/`）递归遍历，模式覆盖 Python（`test_foo.py`、`foo_test.py`）、Go（`foo_test.go`）、Java（`FooTest.java`）和 Rust（`foo_test.rs`），除 JS/TS 外。之前的实现仅检查直接目录条目和以 JS/TS 为中心的模式。
+- S8 现在断言确切路由链接：`model/escalation.toRoutingDecisionId` 必须等于实际 Pro `model/routing-decision.routingDecisionId`。之前的实现仅检查升级事件存在且目标完成，未验证路由链已链接。
+- C3 网络隔离测试现在使用 Node 二进制文件（`process.execPath` 与 `net.connect`）而非 `nc`/`curl`/`python3`。Node 保证在此运行时存在；之前的实现如果三个外部命令都不可用，可能产生假阳性网络拒绝。
 
 ## Alternatives considered
 

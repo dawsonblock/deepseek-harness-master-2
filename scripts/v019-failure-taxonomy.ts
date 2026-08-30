@@ -37,6 +37,8 @@ export type FailureCategory =
  * they exist in the union so manual classifications can use them.
  */
 export const MANUAL_ONLY_CATEGORIES: ReadonlySet<FailureCategory> = new Set([
+  'F2-repo-context',
+  'F3-wrong-file',
   'F4-verifier-false-negative',
   'F5-verifier-false-positive',
   'F15-ambiguous-task',
@@ -162,42 +164,25 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
     }
   }
 
-  // F3: wrong file — model modified files but none overlap with the
-  // reference fix files. Only detectable when a reference fix exists.
-  if (t.referenceFixFiles.length > 0 && t.changedFiles.length > 0 && t.referenceFixFilesModified.length === 0) {
-    return {
-      taskId: t.taskId,
-      category: 'F3-wrong-file',
-      reason: 'Model modified files but none matched the reference fix files',
-      evidence: `changedFiles=${t.changedFiles.length}, referenceFixFiles=${t.referenceFixFiles.length}, referenceFixFilesModified=0`,
-    }
-  }
-
-  // F2: repo context — model inspected none of the reference fix files
-  // despite having a reference fix to guide discovery. Indicates the
-  // model failed to explore the relevant parts of the repository.
-  if (t.referenceFixFiles.length > 0 && t.referenceFixFilesInspected.length === 0 && t.changedFiles.length === 0) {
-    return {
-      taskId: t.taskId,
-      category: 'F2-repo-context',
-      reason: 'Model inspected none of the reference fix files and produced no changes',
-      evidence: `referenceFixFiles=${t.referenceFixFiles.length}, referenceFixFilesInspected=0, changedFiles=0`,
-    }
-  }
+  // F2/F3 are manual-only: reference fix files are forensic evidence,
+  // not grading authority. A valid alternative solution can touch
+  // completely different files from the historical maintainer patch.
+  // See MANUAL_ONLY_CATEGORIES above.
 
   // F7: dependency — model's changes reference missing imports or
-  // modules. Detected from progress strings mentioning dependency,
-  // import, or module resolution errors.
-  const progressText = t.attempts
-    .map(a => a.progress)
-    .filter((p): p is string => p !== undefined)
+  // modules. Detected from actual error evidence (failedCriteria,
+  // failingTests, typeErrors, buildErrors), not from ProgressClass
+  // which only emits none/partial/regression/resolved.
+  const errorEvidence = t.attempts
+    .flatMap(a => [...a.failedCriteria, ...a.failingTests, ...a.typeErrors, ...a.buildErrors])
     .join('\n')
-  if (/cannot find module|module not found|unresolved dependency|npm error|pnpm error|package not found/i.test(progressText)) {
+  const depErrorPattern = /cannot find module|module not found|unresolved dependency|npm error|pnpm error|package not found/i
+  if (depErrorPattern.test(errorEvidence)) {
     return {
       taskId: t.taskId,
       category: 'F7-dependency',
-      reason: 'Dependency resolution failure detected in attempt progress',
-      evidence: `progressMatch=dependency-error, attempts=${t.attempts.length}, changedFiles=${t.changedFiles.length}`,
+      reason: 'Dependency resolution failure detected in error evidence',
+      evidence: `errorEvidenceMatch=dependency-error, attempts=${t.attempts.length}, changedFiles=${t.changedFiles.length}`,
     }
   }
 

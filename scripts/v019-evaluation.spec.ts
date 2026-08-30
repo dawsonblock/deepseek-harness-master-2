@@ -222,6 +222,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
       holdoutPass: true,
       failureFingerprint: undefined,
       progress: undefined,
+      failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [],
       usage: {
         inputTokens: 500, outputTokens: 1000, reasoningTokens: 100,
         totalTokens: 6500, cacheReadTokens: 5000, cacheMissTokens: 500,
@@ -345,6 +346,7 @@ describe('v019-failure-taxonomy', () => {
         attempt: 1, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1',
         verified: false, diagnosticPass: true, holdoutPass: false,
         failureFingerprint: undefined, progress: undefined,
+        failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [],
         usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 },
         costUsd: 0, latencyMs: 0, repairAction: 'complete', repairReason: 'qualification-failed',
         changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'qualification-failed',
@@ -376,8 +378,8 @@ describe('v019-failure-taxonomy', () => {
       proAttempts: 1,
       escalatedToPro: true,
       attempts: [
-        { attempt: 1, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp1', progress: 'none', usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'pro-escalate', repairReason: 'flash-exhausted', changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'pro-escalate' },
-        { attempt: 2, model: 'deepseek-v4-pro', routingDecisionId: 'rd-2', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp2', progress: undefined, usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'complete', repairReason: undefined, changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'failed-no-rescue' },
+        { attempt: 1, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp1', progress: 'none', failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'pro-escalate', repairReason: 'flash-exhausted', changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'pro-escalate' },
+        { attempt: 2, model: 'deepseek-v4-pro', routingDecisionId: 'rd-2', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp2', progress: undefined, failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'complete', repairReason: undefined, changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'failed-no-rescue' },
       ],
     })
     const classification = classifyFailure(t)
