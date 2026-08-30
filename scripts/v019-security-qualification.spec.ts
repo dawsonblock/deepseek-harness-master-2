@@ -8,6 +8,9 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   SECURITY_QUALIFICATION_ID,
   formatSecurityQualification,
@@ -35,8 +38,8 @@ describe('v019 security qualification gate', () => {
     expect(record.platform).toBe(process.platform)
   })
 
-  it('runs all 34 security property checks (23 source + 11 behavioral)', () => {
-    expect(record.checks).toHaveLength(34)
+  it('runs all 35 security property checks (24 source + 11 behavioral)', () => {
+    expect(record.checks).toHaveLength(35)
   })
 
   it('every check has a unique id', () => {
@@ -202,6 +205,12 @@ describe('v019 security qualification gate', () => {
     expect(g23!.status).toBe('pass')
   })
 
+  it('G24: reference fix files are forensic-only (never model-visible)', () => {
+    const g24 = record.checks.find(c => c.id === 'G24')
+    expect(g24).toBeDefined()
+    expect(g24!.status).toBe('pass')
+  })
+
   it('B11: benchmark-eligible backend enforcement check exists', () => {
     const b11 = record.checks.find(c => c.id === 'B11')
     expect(b11).toBeDefined()
@@ -237,5 +246,57 @@ describe('v019 security qualification gate', () => {
       expect(report).toContain(check.id)
       expect(report).toContain(check.name)
     }
+  })
+})
+
+describe('deterministic negative benchmark-security tests', () => {
+  it('reference fix file paths do not appear in any model-visible event type', () => {
+    // The model can only see events that appear in the session log.
+    // Reference fix files are extracted from the verifier-only clone and
+    // must never appear in model-visible event payloads.
+    const modelVisibleEventTypes = new Set([
+      'tool/call', 'tool/result', 'turn/start', 'turn/end',
+      'model/routing-decision', 'model/usage', 'model/escalation',
+      'model/selection-authority', 'repair/evidence', 'repair/decision',
+      'repair/completed', 'repair/rollback', 'goal/verification',
+    ])
+    // The trajectory collector only passes referenceFixFiles to
+    // buildTrajectoryFromEvents for intersection analysis, never to
+    // session.append or model prompts.
+    const collectorSource = readFileSync(
+      join(fileURLToPath(new URL('.', import.meta.url)), 'v019-trajectory-collector.ts'),
+      'utf8',
+    )
+    // Verify referenceFixFiles is only used in buildTrajectoryFromEvents
+    // and the intersection analysis, not in any session.append call.
+    const appendLines = collectorSource.split('\n').filter(l => l.includes('session.append'))
+    for (const line of appendLines) {
+      expect(line).not.toContain('referenceFixFiles')
+    }
+    // Verify model-visible event types are a closed set.
+    expect(modelVisibleEventTypes.has('repair/evidence')).toBe(true)
+    expect(modelVisibleEventTypes.has('tool/call')).toBe(true)
+  })
+
+  it('verifier-controlled file hash check rejects tampered workspaces', () => {
+    // The diagnostic verifier hashes verifier-controlled files before model
+    // execution and re-hashes them on each verification call. If the model
+    // overwrites package.json, tsconfig.json, or test config files, the
+    // hash check must reject the task.
+    const collectorSource = readFileSync(
+      join(fileURLToPath(new URL('.', import.meta.url)), 'v019-trajectory-collector.ts'),
+      'utf8',
+    )
+    expect(collectorSource).toContain('hashVerifierControlledFiles')
+    expect(collectorSource).toContain('verifier-controlled files were modified')
+  })
+
+  it('model workspace has no .git directory (no future history access)', () => {
+    const checkoutSource = readFileSync(
+      join(fileURLToPath(new URL('.', import.meta.url)), 'v019-repo-checkout.ts'),
+      'utf8',
+    )
+    expect(checkoutSource).toContain('git archive')
+    expect(checkoutSource).not.toContain('worktree add')
   })
 })

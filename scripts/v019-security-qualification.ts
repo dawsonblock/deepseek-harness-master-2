@@ -99,6 +99,7 @@ export async function runSecurityQualification(): Promise<SecurityQualificationR
     checkWorkspaceNoGitHistory(),
     checkNetworkDenyInSandbox(),
     checkVerifierIntegrityHash(),
+    checkReferencePatchForensicOnly(),
     // Behavioral checks — exercise the actual runtime APIs.
     behavioralCheckWritableRootsExcludesTmp(),
     behavioralCheckReadableRootsWorkspaceOnly(),
@@ -505,6 +506,27 @@ function checkVerifierIntegrityHash(): SecurityPropertyCheck {
   }
 }
 
+/** G24: Verify reference fix files are forensic-only — never passed to the model. */
+function checkReferencePatchForensicOnly(): SecurityPropertyCheck {
+  const source = readTrajectoryCollectorSource()
+  // Reference fix files must only appear in buildTrajectoryFromEvents
+  // for intersection analysis, never in model prompts or tool calls.
+  const hasForensicOnlyComment = source.includes('Forensic-only invariant')
+  const referenceFixOnlyInAnalysis = !source.includes('referenceFixFiles.push(')
+    && !source.includes('prompt.*referenceFix')
+  // The model prompt is built from manifest.task.description only.
+  const modelPromptUsesDescriptionOnly = source.includes('objective: manifest.task.description')
+  const passed = hasForensicOnlyComment && referenceFixOnlyInAnalysis && modelPromptUsesDescriptionOnly
+  return {
+    id: 'G24',
+    name: 'Reference fix files are forensic-only (never model-visible)',
+    status: passed ? 'pass' : 'fail',
+    evidence: passed
+      ? 'reference fix files are documented forensic-only and only used for intersection analysis'
+      : 'reference fix files may leak to the model prompt or tool calls',
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Source readers
 // ---------------------------------------------------------------------------
@@ -549,6 +571,10 @@ function readSandboxProfilesSource(): string {
 
 function readFreezeSource(): string {
   return readFileSync(join(REPO_ROOT, 'scripts', 'v019-freeze-secure-eval.ts'), 'utf8')
+}
+
+function readTrajectoryCollectorSource(): string {
+  return readFileSync(join(REPO_ROOT, 'scripts', 'v019-trajectory-collector.ts'), 'utf8')
 }
 
 // ---------------------------------------------------------------------------

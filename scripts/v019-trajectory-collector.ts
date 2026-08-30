@@ -155,6 +155,10 @@ export async function runTaskTrajectory(
   baseline?: BaselineSnapshot,
   repairStrategy: 'transactional' | 'iterative' = 'transactional',
 ): Promise<TaskTrajectory> {
+  // Forensic-only invariant: reference fix files must never reach the model.
+  // They are extracted from the verifier-only clone and used solely for
+  // post-hoc intersection analysis (referenceFixFilesInspected/Modified).
+  // The model sees only manifest.task.description and repair evidence.
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
 
   const wallClockStart = Date.now()
