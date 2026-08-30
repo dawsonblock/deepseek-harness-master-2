@@ -41,7 +41,7 @@ import {
   intersectPaths,
 } from './v019-session-extraction.ts'
 
-import type { TaskManifest } from './v019-task-manifest.ts'
+import type { DiagnosticKind, TaskManifest } from './v019-task-manifest.ts'
 import { type RepoMetadata, type RepoCheckout, type BaselineSnapshot, restoreBaseline, hashWorkspaceContents, diffWorkspaceAgainstBaseline } from './v019-repo-checkout.ts'
 
 /** Checkpoint state for one task during evaluation. */
@@ -198,6 +198,9 @@ export async function runTaskTrajectory(
         const result = runDiagnosticSync(workspace, manifest)
         const evidence: string[] = []
         if (!result.passed) {
+          if (result.failedKind !== undefined) {
+            evidence.push(`Kind: ${result.failedKind}`)
+          }
           if (result.failedCommand !== undefined) {
             evidence.push(`Command: ${result.failedCommand}`)
           }
@@ -212,7 +215,7 @@ export async function runTaskTrajectory(
           name: 'v019-diagnostic',
           role: 'acceptance',
           passed: result.passed,
-          reason: result.passed ? '' : `diagnostic verification failed: ${result.failedCommand ?? 'unknown command'}`,
+          reason: result.passed ? '' : `${result.failedKind ?? 'diagnostic'} verification failed: ${result.failedCommand ?? 'unknown command'}`,
           evidence,
         }
       },
@@ -420,14 +423,30 @@ function computeWorkspaceHash(workspace: string): string {
 interface DiagnosticResult {
   readonly passed: boolean
   readonly failedCommand?: string
+  readonly failedKind?: DiagnosticKind
   readonly stdout: string
   readonly stderr: string
 }
 
 /**
+ * Infer a diagnostic kind from a command string when the manifest does not
+ * declare one. Matches common test runners, type checkers, build tools, and
+ * linters.
+ */
+function inferDiagnosticKind(command: string): DiagnosticKind {
+  const cmd = command.toLowerCase()
+  if (/\b(vitest|jest|mocha|pytest|cargo test|go test|npm test|pnpm test|yarn test|\.test\.|test_)/.test(cmd)) return 'test'
+  if (/\b(tsc|typecheck|type-check|pyright|mypy|cargo check)/.test(cmd)) return 'typecheck'
+  if (/\b(eslint|oxlint|biome|ruff|flake8|clippy|golangci)/.test(cmd)) return 'lint'
+  return 'build'
+}
+
+/**
  * Run diagnostic verification commands synchronously for the goal completion
  * verifier. Captures stdout/stderr from failed commands so the repair model
- * receives real test failure output instead of a generic message.
+ * receives real test failure output instead of a generic message. Each
+ * failure is tagged with a diagnostic kind (test/typecheck/build/lint) so
+ * the repair model and failure taxonomy can classify the failure category.
  */
 function runDiagnosticSync(workspace: string, manifest: TaskManifest): DiagnosticResult {
   for (const cmd of manifest.verification.diagnostic) {
@@ -444,6 +463,7 @@ function runDiagnosticSync(workspace: string, manifest: TaskManifest): Diagnosti
       return {
         passed: false,
         failedCommand: cmd.command,
+        failedKind: cmd.kind ?? inferDiagnosticKind(cmd.command),
         stdout: truncate(stdout),
         stderr: truncate(stderr),
       }

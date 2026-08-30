@@ -29,10 +29,15 @@ export type TaskCategory =
 /** Repository size bucket. */
 export type RepoSize = 'small' | 'medium' | 'large'
 
-/** A single verification command with expected exit code. */
+/** Diagnostic command kind for structured repair evidence. */
+export type DiagnosticKind = 'test' | 'typecheck' | 'build' | 'lint'
+
+/** A single verification command with expected exit code and optional kind. */
 export interface VerificationCommand {
   readonly command: string
   readonly expectedExitCode: number
+  /** Diagnostic kind for structured repair evidence. When absent, inferred from the command string. */
+  readonly kind?: DiagnosticKind
 }
 
 /** Task manifest for one evaluation task. */
@@ -69,11 +74,11 @@ export interface TaskManifest {
 /** Compute the SHA-256 hash of a task manifest (excluding the hash field). */
 export function computeTaskManifestHash(fields: Omit<TaskManifest, 'manifestHash'>): string {
   const diagLines = fields.verification.diagnostic
-    .map(c => `${c.command}=${c.expectedExitCode}`)
+    .map(c => `${c.command}=${c.expectedExitCode}:${c.kind ?? 'auto'}`)
     .sort()
     .join('|')
   const holdoutLines = fields.verification.holdout
-    .map(c => `${c.command}=${c.expectedExitCode}`)
+    .map(c => `${c.command}=${c.expectedExitCode}:${c.kind ?? 'auto'}`)
     .sort()
     .join('|')
   const manifestContent = [
