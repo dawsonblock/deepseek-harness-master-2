@@ -117,6 +117,68 @@ export function hashWorkspaceContents(workspace: string): string {
   return hash.digest('hex')
 }
 
+/**
+ * Compute the set of files that differ between the current workspace and a
+ * frozen baseline snapshot. Extracts the baseline to a temporary directory
+ * and compares file paths and contents against the current workspace,
+ * excluding `node_modules`, `.git`, and `dist`.
+ *
+ * @param workspace - the current workspace root.
+ * @param baseline - the frozen B0 snapshot to diff against.
+ * @returns an array of workspace-relative file paths that are new, modified,
+ * or deleted relative to the baseline.
+ */
+export function diffWorkspaceAgainstBaseline(
+  workspace: string,
+  baseline: BaselineSnapshot,
+): string[] {
+  const tempDir = join(tmpdir(), `dsh-diff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  try {
+    execSync(`tar xf "${baseline.archivePath}" -C "${tempDir}"`, { stdio: 'pipe' })
+    const baselineFiles = collectWorkspaceFiles(tempDir)
+    const currentFiles = collectWorkspaceFiles(workspace)
+    const changed: string[] = []
+    const allPaths = new Set<string>([...baselineFiles.keys(), ...currentFiles.keys()])
+    for (const rel of allPaths) {
+      const baselineContent = baselineFiles.get(rel)
+      const currentContent = currentFiles.get(rel)
+      if (baselineContent !== currentContent) changed.push(rel)
+    }
+    return changed.sort()
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Recursively collect workspace files and their content hashes, excluding
+ * `node_modules`, `.git`, and `dist`. Returns a map of workspace-relative
+ * paths to content hashes.
+ */
+function collectWorkspaceFiles(root: string): Map<string, string> {
+  const files = new Map<string, string>()
+  const walk = (dir: string): void => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (SNAPSHOT_EXCLUDED_DIRS.has(entry.name)) continue
+      const fullPath = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(fullPath)
+      } else if (entry.isFile()) {
+        const rel = relative(root, fullPath)
+        try {
+          const content = readFileSync(fullPath)
+          files.set(rel, createHash('sha256').update(content).digest('hex'))
+        } catch {
+          files.set(rel, '[unreadable]')
+        }
+      }
+    }
+  }
+  walk(root)
+  return files
+}
+
 /** A repository checkout result: the model workspace and the verifier-only clone. */
 export interface RepoCheckout {
   /** Model-visible workspace: a plain snapshot of the base commit, no `.git`. */

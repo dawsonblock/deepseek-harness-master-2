@@ -86,6 +86,13 @@ export interface RepairRuntimeConfig {
    */
   rollbackProvider?: RollbackProvider
   /**
+   * Optional changed-files provider. When present, called to compute the
+   * actual set of files changed in the current turn by diffing the workspace
+   * against a known baseline, rather than inferring changes from tool-call
+   * event names. When absent, falls back to tool-observation inference.
+   */
+  changedFilesProvider?: ChangedFilesProvider
+  /**
    * Whether to throw on missing `model/usage` events for paid routing
    * decisions. When true, a paid request without usage evidence is a
    * control-plane failure rather than a zero-cost attempt. Production
@@ -93,6 +100,14 @@ export interface RepairRuntimeConfig {
    */
   failOnMissingUsage?: boolean
 }
+
+/**
+ * Computes the set of files changed in the current turn by diffing the
+ * workspace against a known baseline. Replaces tool-observation inference
+ * with real filesystem state, catching changes made by shell commands,
+ * build tools, and other non-tool paths.
+ */
+export type ChangedFilesProvider = () => readonly string[]
 
 /** Context passed to a workspace provenance provider. */
 export interface WorkspaceProvenanceContext {
@@ -1062,6 +1077,8 @@ export interface RepairHandlerDeps {
   readonly workspaceProvenanceProvider?: WorkspaceProvenanceProvider
   /** Optional harness-owned rollback provider for workspace restoration. */
   readonly rollbackProvider?: RollbackProvider
+  /** Optional changed-files provider for real filesystem diffs. */
+  readonly changedFilesProvider?: ChangedFilesProvider
 }
 
 /** Result of handling one verification failure. */
@@ -1099,7 +1116,9 @@ export function handleVerificationFailure(
   turn: number,
   checks: readonly GoalVerificationCheck[],
 ): RepairHandlerResult {
-  const changedFiles = changedFilesInTurn(session.events, turn)
+  const changedFiles = deps.changedFilesProvider !== undefined
+    ? [...deps.changedFilesProvider()]
+    : changedFilesInTurn(session.events, turn)
   const failure = buildFailurePackage(checks, changedFiles)
 
   const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? `unknown-${state.attempts.length + 1}`
@@ -1564,7 +1583,9 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     if (data.passed) {
       const passState = state ?? stateFor(agent, goal)
       const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
-      const passChangedFiles = changedFilesInTurn(session.events, turn)
+      const passChangedFiles = config.changedFilesProvider !== undefined
+        ? [...config.changedFilesProvider()]
+        : changedFilesInTurn(session.events, turn)
       void handleVerificationPass(
         session, passState, turn, routingDecisionId,
         DEFAULT_PRICING_REGISTRY,
@@ -1759,6 +1780,7 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
         ...config.failOnMissingUsage !== undefined ? { failOnMissingUsage: config.failOnMissingUsage } : {},
         ...config.workspaceProvenanceProvider !== undefined ? { workspaceProvenanceProvider: config.workspaceProvenanceProvider } : {},
         ...config.rollbackProvider !== undefined ? { rollbackProvider: config.rollbackProvider } : {},
+        ...config.changedFilesProvider !== undefined ? { changedFilesProvider: config.changedFilesProvider } : {},
       }
 
       let result: RepairHandlerResult

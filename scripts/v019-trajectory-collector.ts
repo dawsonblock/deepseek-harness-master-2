@@ -42,7 +42,7 @@ import {
 } from './v019-session-extraction.ts'
 
 import type { TaskManifest } from './v019-task-manifest.ts'
-import { type RepoMetadata, type RepoCheckout, type BaselineSnapshot, restoreBaseline, hashWorkspaceContents } from './v019-repo-checkout.ts'
+import { type RepoMetadata, type RepoCheckout, type BaselineSnapshot, restoreBaseline, hashWorkspaceContents, diffWorkspaceAgainstBaseline } from './v019-repo-checkout.ts'
 
 /** Checkpoint state for one task during evaluation. */
 export type TaskState =
@@ -715,6 +715,21 @@ function createProvenanceProvider(workspace: string): repairRuntimePlugin.Worksp
 }
 
 /**
+ * Create a changed-files provider that diffs the current workspace against
+ * the frozen baseline snapshot. Returns workspace-relative paths for files
+ * that are new, modified, or deleted relative to B0. When no baseline is
+ * available, returns an empty array (the runtime falls back to tool-observation
+ * inference in that case, but the production path always has a baseline).
+ */
+function createChangedFilesProvider(
+  workspace: string,
+  baseline?: BaselineSnapshot,
+): repairRuntimePlugin.ChangedFilesProvider {
+  if (baseline === undefined) return () => []
+  return () => diffWorkspaceAgainstBaseline(workspace, baseline)
+}
+
+/**
  * Create a rollback provider that restores the workspace from a frozen
  * post-setup baseline snapshot. When a `BaselineSnapshot` is available,
  * restores exactly B0 and verifies the content hash matches. Falls back
@@ -787,6 +802,7 @@ export function createRepairRuntimeConfig(
     holdoutVerifier: createHoldoutVerifier(workspace, manifest, baseline),
     workspaceProvenanceProvider: createProvenanceProvider(workspace),
     rollbackProvider: createRollbackProvider(workspace, checkout, baseline),
+    changedFilesProvider: createChangedFilesProvider(workspace, baseline),
     failOnMissingUsage: true,
   }
 }
