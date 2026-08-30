@@ -100,6 +100,8 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - `ComposedQualificationRecord` 中的 `backend` 字段现在包含 `runner`——实际检测到的沙箱运行器（`bwrap`、`landlock`、`seatbelt`、`windows-acl`）——而非仅从 C3 测试成功推断强制。`enforcement` 和 `networkDenied` 字段仍从 C3 派生，但运行器身份现在是持久资格记录的一部分。
 - `node_modules` 现在通过 `SandboxExecutionPolicy` 上的新 `readOnlyPaths` 字段对模型只读。进程内 FS 围栏（`dsh-fs-sandbox`）拒绝写入 `readOnlyPaths` 下的路径；bwrap 配置使用 `--ro-bind` 重新挂载；Seatbelt 配置添加 `(deny file-write* (subpath ...))` 规则；Landlock 配置将它们添加到 `readOnly` 授权。v019 评估配置 `readOnlyPaths: [workspace/node_modules]`。新的组合资格检查 C2b 验证模型无法写入 `node_modules` 但可以读取。这满足审计的 P0.3 要求：从工作区哈希中排除但能够影响验证的任何内容必须受到保护，防止模型突变。
 - `ComposedQualificationRecord` 中的 `backend` 字段现在除了 `runner` 外还包含 `runnerPath`、`runnerVersion` 和 `networkIsolation`。`runnerPath` 是运行器二进制文件的绝对路径；`runnerVersion` 是运行器的版本字符串（或 seatbelt 的 macOS 产品版本）；`networkIsolation` 命名机制（bwrap 为 `netns`，seatbelt 为 `sandbox-denied`，landlock 为 `no-network-grant`）。`environmentMatches()` 现在除了平台、架构、Node 版本和运行器名称外，还比较运行器路径和版本，因此使用一个运行器二进制或版本生成的资格在选择不同运行器时不会被重用。
+- repair-runtime 的 FAIL 处理程序现在延迟到微任务（`void Promise.resolve().then(...)`），以便 `goal/verification` 追加在失败处理程序追加 `repair/evidence`、`repair/decision`、`repair/rollback` 和 `repair/completed` 之前完成。在 `session/event` 发布周期内同步运行会导致 `session.append` 重入错误。PASS 处理程序已通过 `handleVerificationPass().then(...)` 延迟；现在将相同模式应用于 FAIL 分支和在 `model/routing-decision` 上触发的 `model/escalation` 处理程序。插件还在其 `inject` 数组中声明 `repairController` 并正确绑定 `decide`，以便 FAIL 处理程序可以调用修复控制器。
+- 组合资格认证的 `waitForEvent` 辅助函数现在接受基线 `seq` 参数，以查找在给定序列号之后追加的事件，防止它返回同一共享上下文上先前场景的事件。场景 S5 和 S7 在创建自己的目标之前清除先前场景留下的阻塞目标。S8 在第 3 轮路由决策到达后重新扫描 `model/escalation`。C9 期望 `flashAttempts=1`/`proAttempts=1`（而非 `flashAttempts=2`），因为第二次 Flash 失败升级到 Pro。
 
 ## Alternatives considered
 
