@@ -42,7 +42,7 @@ import {
 } from './v019-failure-taxonomy.ts'
 import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
 import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID, readFreezeRecord, writeFreezeRecord } from './v019-freeze-secure-eval.ts'
-import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord, readComposedQualificationRecord, getSourceCommit, environmentMatches } from './v019-composed-runtime-qualification.ts'
+import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord } from './v019-composed-runtime-qualification.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
@@ -145,53 +145,39 @@ async function main(): Promise<void> {
   process.stderr.write('Verifier integrity: verified\n')
   process.stderr.write(`Security qualification: ${SECURITY_QUALIFICATION_ID} (${securityRecord.passedCount} properties passed)\n`)
 
-  // Enforce the composed-runtime qualification gate. The exact Cordis
-  // composition produced by the Batch A evaluator must boot, resolve the
-  // expected services, and pass every runtime check before any paid
-  // execution begins.
-  const persistedComposed = readComposedQualificationRecord()
-  if (persistedComposed !== undefined
-    && persistedComposed.sourceCommit === getSourceCommit()
-    && environmentMatches(persistedComposed)) {
-    // Persisted artifact matches current source AND environment — validate it
-    if (!persistedComposed.ready) {
-      process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED (persisted): ${COMPOSED_QUALIFICATION_ID}\n`)
-      process.stderr.write('Cannot proceed to live evaluation. Re-qualify.\n')
-      process.exit(1)
-    }
-    process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (persisted, ${persistedComposed.passedCount} checks passed)\n`)
-  } else if (persistedComposed !== undefined && !environmentMatches(persistedComposed)) {
-    // Source matches but environment differs — must re-qualify
-    process.stderr.write(`Composed runtime qualification: environment mismatch (persisted on ${persistedComposed.environment.platform}/${persistedComposed.environment.nodeVersion}, current ${process.platform}/${process.version}). Re-qualifying.\n`)
-    const composedRecord = await runComposedRuntimeQualification()
-    if (!composedRecord.ready) {
-      process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
-      for (const check of composedRecord.checks) {
-        if (check.status === 'fail') {
-          process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
-        }
+  // Enforce the composed-runtime qualification gate on every launch.
+  // The backend probe is environment-dependent (sandbox runner, network
+  // isolation), so reusing a persisted record across launches is unsafe.
+  // The persisted record is kept as audit evidence but never as a
+  // permission token — every paid run must re-prove the composition.
+  const composedRecord = await runComposedRuntimeQualification()
+  if (!composedRecord.ready) {
+    process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
+    for (const check of composedRecord.checks) {
+      if (check.status === 'fail') {
+        process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
       }
-      process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
-      process.exit(1)
     }
-    writeComposedQualificationRecord(composedRecord)
-    process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed, persisted)\n`)
-  } else {
-    // No persisted artifact or source mismatch — run qualification and persist
-    const composedRecord = await runComposedRuntimeQualification()
-    if (!composedRecord.ready) {
-      process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
-      for (const check of composedRecord.checks) {
-        if (check.status === 'fail') {
-          process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
-        }
-      }
-      process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
-      process.exit(1)
-    }
-    writeComposedQualificationRecord(composedRecord)
-    process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed, persisted)\n`)
+    process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
+    process.exit(1)
   }
+  writeComposedQualificationRecord(composedRecord)
+  process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed, persisted)\n`)
+
+  // Require full enforcement for benchmark tasks. Partial backends
+  // (e.g. Landlock without network isolation) are acceptable for product
+  // operation but not for benchmark-eligible evaluation.
+  if (composedRecord.backend.enforcement !== 'full') {
+    process.stderr.write(`\nBACKEND ENFORCEMENT INSUFFICIENT: ${composedRecord.backend.enforcement} (required: full)\n`)
+    process.stderr.write('Benchmark-eligible tasks require full sandbox enforcement with network isolation.\n')
+    process.exit(1)
+  }
+  if (!composedRecord.backend.networkDenied) {
+    process.stderr.write('\nBACKEND NETWORK ISOLATION FAILED: network access not denied\n')
+    process.stderr.write('Benchmark-eligible tasks require network isolation.\n')
+    process.exit(1)
+  }
+  process.stderr.write(`Backend enforcement: ${composedRecord.backend.enforcement}, network denied: ${composedRecord.backend.networkDenied}\n`)
   process.stderr.write('\n')
 
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
