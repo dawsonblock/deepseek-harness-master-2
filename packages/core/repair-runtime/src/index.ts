@@ -309,6 +309,13 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
       }
     })
 
+  // Extract diagnostic kind from evidence lines like "Kind: test".
+  const allEvidence = checks
+    .filter(check => !check.passed)
+    .flatMap(check => check.evidence ?? [])
+  const kindMatch = allEvidence.find(e => /^Kind: (test|typecheck|build|lint)$/.test(e))
+  const failedKind = kindMatch !== undefined ? kindMatch.replace(/^Kind: /, '') : undefined
+
   return {
     failedCriteria,
     failingTests,
@@ -317,6 +324,7 @@ function buildFailurePackage(checks: readonly GoalVerificationCheck[], changedFi
     changedFiles,
     ...testDetails.length > 0 ? { testDetails } : {},
     ...buildDetails.length > 0 ? { buildDetails } : {},
+    ...failedKind !== undefined ? { failedKind } : {},
   }
 }
 
@@ -344,6 +352,8 @@ export interface ModelVisibleFailureProjection {
   readonly buildDetails?: readonly BuildErrorDetail[]
   /** Diagnostic exit code from the verification process. */
   readonly diagnosticExitCode?: number
+  /** Diagnostic kind of the failing command (test/typecheck/build/lint). */
+  readonly failedKind?: string
 }
 
 /**
@@ -413,6 +423,7 @@ export function projectFailureForModel(failure: FailurePackage): ModelVisibleFai
     ...failure.testDetails !== undefined ? { testDetails: Object.freeze(failure.testDetails) } : {},
     ...failure.buildDetails !== undefined ? { buildDetails: Object.freeze(failure.buildDetails) } : {},
     ...failure.diagnosticExitCode !== undefined ? { diagnosticExitCode: failure.diagnosticExitCode } : {},
+    ...failure.failedKind !== undefined ? { failedKind: failure.failedKind } : {},
   })
 }
 
@@ -1236,6 +1247,7 @@ export function handleVerificationFailure(
     buildErrors: sanitized.buildErrors,
     changedFiles: sanitized.changedFiles,
     ...workspaceHash !== undefined ? { workspaceHash } : {},
+    ...sanitized.failedKind !== undefined ? { failedKind: sanitized.failedKind } : {},
   }, { ignorable: true })
 
   // Call the repair controller

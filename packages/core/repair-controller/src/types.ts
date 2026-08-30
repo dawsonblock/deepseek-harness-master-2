@@ -54,6 +54,8 @@ export interface FailurePackage {
   readonly buildDetails?: readonly BuildErrorDetail[]
   /** Exit code of the diagnostic verification process. */
   readonly diagnosticExitCode?: number
+  /** Diagnostic kind of the failing command (test/typecheck/build/lint), when available. */
+  readonly failedKind?: string
 }
 
 /** One completed repair attempt's evidence for deterministic decisions. */
@@ -221,6 +223,8 @@ export interface RepairEvidenceEventData {
   readonly changedFiles: readonly string[]
   /** SHA-256 hash of the workspace file contents that produced this failure, when provenance is tracked. */
   readonly workspaceHash?: string
+  /** Diagnostic kind of the failing command (test/typecheck/build/lint), when available. */
+  readonly failedKind?: string
 }
 
 /**

@@ -45,11 +45,60 @@ export const MANUAL_ONLY_CATEGORIES: ReadonlySet<FailureCategory> = new Set([
   'F16-decomposition',
 ])
 
+/** Objective facts extracted from the trajectory, separate from diagnostic interpretation. */
+export interface FailureObjectiveFacts {
+  readonly attempts: number
+  readonly flashAttempts: number
+  readonly proAttempts: number
+  readonly finalVerified: boolean
+  readonly terminalOutcome: string
+  readonly controlPlaneStatus: string
+  readonly modelCapabilityStatus: string
+  readonly aborted: boolean
+  readonly abortReason: string | undefined
+  readonly changedFiles: number
+  readonly totalCostUsd: number
+  readonly totalLatencyMs: number
+  readonly uniqueFailureFingerprints: number
+  readonly lastDiagnosticKind: string | undefined
+}
+
 export interface FailureClassification {
   readonly taskId: string
   readonly category: FailureCategory
+  /** Diagnostic interpretation of the failure. */
   readonly reason: string
+  /** Objective facts from the trajectory, separate from the diagnosis. */
+  readonly facts: FailureObjectiveFacts
+  /** Legacy evidence string for backward compatibility. */
   readonly evidence: string
+}
+
+/** Extract objective facts from a trajectory for structured classification. */
+function extractObjectiveFacts(t: TaskTrajectory): FailureObjectiveFacts {
+  const flashAttempts = t.attempts.filter(a => a.model === 'deepseek-v4-flash').length
+  const proAttempts = t.attempts.filter(a => a.model === 'deepseek-v4-pro').length
+  const fingerprints = t.attempts
+    .map(a => a.failureFingerprint)
+    .filter((f): f is string => f !== undefined)
+  const uniqueFingerprints = new Set(fingerprints).size
+  const lastAttempt = t.attempts.at(-1)
+  return {
+    attempts: t.attempts.length,
+    flashAttempts,
+    proAttempts,
+    finalVerified: t.finalVerified,
+    terminalOutcome: t.terminalOutcome,
+    controlPlaneStatus: t.controlPlaneStatus,
+    modelCapabilityStatus: t.modelCapabilityStatus,
+    aborted: t.aborted,
+    abortReason: t.abortReason,
+    changedFiles: t.changedFiles.length,
+    totalCostUsd: t.totalCostUsd,
+    totalLatencyMs: t.totalLatencyMs,
+    uniqueFailureFingerprints: uniqueFingerprints,
+    lastDiagnosticKind: lastAttempt?.failedKind,
+  }
 }
 
 /**
@@ -61,26 +110,29 @@ export interface FailureClassification {
  */
 export function classifyFailure(trajectory: TaskTrajectory): FailureClassification | undefined {
   if (trajectory.finalVerified) return undefined
+  const facts = extractObjectiveFacts(trajectory)
   if (trajectory.controlPlaneStatus === 'NOT_EVALUATED') {
     return {
       taskId: trajectory.taskId,
       category: 'F6-build-environment',
       reason: `Infrastructure failure: ${trajectory.abortReason ?? 'unknown'}`,
+      facts,
       evidence: `taskState=${trajectory.taskState}, controlPlaneStatus=NOT_EVALUATED, abortReason=${trajectory.abortReason}`,
     }
   }
   if (trajectory.controlPlaneStatus === 'FAIL') {
-    return classifyControlPlaneFailure(trajectory)
+    return classifyControlPlaneFailure(trajectory, facts)
   }
-  return classifyModelFailure(trajectory)
+  return classifyModelFailure(trajectory, facts)
 }
 
-function classifyControlPlaneFailure(t: TaskTrajectory): FailureClassification {
+function classifyControlPlaneFailure(t: TaskTrajectory, facts: FailureObjectiveFacts): FailureClassification {
   if (t.aborted && t.abortReason !== undefined) {
     return {
       taskId: t.taskId,
       category: 'F14-provider-failure',
       reason: `Provider failure: ${t.abortReason}`,
+      facts,
       evidence: `aborted=true, abortReason=${t.abortReason}`,
     }
   }
@@ -88,11 +140,12 @@ function classifyControlPlaneFailure(t: TaskTrajectory): FailureClassification {
     taskId: t.taskId,
     category: 'F13-rollback',
     reason: 'Control plane failure without provider abort',
+    facts,
     evidence: `controlPlaneStatus=FAIL, aborted=${t.aborted}`,
   }
 }
 
-function classifyModelFailure(t: TaskTrajectory): FailureClassification {
+function classifyModelFailure(t: TaskTrajectory, facts: FailureObjectiveFacts): FailureClassification {
   const lastAttempt = t.attempts.at(-1)
   const flashAttempts = t.attempts.filter(a => a.model === 'deepseek-v4-flash')
   const proAttempts = t.attempts.filter(a => a.model === 'deepseek-v4-pro')
@@ -103,6 +156,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F18-holdout-edge-case',
       reason: 'Diagnostic passed but unseen holdout detected an edge case',
+      facts,
       evidence: `diagnosticPass=true, holdoutPass=false, attempts=${t.attempts.length}`,
     }
   }
@@ -114,6 +168,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F12-timeout-latency',
       reason: `Task timed out: ${t.abortReason ?? 'terminalOutcome=timeout'}`,
+      facts,
       evidence: `terminalOutcome=${t.terminalOutcome}, latency=${t.totalLatencyMs}ms, abortReason=${t.abortReason ?? 'undefined'}`,
     }
   }
@@ -124,6 +179,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F11-budget-exhaustion',
       reason: 'Task stopped due to budget limit (cost, time, or token)',
+      facts,
       evidence: `terminalOutcome=budget-stop, cost=$${t.totalCostUsd.toFixed(6)}, latency=${t.totalLatencyMs}ms`,
     }
   }
@@ -134,6 +190,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F9-premature-escalation',
       reason: 'Escalated to Pro after only 1 Flash attempt without trying Flash repair',
+      facts,
       evidence: `flashAttempts=${flashAttempts.length}, proAttempts=${proAttempts.length}`,
     }
   }
@@ -144,6 +201,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F10-insufficient-escalation',
       reason: 'Flash exhausted all attempts without success, Pro was not called',
+      facts,
       evidence: `flashAttempts=${flashAttempts.length}, proAttempts=0`,
     }
   }
@@ -160,6 +218,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F8-repair-evidence',
       reason: 'Same failure fingerprint across multiple attempts — repair evidence did not help',
+      facts,
       evidence: `fingerprints=${fingerprints.length}, unique=${new Set(fingerprints).size}`,
     }
   }
@@ -182,6 +241,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F7-dependency',
       reason: 'Dependency resolution failure detected in error evidence',
+      facts,
       evidence: `errorEvidenceMatch=dependency-error, attempts=${t.attempts.length}, changedFiles=${t.changedFiles.length}`,
     }
   }
@@ -193,6 +253,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F1-model-reasoning',
       reason: 'Model produced no valid changes across all attempts',
+      facts,
       evidence: `attempts=${t.attempts.length}, changedFiles=0`,
     }
   }
@@ -203,6 +264,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
       taskId: t.taskId,
       category: 'F17-cross-file-consistency',
       reason: 'Model made changes but verification still fails — likely missed a dependent file',
+      facts,
       evidence: `attempts=${t.attempts.length}, changedFiles=${t.changedFiles.length}`,
     }
   }
@@ -212,6 +274,7 @@ function classifyModelFailure(t: TaskTrajectory): FailureClassification {
     taskId: t.taskId,
     category: 'F1-model-reasoning',
     reason: 'Model failed to solve the task across all attempts',
+    facts,
     evidence: `attempts=${t.attempts.length}, flashAttempts=${flashAttempts.length}, proAttempts=${proAttempts.length}`,
   }
 }

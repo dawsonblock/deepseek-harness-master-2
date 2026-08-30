@@ -108,6 +108,7 @@ export interface AttemptTrajectory {
   readonly holdoutPass: boolean | undefined
   readonly failureFingerprint: string | undefined
   readonly progress: string | undefined
+  readonly failedKind?: DiagnosticKind
   readonly failedCriteria: readonly string[]
   readonly failingTests: readonly string[]
   readonly typeErrors: readonly string[]
@@ -973,6 +974,7 @@ function buildTrajectoryFromEvents(
     const repairReason = repairDecision?.data.reason
     const failureFingerprint = repairEvidence?.data.failureFingerprint as string | undefined
     const progress = repairEvidence?.data.progress as string | undefined
+    const failedKind = repairEvidence?.data.failedKind as DiagnosticKind | undefined
     const failedCriteria = repairEvidence?.data.failedCriteria ?? []
     const failingTests = repairEvidence?.data.failingTests ?? []
     const typeErrors = repairEvidence?.data.typeErrors ?? []
@@ -994,6 +996,7 @@ function buildTrajectoryFromEvents(
       holdoutPass: repairAction === 'complete' ? holdoutPass : undefined,
       failureFingerprint,
       progress,
+      ...failedKind !== undefined ? { failedKind } : {},
       failedCriteria,
       failingTests,
       typeErrors,
