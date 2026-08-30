@@ -493,6 +493,63 @@ async function checkFileToolIsolation(ctx: Context, workspace: string): Promise<
 }
 
 // ---------------------------------------------------------------------------
+// C2b: node_modules read-only enforcement
+// ---------------------------------------------------------------------------
+
+async function checkNodeModulesReadOnly(ctx: Context, workspace: string): Promise<ComposedCheck> {
+  try {
+    const fs = ctx.get('fs')
+    if (fs === undefined) {
+      return { id: 'C2b', name: 'node_modules model read-only enforcement', status: 'fail', evidence: 'fs service not available' }
+    }
+    const nodeModulesDir = join(workspace, 'node_modules')
+    const testFile = join(nodeModulesDir, '.dsh-readonly-probe.js')
+    // Create the probe file before the test (host-side, not through the sandbox).
+    mkdirSync(nodeModulesDir, { recursive: true })
+    writeFileSync(testFile, 'original')
+    try {
+      const sandboxFs = fs as unknown as {
+        resolve(path: string, opts?: { cwd?: string }): Promise<{ targetKey: unknown; displayPath: string }>
+        writeText(target: unknown, content: string, signal?: AbortSignal, policy?: unknown): Promise<void>
+        readText(target: unknown, signal?: AbortSignal, policy?: unknown): Promise<string>
+      }
+      const sandboxPolicy = ctx.get('sandboxPolicy')
+      const policy = sandboxPolicy?.resolve()
+      // Attempt to write through the sandboxed fs — should be denied.
+      const writeTarget = await sandboxFs.resolve(testFile)
+      let writeDenied = false
+      try {
+        await sandboxFs.writeText(writeTarget, 'tampered', undefined, policy)
+      } catch {
+        writeDenied = true
+      }
+      // Attempt to read through the sandboxed fs — should succeed.
+      let readOk = false
+      try {
+        const readTarget = await sandboxFs.resolve(testFile)
+        const content = await sandboxFs.readText(readTarget, undefined, policy)
+        readOk = content === 'original'
+      } catch {
+        readOk = false
+      }
+      const passed = writeDenied && readOk
+      return {
+        id: 'C2b',
+        name: 'node_modules model read-only enforcement',
+        status: passed ? 'pass' : 'fail',
+        evidence: passed
+          ? 'node_modules write=DENY, read=PASS'
+          : `writeDenied=${writeDenied}, readOk=${readOk}`,
+      }
+    } finally {
+      rmSync(testFile, { force: true })
+    }
+  } catch (e) {
+    return { id: 'C2b', name: 'node_modules model read-only enforcement', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // C3: Bash isolation through the actual Bash tool
 // ---------------------------------------------------------------------------
 
@@ -1992,6 +2049,9 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
 
       // C2: File-tool isolation
       checks.push(await checkFileToolIsolation(ctx, workspace))
+
+      // C2b: node_modules read-only enforcement
+      checks.push(await checkNodeModulesReadOnly(ctx, workspace))
 
       // C3: Bash isolation
       checks.push(await checkBashIsolation(ctx, workspace))

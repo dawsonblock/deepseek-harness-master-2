@@ -57,6 +57,14 @@ export interface SandboxExecutionPolicy {
    */
   sessionId?: SessionId
   /**
+   * Directory paths whose contents the confined process may read but not
+   * write. Effective under `workspace-write` and `workspace-isolated` modes;
+   * ignored by other modes. Used to protect verifier-affecting state such as
+   * `node_modules` from model mutation — anything excluded from the workspace
+   * hash but capable of affecting verification must be model-immutable.
+   */
+  readOnlyPaths?: string[]
+  /**
    * Directory paths whose contents the confined process must not read.
    * Only effective under `workspace-isolated` mode; ignored by other modes.
    * Used to protect benchmark source, test definitions, and other sensitive

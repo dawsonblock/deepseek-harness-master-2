@@ -245,6 +245,16 @@ export class SandboxedFileSystem extends LocalFileSystem {
     if (!contained) {
       throw new FsError(`cannot write "${target.displayPath}": file access denied under ${mode} mode`, 'FS_SANDBOX_DENIED')
     }
+    // readOnlyPaths: paths inside the writable workspace that the model
+    // may read but not write. Protects verifier-affecting state such as
+    // node_modules from model mutation.
+    if (policy.readOnlyPaths !== undefined && policy.readOnlyPaths.length > 0) {
+      for (const roPath of policy.readOnlyPaths) {
+        if (await isPathUnder(fresh.targetKey, roPath)) {
+          throw new FsError(`cannot write "${target.displayPath}": read-only path under ${mode} mode`, 'FS_SANDBOX_DENIED')
+        }
+      }
+    }
     return fresh
   }
 

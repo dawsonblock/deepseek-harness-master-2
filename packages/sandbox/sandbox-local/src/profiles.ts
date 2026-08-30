@@ -58,12 +58,23 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
       '--tmpfs', '/tmp',
       '--bind', policy.workspaceRoot, policy.workspaceRoot,
     ]
+    // readOnlyPaths: re-mount specified subdirectories read-only after
+    // the workspace bind mount. bwrap processes later mounts on top of
+    // earlier ones, so a --ro-bind for a subdirectory overrides the
+    // parent --bind. Protects verifier-affecting state such as
+    // node_modules from model mutation via shell subprocesses.
+    for (const roPath of policy.readOnlyPaths ?? []) {
+      args.push('--ro-bind', roPath, roPath)
+    }
     return args
   }
   const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--unshare-pid', '--proc', '/proc', '--die-with-parent']
   if (policy.mode === 'workspace-write') {
     args.push('--tmpfs', '/tmp')
     args.push('--bind', policy.workspaceRoot, policy.workspaceRoot)
+    for (const roPath of policy.readOnlyPaths ?? []) {
+      args.push('--ro-bind', roPath, roPath)
+    }
   }
   return args
 }
@@ -84,13 +95,17 @@ export function landlockProfileArgs(policy: SandboxPolicy): string[] {
     // the workspace (holdouts, fixtures) must be unreachable.
     readWrite.push(policy.workspaceRoot)
   }
+  // readOnlyPaths: add as readOnly grants. Landlock's nested rule model
+  // restricts writes to subdirectories even when the parent is read-write.
+  // Protects verifier-affecting state such as node_modules.
+  const roPaths = policy.readOnlyPaths ?? []
   if (policy.mode === 'workspace-isolated') {
     return landlockGrantArgs({
-      readOnly: ['/usr', '/lib', '/lib64', '/bin', '/etc', '/dev', '/proc'],
+      readOnly: ['/usr', '/lib', '/lib64', '/bin', '/etc', '/dev', '/proc', ...roPaths],
       readWrite,
     })
   }
-  return landlockGrantArgs({ readOnly: ['/'], readWrite })
+  return landlockGrantArgs({ readOnly: ['/', ...roPaths], readWrite })
 }
 
 /** Quote one path as an SBPL string literal. */
@@ -112,12 +127,18 @@ export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
     const ws = sbplString(canonicalPath(policy.workspaceRoot))
     const denyPaths = (policy.protectedReadPaths ?? []).map(canonicalPath)
     const denyForms = denyPaths.map(p => `(deny file-read* (subpath ${sbplString(p)}))`)
+    // readOnlyPaths: deny writes to specified subdirectories within the
+    // workspace. Protects verifier-affecting state such as node_modules
+    // from model mutation via shell subprocesses.
+    const roPaths = (policy.readOnlyPaths ?? []).map(canonicalPath)
+    const roDenyForms = roPaths.map(p => `(deny file-write* (subpath ${sbplString(p)}))`)
     const forms = [
       '(version 1)',
       '(deny default)',
       '(allow file-read*)',
       ...denyForms,
       `(allow file-write* (subpath ${ws}))`,
+      ...roDenyForms,
       '(allow file-write* (literal "/dev/null"))',
       '(deny file-write*)',
       '(allow process-exec)',
@@ -135,6 +156,11 @@ export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
   const roots = writableRoots(policy)
   if (roots.length > 0) {
     forms.push(`(allow file-write* ${roots.map(root => `(subpath ${sbplString(root)})`).join(' ')})`)
+  }
+  // readOnlyPaths under workspace-write: deny writes to specified subdirectories.
+  const roPaths = (policy.readOnlyPaths ?? []).map(canonicalPath)
+  for (const p of roPaths) {
+    forms.push(`(deny file-write* (subpath ${sbplString(p)}))`)
   }
   return ['-p', forms.join(' ')]
 }

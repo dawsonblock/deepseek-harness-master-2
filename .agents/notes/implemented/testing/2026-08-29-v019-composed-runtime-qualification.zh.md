@@ -98,6 +98,7 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - C3 网络隔离测试现在使用 Node 二进制文件（`process.execPath` 与 `net.connect`）而非 `nc`/`curl`/`python3`。Node 保证在此运行时存在；之前的实现如果三个外部命令都不可用，可能产生假阳性网络拒绝。
 - `RepairRuntime` 现在在运行时内部强制缺失使用作为控制平面失败，而非仅在轨迹提取中。`computeAttemptAccounting` 接受 `failOnMissingUsage` 参数；启用时，没有匹配 `model/usage` 事件的付费路由决策抛出 `MISSING_USAGE` 而非静默坍缩为 `$0`/`0` token/`0` 延迟。`RepairRuntimeConfig.failOnMissingUsage` 和 `RepairHandlerDeps.failOnMissingUsage` 传播该标志。实时评估器和所有组合资格场景启用它；单元测试默认为 `false` 以避免为非会计场景注入使用事件。
 - `ComposedQualificationRecord` 中的 `backend` 字段现在包含 `runner`——实际检测到的沙箱运行器（`bwrap`、`landlock`、`seatbelt`、`windows-acl`）——而非仅从 C3 测试成功推断强制。`enforcement` 和 `networkDenied` 字段仍从 C3 派生，但运行器身份现在是持久资格记录的一部分。
+- `node_modules` 现在通过 `SandboxExecutionPolicy` 上的新 `readOnlyPaths` 字段对模型只读。进程内 FS 围栏（`dsh-fs-sandbox`）拒绝写入 `readOnlyPaths` 下的路径；bwrap 配置使用 `--ro-bind` 重新挂载；Seatbelt 配置添加 `(deny file-write* (subpath ...))` 规则；Landlock 配置将它们添加到 `readOnly` 授权。v019 评估配置 `readOnlyPaths: [workspace/node_modules]`。新的组合资格检查 C2b 验证模型无法写入 `node_modules` 但可以读取。这满足审计的 P0.3 要求：从工作区哈希中排除但能够影响验证的任何内容必须受到保护，防止模型突变。
 
 ## Alternatives considered
 

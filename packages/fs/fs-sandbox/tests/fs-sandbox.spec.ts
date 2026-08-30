@@ -295,3 +295,56 @@ describe('workspace-isolated read fence', () => {
     await expect(fs.writeText(await target(path), 'escape')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
   })
 })
+
+describe('readOnlyPaths under workspace-isolated', () => {
+  let roCtx: Context
+  let roFiber: { dispose(): Promise<void> }
+  let roFs: SandboxedFileSystem
+  let roBase: string
+  let roWorkspace: string
+
+  beforeEach(async () => {
+    roBase = await mkdtemp(join(homedir(), '.dsh-fssbx-ro-'))
+    roWorkspace = join(roBase, 'ws')
+    const roNodeModules = join(roWorkspace, 'node_modules')
+    await mkdir(roWorkspace, { recursive: true })
+    await mkdir(roNodeModules, { recursive: true })
+    roCtx = new Context()
+    await roCtx.plugin(SandboxPolicyService, {
+      mode: 'workspace-isolated',
+      workspaceRoot: roWorkspace,
+      readOnlyPaths: [roNodeModules],
+    })
+    roFiber = await roCtx.plugin(SandboxedFileSystem, { cwd: roWorkspace })
+    roFs = roCtx.fs as SandboxedFileSystem
+  })
+
+  afterEach(async () => {
+    await roFiber.dispose()
+    await rm(roBase, { recursive: true, force: true })
+  })
+
+  it('denies write to a file under a readOnlyPath', async () => {
+    const path = join(roWorkspace, 'node_modules', 'vitest', 'index.js')
+    await mkdir(join(roWorkspace, 'node_modules', 'vitest'), { recursive: true })
+    await writeFile(path, 'original')
+    await expect(roFs.writeText(await roFs.resolve(path), 'tampered'))
+      .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(await readFile(path, 'utf8')).toBe('original')
+  })
+
+  it('allows read from a readOnlyPath', async () => {
+    const path = join(roWorkspace, 'node_modules', 'vitest', 'package.json')
+    await mkdir(join(roWorkspace, 'node_modules', 'vitest'), { recursive: true })
+    await writeFile(path, '{"name":"vitest"}')
+    const content = await roFs.readText(await roFs.resolve(path))
+    expect(content).toBe('{"name":"vitest"}')
+  })
+
+  it('allows write to a sibling directory outside the readOnlyPath', async () => {
+    const path = join(roWorkspace, 'src', 'index.ts')
+    await mkdir(join(roWorkspace, 'src'), { recursive: true })
+    await roFs.writeText(await roFs.resolve(path), 'export {}')
+    expect(await readFile(path, 'utf8')).toBe('export {}')
+  })
+})

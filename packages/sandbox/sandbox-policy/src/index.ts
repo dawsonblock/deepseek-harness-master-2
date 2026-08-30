@@ -75,6 +75,13 @@ export interface Config {
    */
   workspaceRoot?: string
   /**
+   * Directory paths whose contents the confined process may read but not
+   * write. Effective under `workspace-write` and `workspace-isolated` modes;
+   * ignored by other modes. Protects verifier-affecting state such as
+   * `node_modules` from model mutation.
+   */
+  readOnlyPaths?: string[]
+  /**
    * Directory paths whose contents the confined process must not read.
    * Only effective under `workspace-isolated` mode; ignored by other modes.
    */
@@ -102,6 +109,7 @@ export class SandboxPolicyService extends Service {
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
+    readOnlyPaths: z.array(z.string()).default([]),
     protectedReadPaths: z.array(z.string()).default([]),
   })
 
@@ -109,6 +117,8 @@ export class SandboxPolicyService extends Service {
   readonly defaultMode: SandboxMode
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  /** Paths the confined process may read but not write under `workspace-write`/`workspace-isolated`. */
+  readonly readOnlyPaths: string[]
   /** Paths the confined process must not read under `workspace-isolated` mode. */
   readonly protectedReadPaths: string[]
   constructor(ctx: Context, config: Config) {
@@ -118,6 +128,7 @@ export class SandboxPolicyService extends Service {
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+    this.readOnlyPaths = config.readOnlyPaths ?? []
     this.protectedReadPaths = config.protectedReadPaths ?? []
 
     ctx.inject(['systemPrompt'], (scope: Context) => {
@@ -149,6 +160,7 @@ export class SandboxPolicyService extends Service {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
       ...session === undefined ? {} : { sessionId: session.id },
+      ...this.readOnlyPaths.length > 0 ? { readOnlyPaths: this.readOnlyPaths } : {},
       ...this.protectedReadPaths.length > 0 ? { protectedReadPaths: this.protectedReadPaths } : {},
     }
   }

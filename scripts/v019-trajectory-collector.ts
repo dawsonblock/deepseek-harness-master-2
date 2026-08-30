@@ -366,6 +366,8 @@ export async function generateRepoConfig(model: string, workspace: string): Prom
   config:
     mode: workspace-isolated
     workspaceRoot: '${workspace}'
+    readOnlyPaths:
+      - '${join(workspace, 'node_modules')}'
     protectedReadPaths:
       - '${join(REPO_ROOT, 'scripts')}'
       - '${join(REPO_ROOT, 'artifacts')}'
