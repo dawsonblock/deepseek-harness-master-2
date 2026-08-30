@@ -177,7 +177,7 @@ export async function runTaskTrajectory(
       maxFlashAttempts: manifest.limits.maxFlashAttempts,
       maxProAttempts: manifest.limits.maxProAttempts,
       maxTotalAttempts: manifest.limits.maxTotalAttempts,
-      holdoutVerifier: createHoldoutVerifier(workspace, manifest),
+      holdoutVerifier: createHoldoutVerifier(workspace, manifest, baseline),
       workspaceProvenanceProvider: createProvenanceProvider(workspace),
       rollbackProvider: createRollbackProvider(workspace, checkout, baseline),
       failOnMissingUsage: true,
@@ -588,31 +588,95 @@ function hashVerifierControlledFiles(workspace: string): string {
   return hash.digest('hex')
 }
 
-/** Create a holdout verifier for the production RepairRuntime. Stages holdout tests, runs them, and cleans up. */
-function createHoldoutVerifier(workspace: string, manifest: TaskManifest): repairRuntimePlugin.HoldoutVerifier {
+/**
+ * Create a holdout verifier for the production RepairRuntime. When a baseline
+ * snapshot is available, runs holdout in a clean verifier-owned workspace
+ * restored from the baseline, with the model's candidate changes applied.
+ * This prevents model tampering with node_modules, dist, or verifier
+ * infrastructure from affecting holdout results.
+ *
+ * The candidate diff is computed by comparing the model workspace against
+ * the baseline. Only source files (excluding node_modules/.git/dist) are
+ * copied — the clean workspace's immutable layer is preserved.
+ */
+function createHoldoutVerifier(
+  workspace: string,
+  manifest: TaskManifest,
+  baseline?: BaselineSnapshot,
+): repairRuntimePlugin.HoldoutVerifier {
   return () => {
     if (manifest.verification.holdout.length === 0) {
       return { passed: true, reason: 'no holdout configured' }
     }
-    // Stage holdout files synchronously.
+
+    // When a baseline is available, run holdout in a clean verifier workspace.
+    if (baseline !== undefined) {
+      return runHoldoutInCleanWorkspace(workspace, manifest, baseline)
+    }
+
+    // Legacy fallback: stage holdout files in the model workspace.
+    return runHoldoutInModelWorkspace(workspace, manifest)
+  }
+}
+
+/** Run holdout in a clean verifier workspace restored from the baseline. */
+function runHoldoutInCleanWorkspace(
+  workspace: string,
+  manifest: TaskManifest,
+  baseline: BaselineSnapshot,
+): { passed: boolean; reason: string } {
+  const verifierWorkspace = `${workspace}.verifier-holdout`
+  try {
+    // Restore the baseline into a clean verifier workspace.
+    const restoreResult = restoreBaseline(verifierWorkspace, baseline)
+    if (!restoreResult.success) {
+      return { passed: false, reason: 'failed to restore verifier workspace from baseline' }
+    }
+
+    // Copy model-modified source files into the verifier workspace.
+    // Exclude node_modules, .git, dist — the baseline's immutable layer
+    // is already in place and must not be overwritten by model changes.
+    try {
+      execSync(
+        `rsync -a --delete --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='sessions' "${workspace}/" "${verifierWorkspace}/"`,
+        { stdio: 'pipe', timeout: 60000 },
+      )
+    } catch {
+      // rsync may not be available; fall back to cp for source files only.
+      try {
+        execSync(
+          `cp -R "${workspace}/." "${verifierWorkspace}/" 2>/dev/null || true`,
+          { stdio: 'pipe', timeout: 60000 },
+        )
+        // Remove mutable excluded dirs that cp may have overwritten.
+        execSync(`rm -rf "${join(verifierWorkspace, 'node_modules')}" "${join(verifierWorkspace, 'sessions')}"`, { stdio: 'pipe', timeout: 30000 })
+        // Restore immutable dirs from baseline.
+        execSync(`tar -xf "${baseline.archivePath}" -C "${verifierWorkspace}" --include='node_modules' --include='sessions' 2>/dev/null || true`, { stdio: 'pipe', timeout: 60000 })
+      } catch {
+        return { passed: false, reason: 'failed to copy candidate changes to verifier workspace' }
+      }
+    }
+
+    // Stage holdout files in the verifier workspace.
     const holdoutDir = join(homedir(), '.dsh-v019-holdouts', manifest.repository.name)
     try {
       const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
       for (const entry of entries) {
         if (entry.endsWith('.holdout.test.ts')) {
-          execSync(`cp "${join(holdoutDir, entry)}" "${join(workspace, 'tests', entry)}"`)
+          execSync(`cp "${join(holdoutDir, entry)}" "${join(verifierWorkspace, 'tests', entry)}"`)
         }
       }
     } catch {
       return { passed: false, reason: 'failed to stage holdout files' }
     }
-    // Run holdout commands.
+
+    // Run holdout commands in the verifier workspace.
     let passed = true
     let reason = ''
     try {
       for (const cmd of manifest.verification.holdout) {
         try {
-          execSync(cmd.command, { cwd: workspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
+          execSync(cmd.command, { cwd: verifierWorkspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
         } catch {
           passed = false
           reason = `holdout command failed: ${cmd.command}`
@@ -620,20 +684,53 @@ function createHoldoutVerifier(workspace: string, manifest: TaskManifest): repai
         }
       }
     } finally {
-      // Clean up holdout files.
-      try {
-        const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
-        for (const entry of entries) {
-          if (entry.endsWith('.holdout.test.ts')) {
-            execSync(`rm -f "${join(workspace, 'tests', entry)}"`)
-          }
-        }
-      } catch {
-        // Cleanup failure is not fatal.
-      }
+      try { rmSync(verifierWorkspace, { recursive: true, force: true }) } catch { /* cleanup */ }
     }
     return { passed, reason }
+  } catch (e) {
+    try { rmSync(verifierWorkspace, { recursive: true, force: true }) } catch { /* cleanup */ }
+    return { passed: false, reason: `verifier workspace error: ${(e as Error).message}` }
   }
+}
+
+/** Run holdout in the model workspace (legacy fallback without baseline). */
+function runHoldoutInModelWorkspace(workspace: string, manifest: TaskManifest): { passed: boolean; reason: string } {
+  const holdoutDir = join(homedir(), '.dsh-v019-holdouts', manifest.repository.name)
+  try {
+    const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
+    for (const entry of entries) {
+      if (entry.endsWith('.holdout.test.ts')) {
+        execSync(`cp "${join(holdoutDir, entry)}" "${join(workspace, 'tests', entry)}"`)
+      }
+    }
+  } catch {
+    return { passed: false, reason: 'failed to stage holdout files' }
+  }
+  let passed = true
+  let reason = ''
+  try {
+    for (const cmd of manifest.verification.holdout) {
+      try {
+        execSync(cmd.command, { cwd: workspace, encoding: 'utf8', timeout: 120000, stdio: 'pipe' })
+      } catch {
+        passed = false
+        reason = `holdout command failed: ${cmd.command}`
+        break
+      }
+    }
+  } finally {
+    try {
+      const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
+      for (const entry of entries) {
+        if (entry.endsWith('.holdout.test.ts')) {
+          execSync(`rm -f "${join(workspace, 'tests', entry)}"`)
+        }
+      }
+    } catch {
+      // Cleanup failure is not fatal.
+    }
+  }
+  return { passed, reason }
 }
 
 /**
