@@ -195,6 +195,7 @@ async function main(): Promise<void> {
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,
     benchmarkEligible,
+    repairStrategy: 'transactional',
     sandboxBackend: {
       runner: composedRecord.backend.runner,
       runnerPath: composedRecord.backend.runnerPath,
@@ -294,6 +295,7 @@ async function main(): Promise<void> {
         referenceFixFiles,
         checkout,
         baseline,
+        experimentManifest.repairStrategy,
       )
 
       const trajectoryPath = join(TRAJECTORIES_DIR, `${taskManifest.taskId}.json`)

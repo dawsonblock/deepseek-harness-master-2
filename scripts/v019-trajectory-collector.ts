@@ -152,6 +152,7 @@ export async function runTaskTrajectory(
   referenceFixFiles: readonly string[],
   checkout?: RepoCheckout,
   baseline?: BaselineSnapshot,
+  repairStrategy: 'transactional' | 'iterative' = 'transactional',
 ): Promise<TaskTrajectory> {
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
 
@@ -169,7 +170,7 @@ export async function runTaskTrajectory(
 
     // Mount the repair-runtime plugin using the shared factory so the
     // live evaluator and composed qualification use the same configuration.
-    const repairConfig = createRepairRuntimeConfig(workspace, manifest, checkout, baseline)
+    const repairConfig = createRepairRuntimeConfig(workspace, manifest, checkout, baseline, repairStrategy)
     await ctx.plugin(repairRuntimePlugin, repairConfig)
 
     // Register a goal completion verifier that runs the task's diagnostic
@@ -809,6 +810,7 @@ export function createRepairRuntimeConfig(
   manifest: TaskManifest,
   checkout?: RepoCheckout,
   baseline?: BaselineSnapshot,
+  repairStrategy: 'transactional' | 'iterative' = 'transactional',
 ): RepairRuntimeConfig {
   const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
   const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
@@ -821,7 +823,12 @@ export function createRepairRuntimeConfig(
     maxTotalAttempts: manifest.limits.maxTotalAttempts,
     holdoutVerifier: createHoldoutVerifier(workspace, manifest, baseline),
     workspaceProvenanceProvider: createProvenanceProvider(workspace),
-    rollbackProvider: createRollbackProvider(workspace, checkout, baseline),
+    // Transactional repair rolls back to baseline before each attempt.
+    // Iterative repair preserves workspace state, letting the model build
+    // on its prior changes. The strategy is an experiment variable.
+    ...repairStrategy === 'transactional'
+      ? { rollbackProvider: createRollbackProvider(workspace, checkout, baseline) }
+      : {},
     changedFilesProvider: createChangedFilesProvider(workspace, baseline),
     failOnMissingUsage: true,
   }

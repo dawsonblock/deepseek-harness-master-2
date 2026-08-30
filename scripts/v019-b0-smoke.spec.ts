@@ -67,6 +67,7 @@ describe('v019 post-security B0 smoke test', () => {
       taskCount: 5,
       repositoryCount: 5,
       benchmarkEligible: false,
+      repairStrategy: 'transactional',
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',

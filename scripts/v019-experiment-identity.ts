@@ -49,6 +49,8 @@ export interface ExperimentManifest {
   readonly repositoryCount: number
   /** False for B0 infrastructure validation; true for the baseline cohort. */
   readonly benchmarkEligible: boolean
+  /** Repair strategy: 'transactional' rolls back to baseline before each attempt; 'iterative' preserves workspace state. */
+  readonly repairStrategy: 'transactional' | 'iterative'
   /** Actual selected sandbox backend (runner name, path, version, enforcement, network isolation). */
   readonly sandboxBackend: Readonly<{
     runner: string
@@ -77,6 +79,7 @@ export function buildExperimentManifest(params: {
   taskCount: number
   repositoryCount: number
   benchmarkEligible: boolean
+  repairStrategy: 'transactional' | 'iterative'
   sandboxBackend: { runner: string; runnerPath: string; runnerVersion: string; enforcement: string; networkDenied: boolean }
   snapshotAlgorithm: string
   snapshotExclusions: string
@@ -112,6 +115,7 @@ export function buildExperimentManifest(params: {
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
+    repairStrategy: params.repairStrategy,
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
@@ -133,6 +137,7 @@ export function buildExperimentManifest(params: {
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
+    repairStrategy: params.repairStrategy,
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
@@ -164,6 +169,7 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     String(fields.taskCount),
     String(fields.repositoryCount),
     String(fields.benchmarkEligible),
+    fields.repairStrategy,
     backendLine,
     fields.snapshotAlgorithm,
     fields.snapshotExclusions,
