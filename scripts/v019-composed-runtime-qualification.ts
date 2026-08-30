@@ -49,6 +49,7 @@
  * S5:  Workspace-bound completion — no mutation → complete (Scenario G)
  * S6:  Rollback failure stops repair, no new paid call (Scenario E)
  * S7:  Authority ambiguity denies model transition (Scenario F)
+ * S8:  Two Flash failures → real Pro routing → Pro PASS (Scenario D)
  *
  * @module v019-composed-runtime-qualification
  */
@@ -59,6 +60,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
 
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
@@ -104,6 +106,8 @@ export interface ComposedQualificationRecord {
   readonly filesystem: { modelReadFence: boolean; modelWriteFence: boolean }
   readonly holdout: { modelReadable: boolean }
   readonly repair: { productionRuntime: boolean; rollbackRequired: boolean; provenanceRequired: boolean }
+  /** Environment identity — persisted records must match the current environment to be reused. */
+  readonly environment: { readonly platform: string; readonly arch: string; readonly nodeVersion: string; readonly runner: string }
   readonly ready: boolean
 }
 
@@ -539,43 +543,47 @@ async function checkBashIsolation(ctx: Context, workspace: string): Promise<Comp
           || result.sandbox?.denied === true
       }
 
-      // Network: DNS lookup — should DENY (nonzero exit or sandbox denied)
-      let dnsDenied = false
-      {
-        const spec = shell.resolve({ command: 'nslookup example.com 2>&1 || dig example.com 2>&1 || host example.com 2>&1', workdir: workspace, sandboxPolicy: policy })
-        const result = await shell.run(spec)
-        dnsDenied = (result.exitCode !== 0 && result.exitCode !== null)
-          || result.sandbox?.denied === true
+      // Network: deterministic local TCP listener. Start a harness-owned
+      // listener on localhost, then have the sandboxed subprocess try to
+      // connect. A network-isolating sandbox (bwrap --unshare-net, Seatbelt
+      // deny network*) will deny the connection. A non-isolating sandbox
+      // (Landlock) will allow it. This is deterministic — it does not
+      // depend on external Internet availability, DNS, or proxy state.
+      let networkDenied = false
+      let tcpServer: TcpServer | undefined
+      let listenPort = 0
+      try {
+        const server = createTcpServer(socket => socket.end('DENIED-IF-CONNECTED\n'))
+        tcpServer = server
+        await new Promise<void>((resolve) => {
+          server.listen(0, '127.0.0.1', () => {
+            const addr = server.address()
+            if (typeof addr === 'object' && addr !== null) listenPort = addr.port
+            resolve()
+          })
+        })
+        if (listenPort > 0) {
+          const spec = shell.resolve({
+            command: `sh -c 'echo test | nc -w 2 127.0.0.1 ${listenPort} 2>&1 || (echo test | curl -s --connect-timeout 2 telnet://127.0.0.1:${listenPort} 2>&1) || python3 -c "import socket; s=socket.socket(); s.settimeout(2); s.connect((\\"127.0.0.1\\",${listenPort})); s.close()" 2>&1'`,
+            workdir: workspace,
+            sandboxPolicy: policy,
+          })
+          const result = await shell.run(spec)
+          networkDenied = (result.exitCode !== 0 && result.exitCode !== null)
+            || result.sandbox?.denied === true
+        }
+      } finally {
+        tcpServer?.close()
       }
 
-      // Network: HTTP connection — should DENY
-      let httpDenied = false
-      {
-        const spec = shell.resolve({ command: 'curl -s --connect-timeout 5 http://example.com > /dev/null 2>&1', workdir: workspace, sandboxPolicy: policy })
-        const result = await shell.run(spec)
-        httpDenied = (result.exitCode !== 0 && result.exitCode !== null)
-          || result.sandbox?.denied === true
-      }
-
-      // Network: git ls-remote — should DENY. Using ls-remote instead of
-      // fetch --dry-run because the workspace has no .git, so fetch fails
-      // with "not a git repository" regardless of network state.
-      let gitRemoteDenied = false
-      {
-        const spec = shell.resolve({ command: 'git ls-remote https://github.com/octocat/Hello-World.git HEAD 2>&1', workdir: workspace, sandboxPolicy: policy })
-        const result = await shell.run(spec)
-        gitRemoteDenied = (result.exitCode !== 0 && result.exitCode !== null)
-          || result.sandbox?.denied === true
-      }
-
-      const passed = workspaceReadOk && externalReadDenied && dnsDenied && httpDenied && gitRemoteDenied
+      const passed = workspaceReadOk && externalReadDenied && networkDenied
       return {
         id: 'C3',
         name: 'Bash isolation through actual Bash tool',
         status: passed ? 'pass' : 'fail',
         evidence: passed
-          ? 'workspace read=PASS, external read=DENY, DNS=DENY, HTTP=DENY, git ls-remote=DENY'
-          : `workspaceReadOk=${workspaceReadOk}, externalReadDenied=${externalReadDenied}, dnsDenied=${dnsDenied}, httpDenied=${httpDenied}, gitRemoteDenied=${gitRemoteDenied}`,
+          ? 'workspace read=PASS, external read=DENY, local TCP connect=DENY'
+          : `workspaceReadOk=${workspaceReadOk}, externalReadDenied=${externalReadDenied}, networkDenied=${networkDenied}`,
       }
     } finally {
       rmSync(secretDir, { recursive: true, force: true })
@@ -633,10 +641,15 @@ async function checkHoldoutSecrecy(ctx: Context, workspace: string, holdoutDir: 
 
     // Agent fs-sandbox read of holdout — should DENY
     let agentFsReadDenied = false
-    if (fs !== undefined) {
-      const sandboxFs = fs as unknown as { readText: (target: string, signal?: AbortSignal, policy?: unknown) => Promise<string> }
+    if (fs !== undefined && sandboxPolicy !== undefined) {
+      const policy = sandboxPolicy.resolve()
+      const sandboxFs = fs as {
+        resolve(path: string, opts?: { cwd?: string }): Promise<{ targetKey: unknown; displayPath: string }>
+        readText(target: unknown, signal?: AbortSignal, policy2?: typeof policy): Promise<string>
+      }
       try {
-        await sandboxFs.readText(holdoutFile, undefined, sandboxPolicy?.resolve())
+        const target = await sandboxFs.resolve(holdoutFile, { cwd: workspace })
+        await sandboxFs.readText(target, undefined, policy)
         agentFsReadDenied = false
       } catch {
         agentFsReadDenied = true
@@ -1291,60 +1304,90 @@ async function checkScenarioOneShotPass(ctx: Context): Promise<ComposedCheck> {
 // S2: One-shot Flash → diagnostic PASS → holdout FAIL → qualification-failed
 // ---------------------------------------------------------------------------
 
-async function checkScenarioHoldoutFail(ctx: Context): Promise<ComposedCheck> {
+async function checkScenarioHoldoutFail(_ctx: Context, workspace: string, snapshotDir: string): Promise<ComposedCheck> {
+  // S2 tests: diagnostic PASS → holdout FAIL → qualification-failed → no repair.
+  // This requires a failing holdout verifier, which is configured at plugin
+  // mount time. We boot a fresh composed context with a failing holdout.
+  let freshCtx: Context | undefined
+  let freshUninstall: (() => void) | undefined
   try {
-    const goals = ctx.get('goals')
+    const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+    loadEnv('v019-composed-qual-s2')
+    freshUninstall = installFailLoud('v019-composed-qual-s2')
+    freshCtx = await boot('v019-composed-qual-s2', resolveConfigPath(configPath, undefined))
+
+    const repairConfig: RepairRuntimeConfig = {
+      enabled: true,
+      flashModel: FLASH_MODEL,
+      proModel: PRO_MODEL,
+      maxFlashAttempts: 3,
+      maxProAttempts: 2,
+      maxTotalAttempts: 5,
+      holdoutVerifier: createFailingHoldoutVerifier(),
+      workspaceProvenanceProvider: createProvenanceProvider(workspace),
+      rollbackProvider: createRollbackProvider(workspace, snapshotDir),
+    }
+    await freshCtx.plugin(repairRuntimePlugin, repairConfig)
+
+    const goals = freshCtx.get('goals')
     if (goals === undefined) {
-      return { id: 'S2', name: 'Scenario B: PASS→holdout FAIL→qualification-failed', status: 'fail', evidence: 'goals service not available' }
+      return { id: 'S2', name: 'Scenario B: diagnostic PASS→holdout FAIL→qualification-failed (composed)', status: 'fail', evidence: 'goals service not available' }
     }
 
-    // Boot a fresh context with a failing holdout verifier
-    // We can't reuse the main ctx because its holdout verifier is configured
-    // at plugin mount time. Instead, we test this through the helper-level
-    // check (C7) which already validates this path. Here we verify that the
-    // plugin correctly calls block() when the holdout fails.
-    //
-    // Since we can't reconfigure the holdout verifier on the live context,
-    // we verify the block path by registering a failing verifier.
-    const agent = getRootAgent(ctx)
+    const agent = getRootAgent(freshCtx)
+    // Register a PASSING diagnostic verifier so the diagnostic passes.
     const verifier: GoalCompletionVerifier = {
-      name: 's2-failing-diagnostic',
+      name: 's2-passing-diagnostic',
       version: '1',
-      verify: () => ({ name: 's2-failing-diagnostic', role: 'acceptance', passed: false, reason: 'diagnostic failed', evidence: [] }),
+      verify: () => ({ name: 's2-passing-diagnostic', role: 'acceptance', passed: true, reason: '', evidence: [] }),
     }
     const disposeVerifier = goals.registerAcceptanceVerifier(verifier)
 
     try {
       setupAgentTurn(agent, 1, FLASH_MODEL, 'rd-s2-1')
+      appendUsage(agent.session, 1, FLASH_MODEL, 50, 'rd-s2-1')
       goals.create(agent, { objective: 'S2: holdout fail' })
       const goal = goals.get(agent)
       if (goal === undefined) {
-        return { id: 'S2', name: 'Scenario B: diagnostic FAIL→repair evidence+decision (composed)', status: 'fail', evidence: 'goal not found after create' }
+        return { id: 'S2', name: 'Scenario B: diagnostic PASS→holdout FAIL→qualification-failed (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
+      await waitForEvent(agent.session, 'repair/completed')
 
-      // The plugin handler fires synchronously for FAIL
+      const completedEvents = findEvents(agent.session.events, 'repair/completed')
       const evidenceEvents = findEvents(agent.session.events, 'repair/evidence')
       const decisionEvents = findEvents(agent.session.events, 'repair/decision')
       const postGoal = goals.get(agent)
 
-      // With a failing verifier, goal/verification FAIL triggers repair.
-      // The repair controller may decide flash-repair (queuing a followup)
-      // or stop. Either way, repair/evidence and repair/decision should fire.
-      const passed = evidenceEvents.length > 0 && decisionEvents.length > 0
-      const evidence = `repair/evidence=${evidenceEvents.length}, repair/decision=${decisionEvents.length}, goalPhase=${postGoal?.phase ?? 'undefined'}`
+      // Diagnostic PASS + holdout FAIL → qualification-failed, no repair.
+      // The goal should be blocked, not completed. No repair/evidence or
+      // repair/decision should fire because this is a qualification failure,
+      // not a model capability failure.
+      const completedData = completedEvents.length > 0 && completedEvents[0] !== undefined ? eventData(completedEvents[0]) : undefined
+      const outcome = typeof completedData?.outcome === 'string' ? completedData.outcome : undefined
+      const passed = outcome === 'qualification-failed'
+        && evidenceEvents.length === 0
+        && decisionEvents.length === 0
+        && postGoal?.phase === 'blocked'
 
       return {
         id: 'S2',
-        name: 'Scenario B: diagnostic FAIL→repair evidence+decision (composed)',
+        name: 'Scenario B: diagnostic PASS→holdout FAIL→qualification-failed (composed)',
         status: passed ? 'pass' : 'fail',
-        evidence,
+        evidence: passed
+          ? 'outcome=qualification-failed, repair/evidence=0, repair/decision=0, goalPhase=blocked'
+          : `outcome=${outcome ?? 'undefined'}, repair/evidence=${evidenceEvents.length}, repair/decision=${decisionEvents.length}, goalPhase=${postGoal?.phase ?? 'undefined'}`,
       }
     } finally {
       disposeVerifier()
     }
   } catch (e) {
-    return { id: 'S2', name: 'Scenario B: diagnostic FAIL→repair evidence+decision (composed)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'S2', name: 'Scenario B: diagnostic PASS→holdout FAIL→qualification-failed (composed)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+  } finally {
+    if (freshCtx !== undefined) {
+      try { await freshCtx.fiber.dispose() } catch { /* context may already be disposed */ }
+    }
+    freshUninstall?.()
   }
 }
 
@@ -1352,11 +1395,11 @@ async function checkScenarioHoldoutFail(ctx: Context): Promise<ComposedCheck> {
 // S3: Post-verification filesystem mutation → completeVerified DENIED
 // ---------------------------------------------------------------------------
 
-async function checkScenarioPostMutationDenied(ctx: Context): Promise<ComposedCheck> {
+async function checkScenarioPostMutationDenied(ctx: Context, workspace: string): Promise<ComposedCheck> {
   try {
     const goals = ctx.get('goals')
     if (goals === undefined) {
-      return { id: 'S3', name: 'Scenario G: post-verification mutation→DENIED', status: 'fail', evidence: 'goals service not available' }
+      return { id: 'S3', name: 'Scenario G: post-verification mutation→DENIED (composed)', status: 'fail', evidence: 'goals service not available' }
     }
 
     const agent = getRootAgent(ctx)
@@ -1369,41 +1412,58 @@ async function checkScenarioPostMutationDenied(ctx: Context): Promise<ComposedCh
 
     try {
       setupAgentTurn(agent, 1, FLASH_MODEL, 'rd-s3-1')
+      appendUsage(agent.session, 1, FLASH_MODEL, 50, 'rd-s3-1')
       goals.create(agent, { objective: 'S3: post-mutation denied' })
       const goal = goals.get(agent)
       if (goal === undefined) {
-        return { id: 'S3', name: 'Scenario G: post-verification completeVerified DENIED (composed)', status: 'fail', evidence: 'goal not found after create' }
+        return { id: 'S3', name: 'Scenario G: post-verification mutation→DENIED (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
-      await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
 
-      // Wait for repair/completed (plugin async path)
+      // Verify with a workspace snapshot provider. The hash is computed
+      // AFTER the verifier runs, binding the verified state.
+      await goals.verifyCompletion(
+        agent,
+        { id: goal.id, revision: goal.revision },
+        () => computeWorkspaceHashForDir(workspace),
+      )
+
+      // Wait for the plugin's async pass handler to run. The plugin will
+      // compute the current workspace hash and compare it to the
+      // verification's hash. Since we haven't mutated yet, the plugin
+      // should complete the goal.
       await waitForEvent(agent.session, 'repair/completed')
 
-      // Now try to call completeVerified on a stale verification.
-      // The plugin already called completeVerified, so the goal should be
-      // complete. Calling it again should fail because the latest event is
-      // no longer goal/verification PASS.
+      // Now mutate the workspace and try to call completeVerified directly.
+      // The verification event recorded a workspace hash, but the current
+      // workspace state no longer matches. completeVerified must deny.
+      writeFileSync(join(workspace, 'src.ts'), 'export const POST_VERIFICATION_MUTATION = true\n')
+
       let denied = false
+      let deniedCode = ''
       try {
-        goals.completeVerified(agent, { id: goal.id, revision: goal.revision })
-      } catch {
+        goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, computeWorkspaceHashForDir(workspace))
+      } catch (e) {
         denied = true
+        deniedCode = (e as { code?: string }).code ?? (e as Error).message
       }
+
+      // Restore the workspace
+      writeFileSync(join(workspace, 'src.ts'), 'export const x = 1\n')
 
       const passed = denied
       return {
         id: 'S3',
-        name: 'Scenario G: post-verification completeVerified DENIED (composed)',
+        name: 'Scenario G: post-verification mutation→DENIED (composed)',
         status: passed ? 'pass' : 'fail',
         evidence: passed
-          ? 'completeVerified correctly rejected stale verification'
-          : 'completeVerified did not reject stale verification',
+          ? `completeVerified correctly rejected post-verification mutation (${deniedCode})`
+          : 'completeVerified did not reject post-verification mutation',
       }
     } finally {
       disposeVerifier()
     }
   } catch (e) {
-    return { id: 'S3', name: 'Scenario G: post-verification completeVerified DENIED (composed)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+    return { id: 'S3', name: 'Scenario G: post-verification mutation→DENIED (composed)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
   }
 }
 
@@ -1420,10 +1480,15 @@ async function checkScenarioHoldoutDenied(ctx: Context, workspace: string, holdo
 
     // Agent fs-sandbox read — should DENY
     let agentFsDenied = false
-    if (fs !== undefined) {
-      const sandboxFs = fs as unknown as { readText: (target: string, signal?: AbortSignal, policy?: unknown) => Promise<string> }
+    if (fs !== undefined && sandboxPolicy !== undefined) {
+      const policy = sandboxPolicy.resolve()
+      const sandboxFs = fs as {
+        resolve(path: string, opts?: { cwd?: string }): Promise<{ targetKey: unknown; displayPath: string }>
+        readText(target: unknown, signal?: AbortSignal, policy2?: typeof policy): Promise<string>
+      }
       try {
-        await sandboxFs.readText(holdoutFile, undefined, sandboxPolicy?.resolve())
+        const target = await sandboxFs.resolve(holdoutFile, { cwd: workspace })
+        await sandboxFs.readText(target, undefined, policy)
         agentFsDenied = false
       } catch {
         agentFsDenied = true
@@ -1497,9 +1562,13 @@ async function checkScenarioWorkspaceBoundCompletion(ctx: Context, workspace: st
         return { id: 'S5', name: 'Scenario G: workspace-bound completion DENIED on mutation (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
 
-      // Compute workspace hash at verification time and pass it
-      const wsHashBefore = computeWorkspaceHashForDir(workspace)
-      await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision }, wsHashBefore)
+      // Pass a workspace snapshot provider so the hash is computed AFTER
+      // verifiers run, binding the state that was actually tested.
+      await goals.verifyCompletion(
+        agent,
+        { id: goal.id, revision: goal.revision },
+        () => computeWorkspaceHashForDir(workspace),
+      )
 
       // Wait for the plugin to process the PASS event
       await waitForEvent(agent.session, 'repair/completed')
@@ -1529,14 +1598,37 @@ async function checkScenarioWorkspaceBoundCompletion(ctx: Context, workspace: st
 // S6: Rollback failure → no new paid model call (composed)
 // ---------------------------------------------------------------------------
 
-async function checkScenarioRollbackFailureStops(ctx: Context): Promise<ComposedCheck> {
+async function checkScenarioRollbackFailureStops(_ctx: Context, workspace: string, _snapshotDir: string): Promise<ComposedCheck> {
+  // S6 tests: Flash FAIL → rollback FAIL → terminal rollback-failed → no new paid call.
+  // This requires a failing rollback provider, which is configured at plugin
+  // mount time. We boot a fresh composed context with a failing rollback.
+  let freshCtx: Context | undefined
+  let freshUninstall: (() => void) | undefined
   try {
-    const goals = ctx.get('goals')
+    const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+    loadEnv('v019-composed-qual-s6')
+    freshUninstall = installFailLoud('v019-composed-qual-s6')
+    freshCtx = await boot('v019-composed-qual-s6', resolveConfigPath(configPath, undefined))
+
+    const repairConfig: RepairRuntimeConfig = {
+      enabled: true,
+      flashModel: FLASH_MODEL,
+      proModel: PRO_MODEL,
+      maxFlashAttempts: 3,
+      maxProAttempts: 2,
+      maxTotalAttempts: 5,
+      holdoutVerifier: createPassingHoldoutVerifier(),
+      workspaceProvenanceProvider: createProvenanceProvider(workspace),
+      rollbackProvider: createFailingRollbackProvider(),
+    }
+    await freshCtx.plugin(repairRuntimePlugin, repairConfig)
+
+    const goals = freshCtx.get('goals')
     if (goals === undefined) {
       return { id: 'S6', name: 'Scenario E: rollback failure stops repair (composed)', status: 'fail', evidence: 'goals service not available' }
     }
 
-    const agent = getRootAgent(ctx)
+    const agent = getRootAgent(freshCtx)
     const verifier: GoalCompletionVerifier = {
       name: 's6-failing-diagnostic',
       version: '1',
@@ -1546,50 +1638,53 @@ async function checkScenarioRollbackFailureStops(ctx: Context): Promise<Composed
 
     try {
       setupAgentTurn(agent, 1, FLASH_MODEL, 'rd-s6-1')
+      appendUsage(agent.session, 1, FLASH_MODEL, 50, 'rd-s6-1')
       goals.create(agent, { objective: 'S6: rollback failure stops' })
       const goal = goals.get(agent)
       if (goal === undefined) {
         return { id: 'S6', name: 'Scenario E: rollback failure stops repair (composed)', status: 'fail', evidence: 'goal not found after create' }
       }
 
-      // Count model/usage events before verification
       const usageBefore = findEvents(agent.session.events, 'model/usage').length
 
       await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
 
-      // Wait for the plugin to process the FAIL event
-      await waitForEvent(agent.session, 'repair/decision')
+      // Wait for the plugin to process the FAIL event and attempt rollback.
+      // The rollback provider fails, so the plugin should terminalize with
+      // rollback-failed and no new paid model call.
+      await waitForEvent(agent.session, 'repair/completed')
 
-      // Count model/usage events after — the repair controller may decide
-      // flash-repair or stop. If it decides flash-repair, a followup is
-      // queued but no new model/usage event should appear until the agent
-      // actually runs the followup turn. The key assertion is that the
-      // repair/decision event fired, proving the plugin handled the failure.
       const usageAfter = findEvents(agent.session.events, 'model/usage').length
-      const decisionEvents = findEvents(agent.session.events, 'repair/decision')
       const completedEvents = findEvents(agent.session.events, 'repair/completed')
       const postGoal = goals.get(agent)
 
-      // The repair controller should have made a decision. If it decided
-      // 'stop' (e.g. because limits are exhausted), repair/completed should
-      // fire with outcome != verified. If it decided 'flash-repair', a
-      // followup is queued. Either way, no new paid usage should appear
-      // synchronously from the plugin handler itself.
-      const passed = decisionEvents.length > 0 && usageAfter === usageBefore
+      const completedData = completedEvents.length > 0 && completedEvents[0] !== undefined ? eventData(completedEvents[0]) : undefined
+      const outcome = typeof completedData?.outcome === 'string' ? completedData.outcome : undefined
+
+      // Rollback failure must terminalize with rollback-failed outcome,
+      // block the goal, and produce no new paid usage.
+      const passed = outcome === 'rollback-failed'
+        && usageAfter === usageBefore
+        && postGoal?.phase === 'blocked'
 
       return {
         id: 'S6',
         name: 'Scenario E: rollback failure stops repair (composed)',
         status: passed ? 'pass' : 'fail',
         evidence: passed
-          ? `repair/decision=${decisionEvents.length}, no new paid usage (before=${usageBefore}, after=${usageAfter}), completed=${completedEvents.length}, goalPhase=${postGoal?.phase ?? 'undefined'}`
-          : `repair/decision=${decisionEvents.length}, usageBefore=${usageBefore}, usageAfter=${usageAfter}, goalPhase=${postGoal?.phase ?? 'undefined'}`,
+          ? `outcome=rollback-failed, no new paid usage (before=${usageBefore}, after=${usageAfter}), goalPhase=blocked`
+          : `outcome=${outcome ?? 'undefined'}, usageBefore=${usageBefore}, usageAfter=${usageAfter}, goalPhase=${postGoal?.phase ?? 'undefined'}`,
       }
     } finally {
       disposeVerifier()
     }
   } catch (e) {
     return { id: 'S6', name: 'Scenario E: rollback failure stops repair (composed)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+  } finally {
+    if (freshCtx !== undefined) {
+      try { await freshCtx.fiber.dispose() } catch { /* context may already be disposed */ }
+    }
+    freshUninstall?.()
   }
 }
 
@@ -1679,6 +1774,136 @@ async function checkScenarioAuthorityAmbiguity(ctx: Context): Promise<ComposedCh
 }
 
 // ---------------------------------------------------------------------------
+// S8: Two Flash failures → real Pro routing → Pro PASS (composed)
+// ---------------------------------------------------------------------------
+
+async function checkScenarioProEscalation(_ctx: Context, workspace: string, snapshotDir: string): Promise<ComposedCheck> {
+  // S8 tests: two Flash failures → repair controller decides pro-escalate →
+  // real Pro routing decision emitted → Pro model attempt → diagnostic PASS.
+  // This boots a fresh context so we can control the diagnostic verifier
+  // to fail twice then pass, and verify that a real model/escalation event
+  // with a new routing decision ID is emitted.
+  let freshCtx: Context | undefined
+  let freshUninstall: (() => void) | undefined
+  let failCount = 0
+  try {
+    const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+    loadEnv('v019-composed-qual-s8')
+    freshUninstall = installFailLoud('v019-composed-qual-s8')
+    freshCtx = await boot('v019-composed-qual-s8', resolveConfigPath(configPath, undefined))
+
+    const repairConfig: RepairRuntimeConfig = {
+      enabled: true,
+      flashModel: FLASH_MODEL,
+      proModel: PRO_MODEL,
+      maxFlashAttempts: 3,
+      maxProAttempts: 2,
+      maxTotalAttempts: 5,
+      holdoutVerifier: createPassingHoldoutVerifier(),
+      workspaceProvenanceProvider: createProvenanceProvider(workspace),
+      rollbackProvider: createRollbackProvider(workspace, snapshotDir),
+    }
+    await freshCtx.plugin(repairRuntimePlugin, repairConfig)
+
+    const goals = freshCtx.get('goals')
+    if (goals === undefined) {
+      return { id: 'S8', name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)', status: 'fail', evidence: 'goals service not available' }
+    }
+
+    const agent = getRootAgent(freshCtx)
+    // Diagnostic verifier that fails the first two calls, then passes.
+    const verifier: GoalCompletionVerifier = {
+      name: 's8-escalation-diagnostic',
+      version: '1',
+      verify: () => {
+        failCount += 1
+        return {
+          name: 's8-escalation-diagnostic',
+          role: 'acceptance',
+          passed: failCount > 2,
+          reason: failCount > 2 ? '' : 'diagnostic failed',
+          evidence: [],
+        }
+      },
+    }
+    const disposeVerifier = goals.registerAcceptanceVerifier(verifier)
+
+    try {
+      // Turn 1: Flash attempt, diagnostic FAIL
+      setupAgentTurn(agent, 1, FLASH_MODEL, 'rd-s8-1')
+      appendUsage(agent.session, 1, FLASH_MODEL, 50, 'rd-s8-1')
+      goals.create(agent, { objective: 'S8: Pro escalation' })
+      let goal = goals.get(agent)
+      if (goal === undefined) {
+        return { id: 'S8', name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)', status: 'fail', evidence: 'goal not found after create' }
+      }
+      await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
+      await waitForEvent(agent.session, 'repair/decision')
+
+      // Turn 2: Flash repair attempt, diagnostic FAIL again
+      setupAgentTurn(agent, 2, FLASH_MODEL, 'rd-s8-2')
+      appendUsage(agent.session, 2, FLASH_MODEL, 50, 'rd-s8-2')
+      goal = goals.get(agent)
+      if (goal === undefined || goal.phase !== 'active') {
+        return { id: 'S8', name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)', status: 'fail', evidence: `goal not active after first repair (phase=${goal?.phase ?? 'undefined'})` }
+      }
+      await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
+      await waitForEvent(agent.session, 'repair/decision')
+
+      // After two Flash failures, the repair controller should decide
+      // pro-escalate. Check for the escalation event and decision.
+      const decisions = findEvents(agent.session.events, 'repair/decision')
+      const escalations = findEvents(agent.session.events, 'model/escalation')
+      const proEscalateDecision = decisions.some((d) => {
+        const data = eventData(d)
+        return data.action === 'pro-escalate'
+      })
+
+      // Turn 3: Pro attempt, diagnostic PASS
+      if (proEscalateDecision) {
+        setupAgentTurn(agent, 3, PRO_MODEL, 'rd-s8-pro')
+        appendUsage(agent.session, 3, PRO_MODEL, 100, 'rd-s8-pro')
+        goal = goals.get(agent)
+        if (goal !== undefined && goal.phase === 'active') {
+          await goals.verifyCompletion(agent, { id: goal.id, revision: goal.revision })
+          await waitForEvent(agent.session, 'repair/completed')
+        }
+      }
+
+      const postGoal = goals.get(agent)
+      const completedEvents = findEvents(agent.session.events, 'repair/completed')
+      const completedData = completedEvents.length > 0
+        ? eventData(completedEvents[completedEvents.length - 1] as SessionEvent)
+        : undefined
+      const finalOutcome = typeof completedData?.outcome === 'string' ? completedData.outcome : undefined
+
+      const passed = proEscalateDecision
+        && escalations.length > 0
+        && finalOutcome === 'verified'
+        && postGoal?.phase === 'complete'
+
+      return {
+        id: 'S8',
+        name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)',
+        status: passed ? 'pass' : 'fail',
+        evidence: passed
+          ? `pro-escalate decision emitted, model/escalation=${escalations.length}, outcome=verified, goalPhase=complete`
+          : `proEscalateDecision=${proEscalateDecision}, escalations=${escalations.length}, outcome=${finalOutcome ?? 'undefined'}, goalPhase=${postGoal?.phase ?? 'undefined'}`,
+      }
+    } finally {
+      disposeVerifier()
+    }
+  } catch (e) {
+    return { id: 'S8', name: 'Scenario D: two Flash FAIL→Pro escalation→Pro PASS (composed)', status: 'fail', evidence: `check error: ${(e as Error).message}` }
+  } finally {
+    if (freshCtx !== undefined) {
+      try { await freshCtx.fiber.dispose() } catch { /* context may already be disposed */ }
+    }
+    freshUninstall?.()
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main qualification runner
 // ---------------------------------------------------------------------------
 
@@ -1762,12 +1987,13 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
 
       // S1-S7: Composed-runtime scenario checks through the real plugin
       checks.push(await checkScenarioOneShotPass(ctx))
-      checks.push(await checkScenarioHoldoutFail(ctx))
-      checks.push(await checkScenarioPostMutationDenied(ctx))
+      checks.push(await checkScenarioHoldoutFail(ctx, workspace, snapshotDir))
+      checks.push(await checkScenarioPostMutationDenied(ctx, workspace))
       checks.push(await checkScenarioHoldoutDenied(ctx, workspace, holdoutDir))
       checks.push(await checkScenarioWorkspaceBoundCompletion(ctx, workspace))
-      checks.push(await checkScenarioRollbackFailureStops(ctx))
+      checks.push(await checkScenarioRollbackFailureStops(ctx, workspace, snapshotDir))
       checks.push(await checkScenarioAuthorityAmbiguity(ctx))
+      checks.push(await checkScenarioProEscalation(ctx, workspace, snapshotDir))
     } finally {
       // Dispose the composed context so event handlers, plugins, and
       // service fibers do not leak into the Batch A process. The
@@ -1793,6 +2019,24 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
 }
 
 /** Build the qualification record from checks. */
+/** Compute the current environment identity for qualification binding. */
+function currentEnvironmentIdentity(): { platform: string; arch: string; nodeVersion: string; runner: string } {
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.version,
+    runner: 'sandbox-local',
+  }
+}
+
+/** Check whether a persisted record's environment matches the current environment. */
+export function environmentMatches(record: ComposedQualificationRecord): boolean {
+  const current = currentEnvironmentIdentity()
+  return record.environment.platform === current.platform
+    && record.environment.arch === current.arch
+    && record.environment.nodeVersion === current.nodeVersion
+}
+
 function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): ComposedQualificationRecord {
   const passedCount = checks.filter(c => c.status === 'pass').length
   const failedCount = checks.filter(c => c.status === 'fail').length
@@ -1830,6 +2074,7 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
       rollbackRequired: true,
       provenanceRequired: true,
     },
+    environment: currentEnvironmentIdentity(),
     ready: passed,
   }
 }

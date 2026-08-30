@@ -41,7 +41,7 @@ import {
 } from './v019-failure-taxonomy.ts'
 import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
 import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID, readFreezeRecord, writeFreezeRecord } from './v019-freeze-secure-eval.ts'
-import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord, readComposedQualificationRecord, getSourceCommit } from './v019-composed-runtime-qualification.ts'
+import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord, readComposedQualificationRecord, getSourceCommit, environmentMatches } from './v019-composed-runtime-qualification.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
@@ -149,14 +149,32 @@ async function main(): Promise<void> {
   // expected services, and pass every runtime check before any paid
   // execution begins.
   const persistedComposed = readComposedQualificationRecord()
-  if (persistedComposed !== undefined && persistedComposed.sourceCommit === getSourceCommit()) {
-    // Persisted artifact matches current source — validate it
+  if (persistedComposed !== undefined
+    && persistedComposed.sourceCommit === getSourceCommit()
+    && environmentMatches(persistedComposed)) {
+    // Persisted artifact matches current source AND environment — validate it
     if (!persistedComposed.ready) {
       process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED (persisted): ${COMPOSED_QUALIFICATION_ID}\n`)
       process.stderr.write('Cannot proceed to live evaluation. Re-qualify.\n')
       process.exit(1)
     }
     process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (persisted, ${persistedComposed.passedCount} checks passed)\n`)
+  } else if (persistedComposed !== undefined && !environmentMatches(persistedComposed)) {
+    // Source matches but environment differs — must re-qualify
+    process.stderr.write(`Composed runtime qualification: environment mismatch (persisted on ${persistedComposed.environment.platform}/${persistedComposed.environment.nodeVersion}, current ${process.platform}/${process.version}). Re-qualifying.\n`)
+    const composedRecord = await runComposedRuntimeQualification()
+    if (!composedRecord.ready) {
+      process.stderr.write(`\nCOMPOSED RUNTIME QUALIFICATION FAILED: ${COMPOSED_QUALIFICATION_ID}\n`)
+      for (const check of composedRecord.checks) {
+        if (check.status === 'fail') {
+          process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+        }
+      }
+      process.stderr.write('Cannot proceed to live evaluation. Fix the composed runtime qualification first.\n')
+      process.exit(1)
+    }
+    writeComposedQualificationRecord(composedRecord)
+    process.stderr.write(`Composed runtime qualification: ${COMPOSED_QUALIFICATION_ID} (${composedRecord.passedCount} checks passed, persisted)\n`)
   } else {
     // No persisted artifact or source mismatch — run qualification and persist
     const composedRecord = await runComposedRuntimeQualification()

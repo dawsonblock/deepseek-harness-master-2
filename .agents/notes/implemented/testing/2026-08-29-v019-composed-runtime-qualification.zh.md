@@ -65,6 +65,19 @@ Batch A 运行器（`scripts/run-v019-batch-a-evaluation.ts`）在验证器完�
 - 失败分类优先级已修正：F8（修复证据不足——相同指纹重复）在 F1/F17（模型推理/跨文件一致性）之前检查，因为重复的指纹比"做了修改但仍然失败"更具信息量。`v019-failure-taxonomy.spec.ts` 中的确定性夹具验证每个分类路径和优先级排序。
 - 当付费请求缺少规范使用证据时，轨迹收集器失败关闭：如果存在 `repair/evidence` 事件但未找到 `model/usage` 事件，收集器抛出 `MISSING_USAGE_EVIDENCE` 而非静默生成零成本尝试。
 - 验证器控制的任务文件（package.json、tsconfig.json、vitest 配置）在模型执行前被哈希。诊断验证器在每次验证调用时重新哈希这些文件，如果模型篡改了它们则拒绝任务，防止模型在最终验证前更改测试配置或模块解析。
+- 工作区验证哈希已统一：验证和完成时使用相同的完整工作区 SHA-256 算法。来源提供程序现在计算 `computeWorkspaceHash(workspace)` 而非仅哈希更改的文件，后者之前产生与验证时哈希不同的摘要，导致 `completeVerified()` 拒绝每次合法完成。
+- `verifyCompletion()` 现在接受 `workspaceSnapshotProvider` 函数而非预计算哈希。哈希在所有验证器运行后计算，因此绑定实际测试的工作区状态。诊断命令（测试运行器、类型检查器）可能在执行期间创建或修改文件；验证前哈希不会反映已验证状态。
+- `completeVerified()` 现在在验证事件携带工作区哈希时要求提供当前工作区哈希。缺少当前哈希将拒绝完成，而非静默绕过工作区绑定。
+- `completeVerified()` 抛出的 `GOAL_WORKSPACE_MUTATED` 现在在 RepairRuntime 插件的通过处理程序中被捕获，并显式终态化为 `workspace-provenance-failed` 结果，附带 `repair/completed` 和目标阻塞，而非作为未处理的 Promise 拒绝逃逸。
+- 回滚现在通过将 `node_modules`、`sessions`、`.git` 和 `dist` 目录移动到临时位置，然后从基础提交恢复源代码，再将它们移回来保留这些目录。之前的实现删除整个工作区并从 git archive 重新提取，破坏了已安装的依赖项和线束状态，可能导致第二次修复尝试因基础设施原因失败而被误分类为模型失败。
+- Batch A 轨迹收集器现在通过 `finally` 块中的 `ctx.fiber.dispose()` 在每个任务后处置其 Cordis 上下文 fiber，防止事件处理程序、插件效果和会话基础设施泄漏到同一进程中的后续任务。
+- C5 和 S4（保留秘密检查）现在在 `fs.readText()` 之前调用 `fs.resolve()`，与 C2 模式匹配。之前的实现将原始路径字符串传递给 `readText()`，可能仅因参数形状无效而抛出异常，产生沙箱正确拒绝保留访问的假阳性。
+- 组合后端资格认证现在绑定环境。资格记录包含 `environment: { platform, arch, nodeVersion, runner }`。持久化记录仅在源提交和环境都匹配时才重用。仅源匹配检查可能在从有 bwrap 的机器回退到 Landlock 的机器上重用资格，使后端资格失效。
+- C3 网络测试现在使用 `127.0.0.1` 上的确定性线束拥有的本地 TCP 监听器，而非公共互联网 DNS/HTTP/git 测试。沙箱子进程尝试连接到本地监听器；网络隔离沙箱（bwrap `--unshare-net`、Seatbelt `deny network*`）拒绝连接。这是确定性的，不依赖外部互联网可用性、DNS 或代理状态。
+- S2 现在通过启动带有失败保留验证器的新组合上下文来测试诊断 PASS → 保留 FAIL → 资格失败，而非测试诊断 FAIL → 修复证据（这是不同的场景）。目标必须以 `qualification-failed` 结果被阻塞，且无修复证据或决策事件。
+- S3 现在在验证和完成之间真正修改工作区，在验证后写入 `src.ts`，然后使用当前（不匹配的）哈希调用 `completeVerified()`。之前的实现测试幂等性（两次调用 `completeVerified`），而非验证后修改拒绝。
+- S6 现在启动带有失败回滚提供程序的新组合上下文，以测试回滚失败 → 终态 `rollback-failed` → 无新付费调用。之前的实现使用主上下文的成功回滚提供程序，仅检查 `repair/decision` 是否触发。
+- S8（新增）通过启动带有诊断验证器（失败两次后通过）的新组合上下文来测试两次 Flash 失败 → 真实 Pro 路由 → Pro PASS，验证发出 `pro-escalate` 动作的 `repair/decision`、发生 `model/escalation`，且目标在 Pro 尝试后完成。
 
 ## Alternatives considered
 

@@ -71,10 +71,10 @@ describe('v019 composed runtime qualification', () => {
     expect(source).toContain('shell.run')
   })
 
-  it('tests network denial through DNS, HTTP, and git ls-remote', () => {
-    expect(source).toContain('nslookup')
-    expect(source).toContain('curl')
-    expect(source).toContain('git ls-remote')
+  it('tests network denial through a deterministic local TCP listener', () => {
+    expect(source).toContain('createTcpServer')
+    expect(source).toContain('127.0.0.1')
+    expect(source).toContain('networkDenied')
   })
 
   it('verifies model workspace has no Git history', () => {
@@ -140,6 +140,7 @@ describe('v019 composed runtime qualification', () => {
     expect(source).toContain('checkScenarioWorkspaceBoundCompletion')
     expect(source).toContain('checkScenarioRollbackFailureStops')
     expect(source).toContain('checkScenarioAuthorityAmbiguity')
+    expect(source).toContain('checkScenarioProEscalation')
     expect(source).toContain('verifyCompletion')
     expect(source).toContain('registerAcceptanceVerifier')
     expect(source).toContain('goals.create')
@@ -193,6 +194,7 @@ describe('v019 composed runtime qualification', () => {
       filesystem: { modelReadFence: true, modelWriteFence: true },
       holdout: { modelReadable: false },
       repair: { productionRuntime: true, rollbackRequired: true, provenanceRequired: true },
+      environment: { platform: 'test', arch: 'x64', nodeVersion: 'v22.0.0', runner: 'test' },
       ready: true,
     }
     expect(record.qualificationId).toBe(COMPOSED_QUALIFICATION_ID)

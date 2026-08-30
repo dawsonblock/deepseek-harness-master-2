@@ -1518,7 +1518,33 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
                 return
               }
             }
-            ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, currentWorkspaceHash)
+            try {
+              ctx.goals.completeVerified(agent, { id: goal.id, revision: goal.revision }, currentWorkspaceHash)
+            } catch (completionError: unknown) {
+              // GOAL_WORKSPACE_MUTATED or other completion failure must
+              // terminalize explicitly rather than escaping as an
+              // unhandled promise rejection.
+              ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+                code: 'workspace-provenance-failed',
+                message: completionError instanceof Error ? completionError.message : String(completionError),
+              })
+              session.append('repair/completed', {
+                repairId: passState.repairId,
+                turn,
+                step: 0,
+                finalRoutingDecisionId: routingDecisionId,
+                verified: false,
+                totalAttempts: passState.attempts.length,
+                flashAttempts: passState.flashAttempts,
+                proAttempts: passState.proAttempts,
+                totalCostUsd: passState.totalCostUsd,
+                elapsedMs: Date.now() - passState.startedAt,
+                outcome: 'workspace-provenance-failed',
+              }, { ignorable: true })
+              releaseToAuto(session, 'system')
+              repairStates.delete(key)
+              return
+            }
           } else {
             ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
               code: 'qualification-failed',
@@ -1544,6 +1570,29 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           }, { ignorable: true })
 
           // Release the model selection back to automatic routing.
+          releaseToAuto(session, 'system')
+          repairStates.delete(key)
+        }).catch((handlerError: unknown) => {
+          // Catch any unhandled errors from the pass handler chain so they
+          // do not escape as unhandled promise rejections.
+          ctx.logger.error(`repair-runtime: verification pass handler error: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`)
+          ctx.goals.block(agent, { id: goal.id, revision: goal.revision }, {
+            code: 'workspace-provenance-failed',
+            message: handlerError instanceof Error ? handlerError.message : String(handlerError),
+          })
+          session.append('repair/completed', {
+            repairId: passState.repairId,
+            turn,
+            step: 0,
+            finalRoutingDecisionId: routingDecisionId,
+            verified: false,
+            totalAttempts: passState.attempts.length,
+            flashAttempts: passState.flashAttempts,
+            proAttempts: passState.proAttempts,
+            totalCostUsd: passState.totalCostUsd,
+            elapsedMs: Date.now() - passState.startedAt,
+            outcome: 'workspace-provenance-failed',
+          }, { ignorable: true })
           releaseToAuto(session, 'system')
           repairStates.delete(key)
         })

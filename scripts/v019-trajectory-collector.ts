@@ -15,7 +15,7 @@
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -256,10 +256,13 @@ export async function runTaskTrajectory(
         const currentGoal = goalsService.get(agent)
         if (currentGoal === undefined || currentGoal.phase !== 'active') break
 
-        // Compute a workspace hash at verification time so completeVerified()
-        // can detect post-verification filesystem mutation.
-        const workspaceHash = computeWorkspaceHash(workspace)
-        await goalsService.verifyCompletion(agent, { id: currentGoal.id, revision: currentGoal.revision }, workspaceHash)
+        // Pass a workspace snapshot provider so the hash is computed AFTER
+        // verifiers run, binding the state that was actually tested.
+        await goalsService.verifyCompletion(
+          agent,
+          { id: currentGoal.id, revision: currentGoal.revision },
+          () => computeWorkspaceHash(workspace),
+        )
         await agent.whenIdle()
 
         // Check if the repair-runtime plugin completed or blocked the goal.
@@ -272,6 +275,12 @@ export async function runTaskTrajectory(
 
     await ctx.sessions.flush(agent.session)
   } finally {
+    // Dispose the Cordis context fiber so event handlers, plugin effects,
+    // services, and session infrastructure are cleaned up before the next
+    // task boots a fresh context in the same process.
+    if (ctx !== undefined) {
+      try { await ctx.fiber.dispose() } catch { /* context may already be disposed */ }
+    }
     uninstallFailLoud?.()
   }
 
@@ -550,22 +559,18 @@ function createHoldoutVerifier(workspace: string, manifest: TaskManifest): repai
   }
 }
 
-/** Create a workspace provenance provider that computes a SHA-256 hash of changed files. */
+/**
+ * Create a workspace provenance provider that computes the same full-workspace
+ * SHA-256 hash used at verification time. This is critical: the completion-time
+ * hash must use the same algorithm as the verification-time hash, otherwise
+ * completeVerified() will reject every legitimate completion.
+ *
+ * The changed-files context is accepted but not used for hashing — the
+ * full-workspace snapshot is the authoritative binding. Changed-files
+ * provenance remains available for repair evidence via a separate field.
+ */
 function createProvenanceProvider(workspace: string): repairRuntimePlugin.WorkspaceProvenanceProvider {
-  return (context) => {
-    const files = context.changedFiles as readonly string[]
-    if (files.length === 0) return 'empty'
-    const hash = createHash('sha256')
-    for (const file of files) {
-      try {
-        const content = readFileSync(join(workspace, file))
-        hash.update(file).update(':').update(content).update('\n')
-      } catch {
-        hash.update(file).update(':missing\n')
-      }
-    }
-    return hash.digest('hex')
-  }
+  return () => computeWorkspaceHash(workspace)
 }
 
 /**
@@ -574,17 +579,48 @@ function createProvenanceProvider(workspace: string): repairRuntimePlugin.Worksp
  * `git archive` re-extraction from the cached clone. Falls back to
  * `git checkout` for legacy worktree-based workspaces.
  */
+/**
+ * Directories that are harness-owned or installed after checkout. Rollback
+ * must preserve these so the runtime environment survives repair attempts.
+ */
+const PRESERVE_DIRS = new Set(['node_modules', 'sessions', '.git', 'dist'])
+
 function createRollbackProvider(workspace: string, checkout?: RepoCheckout): repairRuntimePlugin.RollbackProvider {
   return () => {
     try {
       if (checkout !== undefined) {
-        // Synchronous restore: clear workspace and re-extract from clone.
-        rmSync(checkout.workspace, { recursive: true, force: true })
-        mkdirSync(checkout.workspace, { recursive: true })
+        // Restore only model-controlled source files, preserving installed
+        // dependencies and harness state. The previous implementation deleted
+        // the entire workspace and re-extracted from git archive, which
+        // destroyed node_modules, sessions, and generated configuration.
+        // Instead, snapshot the preserve directories, restore source from
+        // the archive, then restore the preserved directories.
+        const preserved: { name: string; path: string }[] = []
+        for (const name of PRESERVE_DIRS) {
+          const dirPath = join(workspace, name)
+          if (existsSync(dirPath)) {
+            preserved.push({ name, path: dirPath })
+          }
+        }
+        // Move preserved dirs to a temp location.
+        const tempBase = `${workspace}.rollback-preserve`
+        try { rmSync(tempBase, { recursive: true, force: true }) } catch { /* ignore */ }
+        mkdirSync(tempBase, { recursive: true })
+        for (const { name, path } of preserved) {
+          execSync(`mv "${path}" "${join(tempBase, name)}"`, { stdio: 'pipe', timeout: 30000 })
+        }
+        // Clear workspace and re-extract source from the base commit.
+        rmSync(workspace, { recursive: true, force: true })
+        mkdirSync(workspace, { recursive: true })
         execSync(
-          `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -x -C "${checkout.workspace}"`,
+          `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -x -C "${workspace}"`,
           { stdio: 'pipe', timeout: 60000 },
         )
+        // Restore preserved dirs.
+        for (const { name } of preserved) {
+          execSync(`mv "${join(tempBase, name)}" "${join(workspace, name)}"`, { stdio: 'pipe', timeout: 30000 })
+        }
+        try { rmSync(tempBase, { recursive: true, force: true }) } catch { /* ignore */ }
       } else {
         execSync('git checkout -- .', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })
         execSync('git clean -fd', { cwd: workspace, encoding: 'utf8', timeout: 30000, stdio: 'pipe' })

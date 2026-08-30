@@ -499,13 +499,24 @@ export class GoalService extends TypertRemoteService {
    * Evaluate every registered verifier against one exact current goal revision.
    * No verifier means fail-closed; verifier exceptions become failed checks.
    * The report is appended durably but never enters model-visible history.
+   *
+   * When `workspaceSnapshotProvider` is supplied, it is called AFTER all
+   * verifiers have run, so the hash binds the workspace state that was
+   * actually tested — not a pre-verification snapshot that diagnostic
+   * commands may have mutated.
+   *
    * @param agent - owning live agent.
    * @param ref - expected current goal revision.
-   * @param workspaceHash - optional content hash of the workspace at verification time; bound to the
+   * @param workspaceSnapshotProvider - optional function that computes a
+   *   content hash of the workspace after verifiers execute; bound to the
    *   verification event and checked by completeVerified().
    * @returns the verification report.
    */
-  async verifyCompletion(agent: Agent, ref: GoalRef, workspaceHash?: string): Promise<GoalVerificationReport> {
+  async verifyCompletion(
+    agent: Agent,
+    ref: GoalRef,
+    workspaceSnapshotProvider?: () => string,
+  ): Promise<GoalVerificationReport> {
     this.assertLive(agent)
     const current = this.get(agent)
     if (current === undefined) throw new GoalError('no current goal', 'GOAL_NOT_FOUND')
@@ -560,6 +571,12 @@ export class GoalService extends TypertRemoteService {
         }
       }
     }
+    // Compute the workspace hash AFTER verifiers have run, so it binds
+    // the state that was actually tested. Diagnostic commands (test
+    // runners, type checkers) may create or mutate files during execution;
+    // a pre-verification hash would not reflect the verified state.
+    const workspaceHash = workspaceSnapshotProvider !== undefined ? workspaceSnapshotProvider() : undefined
+
     const report: GoalVerificationMeta = {
       kind: 'goal/verification',
       version: 2,
@@ -616,8 +633,16 @@ export class GoalService extends TypertRemoteService {
     }
     // Workspace-bound completion: if the verification event recorded a
     // workspace hash, the caller must supply a matching current hash.
+    // A missing current hash when the verification carries one must deny
+    // completion — the workspace state cannot be verified without it.
     const verificationWorkspaceHash = (latest.data as { workspaceHash?: string }).workspaceHash
-    if (verificationWorkspaceHash !== undefined && currentWorkspaceHash !== undefined) {
+    if (verificationWorkspaceHash !== undefined) {
+      if (currentWorkspaceHash === undefined) {
+        throw new GoalError(
+          `goal "${ref.id}" revision ${ref.revision} requires a current workspace hash because the verification event recorded one, but none was supplied`,
+          'GOAL_WORKSPACE_MUTATED',
+        )
+      }
       if (verificationWorkspaceHash !== currentWorkspaceHash) {
         throw new GoalError(
           `goal "${ref.id}" revision ${ref.revision} workspace hash mismatch: verification recorded ${verificationWorkspaceHash.slice(0, 12)}... but current is ${currentWorkspaceHash.slice(0, 12)}...`,
