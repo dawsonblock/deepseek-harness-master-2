@@ -236,7 +236,7 @@ describe('serializeRequest', () => {
   it('always streams with usage and maps the basics', () => {
     const wire = serializeRequest(request({ messages: history }))
     expect(wire).toEqual({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: 'hi' }],
       stream: true,
       stream_options: { include_usage: true },

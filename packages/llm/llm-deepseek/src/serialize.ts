@@ -24,21 +24,6 @@ export interface RequestDefaults {
   reasoningEffort?: 'off' | 'low' | 'high' | 'max' | undefined
 }
 
-/**
- * Map harness catalog model IDs to DeepSeek API wire model names.
- * The harness uses `deepseek-v4-flash` and `deepseek-v4-pro` as internal
- * catalog IDs; the API accepts `deepseek-chat` (non-thinking) and
- * `deepseek-reasoner` (thinking). Unknown model IDs pass through unchanged
- * so custom deployments and future model names are not broken.
- * @param model - the harness catalog model ID.
- * @returns the wire model name accepted by the DeepSeek API.
- */
-function wireModelName(model: string): string {
-  if (model === 'deepseek-v4-flash') return 'deepseek-chat'
-  if (model === 'deepseek-v4-pro') return 'deepseek-reasoner'
-  return model
-}
-
 interface ResolvedThinking {
   thinking?: 'enabled' | 'disabled'
   reasoningEffort?: 'low' | 'high' | 'max'
@@ -366,7 +351,7 @@ function requestWithMessages(
   }))
   const resolvedThinking = resolveThinking(options, defaults)
   return {
-    model: wireModelName(options.model),
+    model: options.model,
     messages,
     stream: true,
     stream_options: { include_usage: true },

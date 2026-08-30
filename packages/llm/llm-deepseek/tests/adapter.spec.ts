@@ -168,7 +168,7 @@ describe('DeepSeekAdapter against a mock server', () => {
 
     // The wire request carried the auth header contents we configured.
     expect(server.requests[0]).toMatchObject({
-      model: 'deepseek-chat',
+      model: 'deepseek-v4-flash',
       max_tokens: 256_000,
       reasoning_effort: 'high',
       stream: true,

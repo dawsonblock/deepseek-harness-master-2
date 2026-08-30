@@ -88,8 +88,8 @@ export function buildExperimentManifest(params: {
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
   const experimentId = params.benchmarkEligible ? EXPERIMENT_ID : B0_EXPERIMENT_ID
   const modelRoutes = [
-    { alias: 'flash', provider: 'deepseek', model: 'deepseek-v4-flash' },
-    { alias: 'pro', provider: 'deepseek', model: 'deepseek-v4-pro' },
+    { alias: 'flash', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    { alias: 'pro', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
   ]
   const frozenRepairLimits = {
     maxFlashAttempts: 3,

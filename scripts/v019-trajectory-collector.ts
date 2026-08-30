@@ -159,7 +159,7 @@ export async function runTaskTrajectory(
   // They are extracted from the verifier-only clone and used solely for
   // post-hoc intersection analysis (referenceFixFilesInspected/Modified).
   // The model sees only manifest.task.description and repair evidence.
-  const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
+  const flashModel: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
 
   const wallClockStart = Date.now()
   const allEvents: SessionEvent[] = []
@@ -859,8 +859,8 @@ export function createRepairRuntimeConfig(
   baseline?: BaselineSnapshot,
   repairStrategy: 'transactional' | 'iterative' = 'transactional',
 ): RepairRuntimeConfig {
-  const flashModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-flash' }
-  const proModel: ModelRef = { provider: 'deepseek', model: 'deepseek-v4-pro' }
+  const flashModel: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  const proModel: ModelRef = { provider: 'deepseek-official', model: 'deepseek-v4-pro' }
   return {
     enabled: true,
     flashModel: { provider: flashModel.provider, model: flashModel.model },
@@ -1185,11 +1185,12 @@ function buildTrajectoryFromEvents(
     referenceFixFilesInspected,
     referenceFixFilesModified,
     rollbackUsed: allEvents.some(e => e.type === 'repair/rollback'),
-    aborted: outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed',
+    aborted: outcome === 'authority-undecidable' || outcome === 'model-unavailable' || outcome === 'rollback-failed' || outcome === 'repair-handler-error',
     abortReason: outcome === 'authority-undecidable' ? 'authority-undecidable'
       : outcome === 'model-unavailable' ? 'model-unavailable'
         : outcome === 'rollback-failed' ? 'rollback-failed'
-          : undefined,
+          : outcome === 'repair-handler-error' ? 'repair-handler-error'
+            : undefined,
     terminalOutcome,
     failureCategory: undefined,
     timestamp: new Date().toISOString(),
