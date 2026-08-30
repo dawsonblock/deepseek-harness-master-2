@@ -69,12 +69,15 @@ export function restoreBaseline(workspace: string, snapshot: BaselineSnapshot): 
 
 /**
  * Compute a SHA-256 hash of workspace source files, excluding node_modules,
- * .git, and dist. Used to verify baseline restoration is exact.
+ * .git, and dist. The canonical workspace hash used for verification,
+ * completion authorization, baseline freeze/restore, rollback verification,
+ * and composed qualification. All subsystems that need a workspace content
+ * hash must use this function to ensure semantic consistency.
  *
  * @param workspace - the workspace root to hash.
  * @returns a hex SHA-256 digest.
  */
-function hashWorkspaceContents(workspace: string): string {
+export function hashWorkspaceContents(workspace: string): string {
   const hash = createHash('sha256')
   const walk = (dir: string): void => {
     const entries = readdirSync(dir, { withFileTypes: true })

@@ -54,10 +54,10 @@
  * @module v019-composed-runtime-qualification
  */
 
-import { createHash } from 'node:crypto'
+
 import { execSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
 
@@ -79,6 +79,7 @@ import { handleVerificationPass, handleVerificationFailure, reconstructRepairSta
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 
 import { generateRepoConfig } from './v019-trajectory-collector.ts'
+import { hashWorkspaceContents } from './v019-repo-checkout.ts'
 
 /** Qualification artifact identifier. */
 export const COMPOSED_QUALIFICATION_ID = 'v019-composed-runtime-qualification-v1'
@@ -341,35 +342,13 @@ function eventData(event: SessionEvent): Record<string, unknown> {
 }
 
 /**
- * Compute a SHA-256 hash of a directory's source files. Used to bind
- * verification to a specific workspace state.
+ * Compute a SHA-256 hash of a directory's source files. Delegates to the
+ * canonical `hashWorkspaceContents` in `v019-repo-checkout.ts`.
  * @param dir - the directory to hash.
  * @returns a hex SHA-256 digest.
  */
 function computeWorkspaceHashForDir(dir: string): string {
-  const hash = createHash('sha256')
-  const walk = (d: string): void => {
-    const entries = readdirSync(d, { withFileTypes: true })
-    entries.sort((a, b) => a.name.localeCompare(b.name))
-    for (const entry of entries) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue
-      const fullPath = join(d, entry.name)
-      if (entry.isDirectory()) {
-        walk(fullPath)
-      } else if (entry.isFile()) {
-        const rel = relative(dir, fullPath)
-        hash.update(rel).update(':')
-        try {
-          hash.update(readFileSync(fullPath))
-        } catch {
-          hash.update('[unreadable]')
-        }
-        hash.update('\n')
-      }
-    }
-  }
-  walk(dir)
-  return hash.digest('hex')
+  return hashWorkspaceContents(dir)
 }
 
 // ---------------------------------------------------------------------------
