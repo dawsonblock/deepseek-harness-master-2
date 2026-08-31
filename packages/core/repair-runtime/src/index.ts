@@ -423,8 +423,18 @@ export function projectFailureForModel(failure: FailurePackage): ModelVisibleFai
     typeErrors: Object.freeze(failure.typeErrors.map(sanitizeEvidenceString)),
     buildErrors: Object.freeze(failure.buildErrors.map(sanitizeEvidenceString)),
     changedFiles: Object.freeze([...failure.changedFiles]),
-    ...failure.testDetails !== undefined ? { testDetails: Object.freeze(failure.testDetails) } : {},
-    ...failure.buildDetails !== undefined ? { buildDetails: Object.freeze(failure.buildDetails) } : {},
+    ...failure.testDetails !== undefined ? {
+      testDetails: Object.freeze(failure.testDetails.map(d => ({
+        ...d,
+        ...d.assertionDiff !== undefined ? { assertionDiff: sanitizeEvidenceString(d.assertionDiff) } : {},
+      }))),
+    } : {},
+    ...failure.buildDetails !== undefined ? {
+      buildDetails: Object.freeze(failure.buildDetails.map(d => ({
+        ...d,
+        ...d.message !== undefined ? { message: sanitizeEvidenceString(d.message) } : {},
+      }))),
+    } : {},
     ...failure.diagnosticExitCode !== undefined ? { diagnosticExitCode: failure.diagnosticExitCode } : {},
     ...failure.failedKind !== undefined ? { failedKind: failure.failedKind } : {},
   })

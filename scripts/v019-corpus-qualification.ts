@@ -117,6 +117,29 @@ function runVerificationCommands(
 }
 
 /**
+ * Run a single verification command and return both pass/fail and output.
+ * Used by the task-specific reproduction gate to check that the diagnostic
+ * output references the expected test file.
+ */
+function runCommandWithOutput(
+  workspace: string,
+  command: string,
+  expectedExitCode: number,
+): { passed: boolean; output: string } {
+  return runCommand(workspace, command, expectedExitCode)
+}
+
+/**
+ * Extract a test file path from a diagnostic command string. Returns
+ * the last `tests/...test.ts` path in the command, or undefined for
+ * commands that do not reference a specific test file (e.g., `tsc`).
+ */
+function extractTestFileFromCommand(command: string): string | undefined {
+  const matches = command.match(/tests\/[^\s]+\.test\.ts/g)
+  return matches?.at(-1)
+}
+
+/**
  * Gate 1: REPRODUCED
  *
  * Verifies that:
@@ -206,9 +229,24 @@ export function qualifyVerifierValidated(
 ): QualificationResult {
   const details: string[] = []
 
-  // Step 1: Diagnostic must FAIL at base commit.
-  const baseDiagnostic = runVerificationCommands(workspace, manifest.verification.diagnostic)
-  if (baseDiagnostic) {
+  // Step 1: Diagnostic must FAIL at base commit. Capture output to verify
+  // the failure is from the task's target test, not an unrelated test in
+  // the same repo. Extract the test file name from the diagnostic command
+  // and check it appears in the failure output.
+  const diagnosticCommand = manifest.verification.diagnostic[0]
+  if (diagnosticCommand === undefined) {
+    return {
+      taskId: manifest.taskId,
+      state: 'REJECTED',
+      gate: 'VERIFIER_VALIDATED',
+      passed: false,
+      reason: 'No diagnostic command defined',
+      details,
+    }
+  }
+  const targetTestFile = extractTestFileFromCommand(diagnosticCommand.command)
+  const baseResult = runCommandWithOutput(workspace, diagnosticCommand.command, diagnosticCommand.expectedExitCode)
+  if (baseResult.passed) {
     return {
       taskId: manifest.taskId,
       state: 'REJECTED',
@@ -217,6 +255,19 @@ export function qualifyVerifierValidated(
       reason: 'Diagnostic verifier passed at base commit — bug is not reproducible',
       details,
     }
+  }
+  if (targetTestFile !== undefined) {
+    if (!baseResult.output.includes(targetTestFile)) {
+      return {
+        taskId: manifest.taskId,
+        state: 'REJECTED',
+        gate: 'VERIFIER_VALIDATED',
+        passed: false,
+        reason: `Diagnostic output at base does not mention target test file ${targetTestFile} — failure may be from an unrelated test`,
+        details,
+      }
+    }
+    details.push(`Target test file ${targetTestFile} found in base failure output`)
   }
   details.push('Diagnostic verifier fails at base commit (expected)')
 
@@ -261,9 +312,10 @@ export function qualifyVerifierValidated(
     }
   }
 
-  // Run diagnostic at fix commit.
-  const fixDiagnostic = runVerificationCommands(workspace, manifest.verification.diagnostic)
-  if (!fixDiagnostic) {
+  // Run diagnostic at fix commit. Capture output to verify the target
+  // test file is in the passing output, not just any test passing.
+  const fixResult = runCommandWithOutput(workspace, diagnosticCommand.command, diagnosticCommand.expectedExitCode)
+  if (!fixResult.passed) {
     return {
       taskId: manifest.taskId,
       state: 'REJECTED',
@@ -272,6 +324,19 @@ export function qualifyVerifierValidated(
       reason: 'Diagnostic verifier fails at reference fix commit — fix does not resolve the bug',
       details,
     }
+  }
+  if (targetTestFile !== undefined) {
+    if (!fixResult.output.includes(targetTestFile)) {
+      return {
+        taskId: manifest.taskId,
+        state: 'REJECTED',
+        gate: 'VERIFIER_VALIDATED',
+        passed: false,
+        reason: `Diagnostic output at fix does not mention target test file ${targetTestFile} — pass may be from an unrelated test`,
+        details,
+      }
+    }
+    details.push(`Target test file ${targetTestFile} found in fix pass output`)
   }
   details.push('Diagnostic verifier passes at reference fix commit')
 

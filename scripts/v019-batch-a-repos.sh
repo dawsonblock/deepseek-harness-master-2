@@ -736,11 +736,49 @@ describe('quickSort holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
-  local base_commit=$(git -C "$dir" rev-parse HEAD)
+  cat > "$dir/tests/HashMap.test.ts" <<'EOF'
+import { describe, it, expect } from 'vitest'
+import { HashMap } from '../src/HashMap.js'
 
-  # Apply fixes
-  cat > "$dir/src/LinkedList.ts" <<'EOF'
+describe('HashMap', () => {
+  it('sets and gets values', () => {
+    const map = new HashMap<string, number>()
+    map.set('a', 1)
+    map.set('b', 2)
+    expect(map.get('a')).toBe(1)
+    expect(map.get('b')).toBe(2)
+  })
+  it('returns undefined for missing keys', () => {
+    const map = new HashMap<string, number>()
+    expect(map.get('missing')).toBeUndefined()
+  })
+  it('checks has', () => {
+    const map = new HashMap<string, number>()
+    map.set('a', 1)
+    expect(map.has('a')).toBe(true)
+    expect(map.has('b')).toBe(false)
+  })
+  it('deletes keys', () => {
+    const map = new HashMap<string, number>()
+    map.set('a', 1)
+    expect(map.delete('a')).toBe(true)
+    expect(map.has('a')).toBe(false)
+    expect(map.delete('a')).toBe(false)
+  })
+  it('tracks size', () => {
+    const map = new HashMap<string, number>()
+    expect(map.size()).toBe(0)
+    map.set('a', 1)
+    expect(map.size()).toBe(1)
+    map.set('b', 2)
+    expect(map.size()).toBe(2)
+    map.delete('a')
+    expect(map.size()).toBe(1)
+  })
+})
+EOF
+
+  init_repo "$dir"
 interface Node<T> { value: T; next: Node<T> | null }
 export class LinkedList<T> {
   private head: Node<T> | null = null
@@ -1205,10 +1243,27 @@ describe('slugify holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
-  local base_commit=$(git -C "$dir" rev-parse HEAD)
+  cat > "$dir/tests/template.test.ts" <<'EOF'
+import { describe, it, expect } from 'vitest'
+import { template } from '../src/template.js'
 
-  # Apply fixes
+describe('template', () => {
+  it('replaces variables', () => {
+    expect(template('Hello {name}!', { name: 'World' })).toBe('Hello World!')
+  })
+  it('replaces multiple variables', () => {
+    expect(template('{greeting} {name}', { greeting: 'Hi', name: 'Bob' })).toBe('Hi Bob')
+  })
+  it('replaces missing variables with empty string', () => {
+    expect(template('Hello {name}!', {})).toBe('Hello !')
+  })
+  it('handles no variables', () => {
+    expect(template('plain text', {})).toBe('plain text')
+  })
+})
+EOF
+
+  init_repo "$dir"
   cat > "$dir/src/truncate.ts" <<'EOF'
 export function truncate(str: string, maxLen: number): string {
   const chars = Array.from(str)

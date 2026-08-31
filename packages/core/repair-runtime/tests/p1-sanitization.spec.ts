@@ -305,4 +305,34 @@ describe('P1.10: secret redaction in model-visible projection', () => {
     expect(projection.failedCriteria[0]).not.toContain('wJalrXUtnFEMI')
     expect(projection.failedCriteria[0]).toContain('[redacted]')
   })
+
+  it('sanitizes testDetails assertionDiff', () => {
+    const failure: FailurePackage = {
+      failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+      testDetails: [{ testName: 'should authenticate', assertionDiff: 'Authorization: Bearer sk-secret123' }],
+    }
+    const projection = projectFailureForModel(failure)
+    expect(projection.testDetails).toBeDefined()
+    const detail = projection.testDetails?.[0]
+    expect(detail).toBeDefined()
+    expect(detail?.assertionDiff).not.toContain('sk-secret123')
+    expect(detail?.assertionDiff).toContain('[redacted]')
+    // Original retains the secret
+    expect(failure.testDetails?.[0]?.assertionDiff).toContain('sk-secret123')
+  })
+
+  it('sanitizes buildDetails message', () => {
+    const failure: FailurePackage = {
+      failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], changedFiles: [],
+      buildDetails: [{ file: 'src/config.ts', line: 42, message: 'DEEPSEEK_API_KEY=sk-leaked-key' }],
+    }
+    const projection = projectFailureForModel(failure)
+    expect(projection.buildDetails).toBeDefined()
+    const detail = projection.buildDetails?.[0]
+    expect(detail).toBeDefined()
+    expect(detail?.message).not.toContain('sk-leaked-key')
+    expect(detail?.message).toContain('[redacted]')
+    // Original retains the secret
+    expect(failure.buildDetails?.[0]?.message).toContain('sk-leaked-key')
+  })
 })

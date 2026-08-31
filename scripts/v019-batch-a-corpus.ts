@@ -219,7 +219,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npx vitest run tests/phone.test.ts', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/validators.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -244,7 +244,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npx vitest run tests/phone.test.ts', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/validators.test.ts', expectedExitCode: 0 }],
       holdout: [{ command: 'npx vitest run --config vitest.holdout.config.ts tests/schema.holdout.test.ts', expectedExitCode: 0 }],
       strength: 'V3',
     },
@@ -345,7 +345,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npx vitest run tests/Stack.test.ts', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/HashMap.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
@@ -497,7 +497,7 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     },
     verification: {
       build: { command: 'npm run build', expectedExitCode: 0 },
-      diagnostic: [{ command: 'npx vitest run tests/padStart.test.ts', expectedExitCode: 0 }],
+      diagnostic: [{ command: 'npx vitest run tests/template.test.ts', expectedExitCode: 0 }],
       holdout: [],
       strength: 'V2',
     },
