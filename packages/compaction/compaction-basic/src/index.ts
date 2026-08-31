@@ -10,7 +10,7 @@ import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compac
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, assertNever } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, PREFLIGHT_CONTEXT_EXCEEDED_CODE, assertNever } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
@@ -122,6 +122,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   private readonly warnedPressureConfigTargets = new Set<string>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
+  private readonly preflightCompacted = new WeakSet<Agent>()
 
   constructor(ctx: Context, config: BasicCompactionConfig = {}) {
     super(ctx)
@@ -165,7 +166,10 @@ export class BasicCompactionEngine extends CompactionEngine {
     })
 
     ctx.on('agent/status', ({ agent, status }) => {
-      if (status === 'idle') this.overflowRetries.delete(agent)
+      if (status === 'idle') {
+        this.overflowRetries.delete(agent)
+        this.preflightCompacted.delete(agent)
+      }
     })
 
     // A successful response starts a fresh overflow-recovery sequence even
@@ -173,20 +177,46 @@ export class BasicCompactionEngine extends CompactionEngine {
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'assistant/message') return
       const agent = this.overflowAgents.get(session)
-      if (agent !== undefined) this.overflowRetries.delete(agent)
+      if (agent !== undefined) {
+        this.overflowRetries.delete(agent)
+        this.preflightCompacted.delete(agent)
+      }
     })
 
     ctx.on('agent/request-error', async (
       { agent, failure, signal },
       next,
     ) => {
-      if (failure.code !== CONTEXT_WINDOW_EXCEEDED_CODE || signal.aborted) return next()
+      const isPreflight = failure.code === PREFLIGHT_CONTEXT_EXCEEDED_CODE
+      if ((failure.code !== CONTEXT_WINDOW_EXCEEDED_CODE && !isPreflight) || signal.aborted) return next()
       this.overflowAgents.set(agent.session, agent)
       const target = routedTarget(agent.session)
       if (target === undefined) return next()
       const policy = resolveTargetPolicy(this.config, target)
       const retries = this.overflowRetries.get(agent) ?? 0
-      if (retries >= policy.maxOverflowRetries) return next()
+      // Preflight rejections compact without consuming the adapter-overflow
+      // retry budget; the budget is reserved for actual provider overflow.
+      if (!isPreflight && retries >= policy.maxOverflowRetries) return next()
+
+      // Preflight rejections only prune (model-free reduction). Without a
+      // pruner, retry without compacting so the agent loop skips the preflight
+      // on the next iteration and lets the adapter handle the overflow.
+      if (isPreflight) {
+        const prune = this.ctx.get('toolResultPruner')
+        if (prune === undefined) {
+          this.preflightCompacted.add(agent)
+          return { kind: 'retry' }
+        }
+        const generation = agent.session.surface.replaceGeneration
+        try {
+          prune.pruneSession(agent.session)
+        } catch {
+          this.preflightCompacted.add(agent)
+          return { kind: 'retry' }
+        }
+        if (agent.session.surface.replaceGeneration > generation) this.preflightCompacted.add(agent)
+        return { kind: 'retry' }
+      }
 
       const generation = agent.session.surface.replaceGeneration
       let result: CompactionResult | null
@@ -197,7 +227,6 @@ export class BasicCompactionEngine extends CompactionEngine {
         // A model-free prune can land before later summary work fails. That
         // durable reduction is sufficient retry proof; do not discard it just
         // because the optional second phase threw. Cancellation still wins.
-        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while recovery is awaited.
         if (!signal.aborted && agent.session.surface.replaceGeneration > generation) {
           ctx.logger.warn(
             `context-overflow compaction failed after durable surface progress: ${message}; `
@@ -206,17 +235,28 @@ export class BasicCompactionEngine extends CompactionEngine {
           this.overflowRetries.set(agent, retries + 1)
           return { kind: 'retry' }
         }
+        // When a preflight compaction already shrank the conversation earlier
+        // in this step, retry the adapter even if this compaction failed to
+        // reduce further. The preflight reduction is sufficient proof.
+        if (!signal.aborted && retries === 0 && this.preflightCompacted.has(agent)) {
+          ctx.logger.warn(
+            `context-overflow compaction failed: ${message}; retrying on the preflight-compacted surface`,
+          )
+          this.overflowRetries.set(agent, retries + 1)
+          return { kind: 'retry' }
+        }
         ctx.logger.warn(
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while recovery is awaited.
           `context-overflow compaction failed: ${message}; ${signal.aborted
             ? 'cancellation prevents retry'
             : 'preserving the original request error'}`,
         )
         return next()
       }
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while compaction is awaited.
-      if (signal.aborted
-        || agent.session.surface.replaceGeneration <= generation) return next()
+      if (signal.aborted) return next()
+      const surfaceChanged = agent.session.surface.replaceGeneration > generation
+      // When the surface did not change, retry only if a preflight compaction
+      // already shrank the conversation earlier in this step.
+      if (!surfaceChanged && !(retries === 0 && this.preflightCompacted.has(agent))) return next()
       if (result !== null) logResult(result, 'context overflow recovery')
       this.overflowRetries.set(agent, retries + 1)
       return { kind: 'retry' }

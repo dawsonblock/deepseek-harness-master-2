@@ -1963,5 +1963,3 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     pendingEscalations.delete(agent.session.id)
   })
 }
-
-export { default as invariant } from './invariant.ts'

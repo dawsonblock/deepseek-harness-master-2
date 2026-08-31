@@ -127,7 +127,7 @@ function text(result: { content: { type: string; text?: string }[] }): string {
 describe('session cwd resolution', () => {
   const execution = (cwd?: string) => cwd === undefined
     ? {}
-    : { agent: { session: { header: { cwd } } } }
+    : { agent: { session: { header: { cwd }, events: [] as unknown[] } } }
 
   it('retains ordinary spelling but resolves the cwd before parent traversal', () => {
     const cwd = process.cwd()
@@ -276,7 +276,7 @@ describe('read tool', () => {
 
   it('records observed state so a follow-up edit by the same session is authorized', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', 'hello')
     expect((await call(ctx, 'read', { file_path: 'a.txt' }, { session })).isError).toBe(false)
     const edited = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'hello', new_string: 'bye' }, { session })
@@ -394,7 +394,7 @@ describe('formatReadOutput footer variants', () => {
 describe('write tool', () => {
   it('formats a create result and uses createIfAbsent (unobserved, with the gate)', async () => {
     const { ctx, fs } = await setup()
-    const result = await call(ctx, 'write', { file_path: 'a.txt', content: 'hi' }, { session: { header: {} } })
+    const result = await call(ctx, 'write', { file_path: 'a.txt', content: 'hi' }, { session: { header: {}, events: [] as unknown[] } })
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('expected write success')
     expect(result.value).toEqual({ path: '/abs/a.txt', operation: 'create', before: null, after: 'hi' })
@@ -422,7 +422,7 @@ describe('write tool', () => {
 describe('edit tool', () => {
   it('formats a single-replacement success after a read', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', 'a')
     await call(ctx, 'read', { file_path: 'a.txt' }, { session })
     const result = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'a', new_string: 'b' }, { session })
@@ -433,7 +433,7 @@ describe('edit tool', () => {
 
   it('formats the replace_all success message distinctly', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', 'a a a')
     await call(ctx, 'read', { file_path: 'a.txt' }, { session })
     const result = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'a', new_string: 'b', replace_all: true }, { session })
@@ -464,7 +464,7 @@ describe('edit tool', () => {
   it('propagates FS_NOT_OBSERVED when the file was never read (the gate decides)', async () => {
     const { ctx, fs } = await setup()
     fs.files.set('key:a.txt', 'hello')
-    const result = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'a', new_string: 'b' }, { session: { header: {} } })
+    const result = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'a', new_string: 'b' }, { session: { header: {}, events: [] as unknown[] } })
     expect(result.isError).toBe(true)
     expect(result.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
   })
@@ -603,7 +603,7 @@ describe('result-time contextual diff (meta + presentResult)', () => {
 
   it('edit: execute attaches the applied hunk as meta { diffs }', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', withContext)
     await call(ctx, 'read', { file_path: 'a.txt' }, { session })
     const result = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'OLD', new_string: 'NEW' }, { session })
@@ -615,7 +615,7 @@ describe('result-time contextual diff (meta + presentResult)', () => {
 
   it('edit: presentResult turns the meta into a diff result card', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', withContext)
     await call(ctx, 'read', { file_path: 'a.txt' }, { session })
     const result = await call(ctx, 'edit', { file_path: 'a.txt', old_string: 'OLD', new_string: 'NEW' }, { session })
@@ -628,7 +628,7 @@ describe('result-time contextual diff (meta + presentResult)', () => {
 
   it('write OVERWRITE: execute attaches a contextual hunk; presentResult renders a diff card', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', withContext)
     await call(ctx, 'read', { file_path: 'a.txt' }, { session })
     const result = await call(ctx, 'write', { file_path: 'a.txt', content: 'a\nb\nc\nNEW\nd\ne\nf\n' }, { session })
@@ -642,7 +642,7 @@ describe('result-time contextual diff (meta + presentResult)', () => {
     // A create has no prior content, yet the completed replacement view must
     // remain a diff instead of clobbering the pending new-file diff with text.
     const { ctx } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     const result = await call(ctx, 'write', { file_path: 'new.txt', content: 'fresh\n' }, { session })
     expect(result.isError).toBe(false)
     expect(result.meta).toEqual({ diffs: [] })
@@ -652,7 +652,7 @@ describe('result-time contextual diff (meta + presentResult)', () => {
 
   it('write OVERWRITE with identical content: an empty applied-diff projection falls back to a whole-file diff', async () => {
     const { ctx, fs } = await setup()
-    const session = { header: {} }
+    const session = { header: {}, events: [] as unknown[] }
     fs.files.set('key:a.txt', 'same\n')
     await call(ctx, 'read', { file_path: 'a.txt' }, { session })
     const result = await call(ctx, 'write', { file_path: 'a.txt', content: 'same\n' }, { session })

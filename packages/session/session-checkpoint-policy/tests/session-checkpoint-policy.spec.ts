@@ -172,7 +172,7 @@ describe('session-checkpoint-policy tool and step boundaries', () => {
       callId: CallId('write-1'), name: 'write', arguments: {}, agent,
       signal: new AbortController().signal,
     })
-    await Promise.resolve()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
     expect(order).toEqual(['flush:start'])
     gate.resolve(undefined)
     await expect(pending).resolves.toMatchObject({ isError: false })
@@ -201,7 +201,7 @@ describe('session-checkpoint-policy tool and step boundaries', () => {
       callId: CallId('write-cancelled'), name: 'write', arguments: {}, agent,
       signal: controller.signal,
     })
-    await Promise.resolve()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
     expect(order).toEqual(['flush:start'])
     controller.abort('cancelled during checkpoint')
     gate.resolve(undefined)

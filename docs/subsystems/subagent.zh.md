@@ -642,6 +642,13 @@ listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<Subagen
 registerProvider(provider: SubagentProvider): () => void
 
 /**
+ * Register a deployment-owned admission guard. Registration is effect-scoped.
+ * @param guard - the admission guard to register.
+ * @returns a disposer that removes the guard.
+ */
+registerAdmissionGuard(guard: SubagentAdmissionGuard): () => void
+
+/**
  * Look up a provider by name.
  * @param name - the provider name.
  * @returns the provider, or undefined when absent.

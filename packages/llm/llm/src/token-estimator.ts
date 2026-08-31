@@ -232,7 +232,8 @@ export function evaluateContextBudget(
   reservedOutputTokens: number,
   policy: ContextBudgetPolicy,
 ): ContextUtilization {
-  const estimatedTotalTokens = estimate.tokens + reservedOutputTokens + policy.safetyMarginTokens
+  const effectiveSafetyMargin = policy.safetyMarginTokens
+  const estimatedTotalTokens = estimate.tokens + reservedOutputTokens + effectiveSafetyMargin
   const usageRatio = contextWindowTokens > 0
     ? Math.min(1, estimatedTotalTokens / contextWindowTokens)
     : 1
@@ -246,7 +247,7 @@ export function evaluateContextBudget(
     contextWindowTokens,
     estimatedInputTokens: estimate.tokens,
     reservedOutputTokens,
-    safetyMarginTokens: policy.safetyMarginTokens,
+    safetyMarginTokens: effectiveSafetyMargin,
     estimatedTotalTokens,
     remainingTokens,
     usageRatio,

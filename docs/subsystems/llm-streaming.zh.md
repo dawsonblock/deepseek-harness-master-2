@@ -893,6 +893,44 @@ stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxtokenestimator--tokenestimator-abstract-seam"></a>
+
+### `ctx.tokenEstimator` — `TokenEstimator` (abstract seam)
+
+Token estimator capability: produces preflight input token estimates. Consumers: agent preflight, compaction, resource governor, router feature capture. The implementation lives in `token-meter`; provider estimators register through TokenEstimatorRegistry.
+
+```ts cordis-catalog
+/**
+ * Estimate input tokens for one assembled request, selecting the provider
+ * estimator by `(provider, model)` and falling back to the generic estimator.
+ *
+ * @param input - provider, model, and the fully assembled request.
+ * @returns an estimate result, either available or explicitly unavailable.
+ */
+abstract estimateInput(input: TokenEstimateInput): Promise<TokenEstimateResult>
+```
+
+Source: [`packages/llm/llm/src/token-estimator.ts`](../../packages/llm/llm/src/token-estimator.ts)
+
+<a id="ctxtokenestimatorregistry--tokenestimatorregistry-abstract-seam"></a>
+
+### `ctx.tokenEstimatorRegistry` — `TokenEstimatorRegistry` (abstract seam)
+
+Token estimator registry: accepts provider-specific estimator registrations. Provider packages (`llm-deepseek`) consume this service to register their estimators without depending on the resolver implementation (`token-meter`).
+
+```ts cordis-catalog
+/**
+ * Register a provider-specific estimator. The estimator must declare its
+ * provider route and `supports` predicate.
+ *
+ * @param estimator - the provider estimator to register.
+ * @returns a disposer that unregisters the estimator.
+ */
+abstract register(estimator: ProviderTokenEstimator): () => void
+```
+
+Source: [`packages/llm/llm/src/token-estimator.ts`](../../packages/llm/llm/src/token-estimator.ts)
+
 <a id="llm-events"></a>
 
 ### `llm/*` events

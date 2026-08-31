@@ -57,8 +57,9 @@
 
 import { execSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -2267,7 +2268,7 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
 }
 
 // CLI entry point
-if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   runComposedRuntimeQualification().then((record) => {
     process.stdout.write(JSON.stringify(record, null, 2) + '\n')
     if (!record.passed) {

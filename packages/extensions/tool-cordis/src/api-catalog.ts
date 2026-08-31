@@ -855,6 +855,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the active view.',
       },
       {
+        signature: 'registerAcceptanceVerifier(verifier: GoalCompletionVerifier): () => void',
+        description: 'Register an objective acceptance verifier. Duplicate names are rejected.',
+        parameters: [{ name: 'verifier', description: 'the verifier to register.' }],
+        returns: 'a disposer that removes the verifier.',
+      },
+      {
+        signature: 'registerIntegrityVerifier(verifier: GoalCompletionVerifier): () => void',
+        description: 'Register an additional runtime-integrity verifier that does not by itself prove objective success.',
+        parameters: [{ name: 'verifier', description: 'the verifier to register.' }],
+        returns: 'a disposer that removes the verifier.',
+      },
+      {
+        signature: 'registerCompletionVerifier(verifier: GoalCompletionVerifier): () => void',
+        description: 'Backward-compatible alias: historically every caller-registered completion verifier was treated as an objective acceptance authority. New code should use registerAcceptanceVerifier() or registerIntegrityVerifier() explicitly.',
+        parameters: [{ name: 'verifier', description: 'the verifier to register.' }],
+        returns: 'a disposer that removes the verifier.',
+      },
+      {
+        signature: 'async verifyCompletion( agent: Agent, ref: GoalRef, workspaceSnapshotProvider?: () => string, ): Promise<GoalVerificationReport>',
+        description: 'Evaluate every registered verifier against one exact current goal revision. No verifier means fail-closed; verifier exceptions become failed checks. The report is appended durably but never enters model-visible history.\n\nWhen `workspaceSnapshotProvider` is supplied, it is called AFTER all verifiers have run, so the hash binds the workspace state that was actually tested — not a pre-verification snapshot that diagnostic commands may have mutated.',
+        parameters: [{ name: 'agent', description: 'owning live agent.' }, { name: 'ref', description: 'expected current goal revision.' }, { name: 'workspaceSnapshotProvider', description: 'optional function that computes a content hash of the workspace after verifiers execute; bound to the verification event and checked by completeVerified().' }],
+        returns: 'the verification report.',
+      },
+      {
+        signature: 'completeVerified(agent: Agent, ref: GoalRef, currentWorkspaceHash?: string): GoalView',
+        description: 'Commit autonomous completion only when the immediately preceding durable event is a passing verification for this exact goal revision. This closes the verification-to-completion gap: any intervening event invalidates the authorization and requires verification to run again.\n\nWhen the verification event carries a `workspaceHash` and the caller supplies `currentWorkspaceHash`, the two must match. A mismatch indicates the workspace mutated between verification and completion, invalidating the verification basis.',
+        parameters: [{ name: 'agent', description: 'owning live agent.' }, { name: 'ref', description: 'expected current goal revision.' }, { name: 'currentWorkspaceHash', description: 'optional current workspace content hash; checked against the verification event\'s workspaceHash when present.' }],
+        returns: 'the completed view.',
+      },
+      {
         signature: '@Remote(\'complete\') complete(agent: Agent, ref: GoalRef): GoalView',
         description: 'Mark a current non-complete goal complete and disarm it.',
         parameters: [{ name: 'agent', description: 'owning live agent.' }, { name: 'ref', description: 'expected current revision.' }],
@@ -1160,6 +1190,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'readonly workspaceRoot: string',
         description: 'The absolute `workspace-write` fallback root for calls without a session cwd.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly readOnlyPaths: string[]',
+        description: 'Paths the confined process may read but not write under `workspace-write`/`workspace-isolated`.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly protectedReadPaths: string[]',
+        description: 'Paths the confined process must not read under `workspace-isolated` mode.',
         parameters: [],
       },
       {
@@ -1845,6 +1885,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the exact Cordis effect disposer.',
       },
       {
+        signature: 'registerAdmissionGuard(guard: SubagentAdmissionGuard): () => void',
+        description: 'Register a deployment-owned admission guard. Registration is effect-scoped.',
+        parameters: [{ name: 'guard', description: 'the admission guard to register.' }],
+        returns: 'a disposer that removes the guard.',
+      },
+      {
         signature: 'getProvider(name: string): SubagentProvider | undefined',
         description: 'Look up a provider by name.',
         parameters: [{ name: 'name', description: 'the provider name.' }],
@@ -2031,6 +2077,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'tokenEstimator',
+    summary: 'Token estimator capability: produces preflight input token estimates.',
+    description: 'Token estimator capability: produces preflight input token estimates. Consumers: agent preflight, compaction, resource governor, router feature capture. The implementation lives in `token-meter`; provider estimators register through TokenEstimatorRegistry.',
+    methods: [
+      {
+        signature: 'abstract estimateInput(input: TokenEstimateInput): Promise<TokenEstimateResult>',
+        description: 'Estimate input tokens for one assembled request, selecting the provider estimator by `(provider, model)` and falling back to the generic estimator.',
+        parameters: [{ name: 'input', description: 'provider, model, and the fully assembled request.' }],
+        returns: 'an estimate result, either available or explicitly unavailable.',
+      },
+    ],
+  },
+  {
+    key: 'tokenEstimatorRegistry',
+    summary: 'Token estimator registry: accepts provider-specific estimator registrations.',
+    description: 'Token estimator registry: accepts provider-specific estimator registrations. Provider packages (`llm-deepseek`) consume this service to register their estimators without depending on the resolver implementation (`token-meter`).',
+    methods: [
+      {
+        signature: 'abstract register(estimator: ProviderTokenEstimator): () => void',
+        description: 'Register a provider-specific estimator. The estimator must declare its provider route and `supports` predicate.',
+        parameters: [{ name: 'estimator', description: 'the provider estimator to register.' }],
+        returns: 'a disposer that unregisters the estimator.',
+      },
+    ],
+  },
+  {
     key: 'tokenMeter',
     summary: 'Replay owner for one service-wide estimator and isolated per-session folds.',
     description: 'Replay owner for one service-wide estimator and isolated per-session folds.',
@@ -2126,6 +2198,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Classify a pending call through the caller\'s visible tool definition. Only an exact `true` is parallel; unknown, hidden, undeclared, invalid, or throwing classifiers are exclusive.',
         parameters: [{ name: 'exec', description: 'call name, parsed arguments, and optional agent scope.' }],
         returns: 'the fail-closed scheduling mode.',
+      },
+      {
+        signature: 'recoveryMetadata(exec: Pick<ToolExecutionInput, \'name\' | \'arguments\' | \'agent\' | \'parent\'>): ToolRecoveryExecution',
+        description: 'Resolve the durable recovery identity for a pending call without executing it.',
+        parameters: [{ name: 'exec', description: 'the tool execution input identifying the call.' }],
+        returns: 'the recovery execution descriptor for the call.',
       },
       {
         signature: 'async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>',
@@ -3147,7 +3225,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableStartSpec',
-    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n    readonly delegatedPolicies?: DelegatedPolicyOverrides | undefined;\n}',
   },
   {
     name: 'ContinuableSubagentDescriptorData',
@@ -3224,6 +3302,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'DelegatedPolicyOverrides',
+    declaration: 'export interface DelegatedPolicyOverrides {\n    readonly sandboxMode: SandboxMode | undefined;\n    readonly approvalPolicy: \'never\' | undefined;\n}',
   },
   {
     name: 'DiffCallView',
@@ -3338,6 +3420,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
   },
   {
+    name: 'EstimatePrecision',
+    declaration: 'export type EstimatePrecision = \'tokenizer\' | \'heuristic\';',
+  },
+  {
+    name: 'EstimatorIdentity',
+    declaration: 'export interface EstimatorIdentity {\n    id: string;\n    version: string;\n}',
+  },
+  {
     name: 'FileDiff',
     declaration: 'export interface FileDiff {\n    path: string;\n    oldText: string | null;\n    newText: string;\n}',
   },
@@ -3426,6 +3516,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface GoalChanged {\n    readonly operation: GoalOperation;\n    readonly ref: GoalRef;\n    readonly goal?: GoalView;\n}',
   },
   {
+    name: 'GoalCompletionVerificationContext',
+    declaration: 'export interface GoalCompletionVerificationContext {\n    readonly agent: Agent;\n    readonly goal: GoalView;\n}',
+  },
+  {
+    name: 'GoalCompletionVerifier',
+    declaration: 'export interface GoalCompletionVerifier {\n    readonly name: string;\n    readonly version?: string;\n    verify(context: GoalCompletionVerificationContext): GoalVerificationCheck | Promise<GoalVerificationCheck>;\n}',
+  },
+  {
     name: 'GoalOperation',
     declaration: 'export type GoalOperation = \'create\' | \'edit\' | \'pause\' | \'resume\' | \'complete\' | \'block\' | \'clear\';',
   },
@@ -3436,6 +3534,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GoalSnapshot',
     declaration: 'export interface GoalSnapshot extends GoalRef {\n    readonly objective: string;\n    readonly phase: GoalPhase;\n    readonly blockedReason?: GoalBlockReason;\n    readonly maxGoalRounds: number;\n}',
+  },
+  {
+    name: 'GoalVerificationCheck',
+    declaration: 'export interface GoalVerificationCheck {\n    readonly name: string;\n    readonly role?: \'acceptance\' | \'integrity\';\n    readonly verifierVersion?: string;\n    readonly passed: boolean;\n    readonly reason: string;\n    readonly evidence?: readonly string[];\n}',
+  },
+  {
+    name: 'GoalVerificationReport',
+    declaration: 'export interface GoalVerificationReport {\n    readonly goal: GoalRef;\n    readonly passed: boolean;\n    readonly verifiedAt: number;\n    readonly basisSeq: number;\n    readonly registryFingerprint: string;\n    readonly checks: readonly GoalVerificationCheck[];\n    readonly workspaceHash?: string;\n}',
   },
   {
     name: 'GoalView',
@@ -3886,6 +3992,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ProviderRequestId = Branded<\'ProviderRequestId\'>;',
   },
   {
+    name: 'ProviderTokenEstimator',
+    declaration: 'export interface ProviderTokenEstimator {\n    readonly provider: string;\n    readonly identity: EstimatorIdentity;\n    readonly precision: EstimatePrecision;\n    supports(model: string): boolean;\n    estimateInput(request: GenerateOptions): Promise<TokenEstimate>;\n}',
+  },
+  {
     name: 'PrunedEntry',
     declaration: 'export interface PrunedEntry {\n    readonly originalSeq: number;\n    readonly replacementSeq: number;\n    readonly callId: CallId;\n    readonly charsBefore: number;\n    readonly charsAfter: number;\n}',
   },
@@ -3918,16 +4028,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
   {
-    name: 'RequestContext',
-    declaration: 'export interface RequestContext {\n    provider: string;\n    model: string;\n    contextWindow?: number;\n}',
-  },
-  {
     name: 'RequestErrorAction',
     declaration: 'export type RequestErrorAction = {\n    kind: \'retry\';\n} | undefined;',
-  },
-  {
-    name: 'RequestHeaderReason',
-    declaration: 'export type RequestHeaderReason = \'initial\' | \'resume\' | \'change\';',
   },
   {
     name: 'RequestImageAttachment',
@@ -4003,11 +4105,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxExecutionPolicy',
-    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    sessionId?: SessionId;\n}',
+    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    sessionId?: SessionId;\n    readOnlyPaths?: string[];\n    protectedReadPaths?: string[];\n}',
   },
   {
     name: 'SandboxMode',
-    declaration: 'export type SandboxMode = \'read-only\' | \'workspace-write\' | \'danger-full-access\';',
+    declaration: 'export type SandboxMode = \'read-only\' | \'workspace-write\' | \'workspace-isolated\' | \'danger-full-access\';',
   },
   {
     name: 'SandboxPolicy',
@@ -4083,7 +4185,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventMap',
-    declaration: 'export interface SessionEventMap {\n    \'turn/start\': {\n        turn: number;\n    };\n    \'turn/end\': {\n        turn: number;\n        reason: TurnEndReason;\n    };\n    \'step/start\': {\n        turn: number;\n        step: number;\n    };\n    \'step/end\': {\n        turn: number;\n        step: number;\n    };\n    \'user/message\': UserMessage;\n    \'assistant/chunk\': {\n        turn: number;\n        step: number;\n        chunk: StreamChunk;\n    };\n    \'assistant/message\': {\n        turn: number;\n        step: number;\n        message: AssistantMessage;\n        usage?: TokenUsage;\n        interrupted?: true;\n    };\n    \'tool/call\': {\n        turn: number;\n        step: number;\n        callId: CallId;\n        name: string;\n        arguments: string;\n    };\n    \'tool/result\': {\n        turn: number;\n        step: number;\n        message: ToolResultMessage;\n        error?: {\n            name: string;\n            code: string;\n        };\n        meta?: JsonValue;\n    };\n    \'todo/write\': {\n        todos: TodoItem[];\n    };\n    \'request/header\': {\n        header: EpochHeader;\n        reason: RequestHeaderReason;\n    };\n    \'request/context\': RequestContext;\n    \'session/end-seed\': Record<string, never>;\n}',
+    declaration: 'export interface SessionEventMap {\n    \'turn/start\': {\n        turn: number;\n    };\n    \'turn/end\': {\n        turn: number;\n        reason: TurnEndReason;\n    };\n    \'step/start\': {\n        turn: number;\n        step: number;\n    };\n    \'step/end\': {\n        turn: number;\n        step: number;\n    };\n    \'user/message\': UserMessage;\n    \'assistant/chunk\': {\n        turn: number;\n        step: number;\n        chunk: StreamChunk;\n    };\n    \'assistant/message\': {\n        turn: number;\n        step: number;\n        message: AssistantMessage;\n        usage?: TokenUsage;\n        interrupted?: true;\n    };\n    \'tool/call\': {\n        turn: number;\n        step: number;\n        callId: CallId;\n        name: string;\n        arguments: string;\n        lifecycleVersion?: 1;\n        recoveryMode?: \'idempotent\' | \'reconcile\';\n        operationKey?: string;\n    };\n    \'model/request\': {\n        turn: number;\n        step: number;\n        attempt: number;\n        provider: string;\n        model: string;\n        routingDecisionId?: string;\n    };\n    \'model/usage\': {\n        turn: number;\n        step: number;\n        attempt: number;\n        provider: string;\n        model: string;\n        usage: TokenUsage;\n        routingDecisionId?: string;\n    };\n    \'model/usage-diagnostic\': {\n        turn: number;\n        step: number;\n        attempt: number;\n        provider: string;\n        model: string;\n        code: \'TOKEN_USAGE_INCONSISTENT\';\n        invariant: \'prompt-cache-decomposition\' | \'t /* …truncated — full shape in source */',
   },
   {
     name: 'SessionEventMetadataFilter',
@@ -4459,7 +4561,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StreamChunk',
-    declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: CallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: ReplayEnvelope;\n};',
+    declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: CallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n    diagnostics?: readonly UsageDiagnostic[];\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: ReplayEnvelope;\n};',
+  },
+  {
+    name: 'SubagentAdmissionGuard',
+    declaration: 'export interface SubagentAdmissionGuard {\n    readonly name: string;\n    admit(request: SubagentAdmissionRequest): SubagentAdmissionLease | Promise<SubagentAdmissionLease>;\n}',
+  },
+  {
+    name: 'SubagentAdmissionLease',
+    declaration: 'export interface SubagentAdmissionLease {\n    commit(): void;\n    rollback(): void;\n    release(): void;\n}',
+  },
+  {
+    name: 'SubagentAdmissionRequest',
+    declaration: 'export interface SubagentAdmissionRequest {\n    readonly kind: \'one-shot\' | \'continuable\';\n    readonly provider: string;\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'SubagentCapabilities',
@@ -4515,7 +4629,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    registerAdmissionGuard(guard: SubagentAdmissionGuard): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
   },
   {
     name: 'SubagentStartRequest',
@@ -4726,12 +4840,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
   },
   {
-    name: 'TodoItem',
-    declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\';\n}',
+    name: 'TokenEstimate',
+    declaration: 'export interface TokenEstimate {\n    tokens: number;\n    source: \'estimated\';\n    estimator: EstimatorIdentity;\n    precision: EstimatePrecision;\n}',
+  },
+  {
+    name: 'TokenEstimateInput',
+    declaration: 'export interface TokenEstimateInput {\n    provider: string;\n    model: string;\n    request: GenerateOptions;\n}',
+  },
+  {
+    name: 'TokenEstimateResult',
+    declaration: 'export type TokenEstimateResult = {\n    available: true;\n    estimate: TokenEstimate;\n} | {\n    available: false;\n    reason: \'provider-estimator-unavailable\' | \'provider-estimator-failed\' | \'fallback-estimator-failed\';\n};',
   },
   {
     name: 'TokenMeasurement',
-    declaration: 'export interface TokenMeasurement {\n    readonly logRevision: number;\n    readonly baseline: TokenMeasurementBaseline;\n    readonly surfaceDeltaTokens: number;\n    readonly totalTokens: number;\n    readonly surfaceTokens: number;\n    readonly nodes: readonly TokenSurfaceNode[];\n}',
+    declaration: 'export interface TokenMeasurement {\n    readonly logRevision: number;\n    readonly baseline: TokenMeasurementBaseline;\n    readonly surfaceDeltaTokens: number;\n    readonly totalTokens: number;\n    readonly surfaceTokens: number;\n    readonly reasoningSurfaceTokens: number;\n    readonly estimatedRequestTokens: number;\n    readonly reasoningContextRatio: number;\n    readonly nodes: readonly TokenSurfaceNode[];\n}',
   },
   {
     name: 'TokenMeasurementBaseline',
@@ -4739,11 +4861,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TokenSurfaceNode',
-    declaration: 'export interface TokenSurfaceNode {\n    readonly seq: number;\n    readonly tokens: number;\n}',
+    declaration: 'export interface TokenSurfaceNode {\n    readonly seq: number;\n    readonly tokens: number;\n    readonly reasoningTokens: number;\n}',
   },
   {
     name: 'TokenUsage',
-    declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
+    declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    cacheMissTokens?: number;\n    reasoningTokens?: number;\n    totalTokens?: number;\n    source?: \'provider\' | \'estimated\';\n    requestId?: string;\n    routingDecisionId?: string;\n}',
   },
   {
     name: 'ToolCallKind',
@@ -4755,7 +4877,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolDefinition',
-    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
+    declaration: 'export interface ToolDefinition extends ToolSchema {\n    readonly output: ToolOutputDefinition;\n    readonly recovery?: ToolRecoveryDefinition;\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    timeoutMs?: number;\n    isConcurrencySafe?(args: unknown): boolean;\n    presentCall?(args: unknown): ToolCallView | undefined;\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}',
   },
   {
     name: 'ToolDispatchExecution',
@@ -4767,7 +4889,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolExecution',
-    declaration: 'export interface ToolExecution extends ToolExecutionInput {\n    readonly rootCallId: CallId;\n    readonly token: ToolExecutionToken;\n}',
+    declaration: 'export interface ToolExecution extends ToolExecutionInput {\n    readonly rootCallId: CallId;\n    readonly token: ToolExecutionToken;\n    readonly recovery?: ToolRecoveryExecution;\n}',
   },
   {
     name: 'ToolExecutionFailure',
@@ -4818,6 +4940,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolProviderResult {\n    readonly schemas: readonly ToolSchema[];\n    readonly knownNames?: readonly string[];\n}',
   },
   {
+    name: 'ToolReconciliationContext',
+    declaration: 'export interface ToolReconciliationContext {\n    readonly priorCallId: CallId;\n    readonly operationKey: string;\n    readonly agent?: Agent;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'ToolReconciliationResult',
+    declaration: 'export type ToolReconciliationResult = {\n    readonly state: \'completed\';\n    readonly value: JsonValue;\n    readonly evidence?: string;\n} | {\n    readonly state: \'not-executed\';\n    readonly evidence?: string;\n} | {\n    readonly state: \'unknown\';\n    readonly evidence?: string;\n};',
+  },
+  {
+    name: 'ToolRecoveryDefinition',
+    declaration: 'export type ToolRecoveryDefinition = {\n    readonly mode: \'idempotent\';\n    operationKey?(args: unknown): string;\n} | {\n    readonly mode: \'reconcile\';\n    operationKey?(args: unknown): string;\n    reconcile(args: unknown, context: ToolReconciliationContext): Promise<ToolReconciliationResult>;\n};',
+  },
+  {
+    name: 'ToolRecoveryExecution',
+    declaration: 'export interface ToolRecoveryExecution {\n    readonly mode: ToolRecoveryMode;\n    readonly operationKey?: string;\n}',
+  },
+  {
+    name: 'ToolRecoveryMode',
+    declaration: 'export type ToolRecoveryMode = \'none\' | \'idempotent\' | \'reconcile\';',
+  },
+  {
     name: 'ToolRestriction',
     declaration: 'export interface ToolRestriction {\n    readonly allow?: readonly string[];\n    readonly deny?: readonly string[];\n}',
   },
@@ -4830,10 +4972,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolResultBlock {\n    type: \'tool-result\';\n    toolCallId: CallId;\n    content: ContentBlock[];\n    isError?: boolean;\n}',
   },
   {
-    name: 'ToolResultMessage',
-    declaration: 'export interface ToolResultMessage extends Message {\n    readonly role: \'user\';\n    readonly content: [\n        ToolResultBlock\n    ];\n    readonly source: ToolMessageSource;\n}',
-  },
-  {
     name: 'ToolResultView',
     declaration: 'export type ToolResultView = GenericResultView | TerminalResultView | DiffResultView | SearchResultView | ReadResultView | WebResultView;',
   },
@@ -4843,7 +4981,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    recoveryMetadata(exec: Pick<ToolExecutionInput, \'name\' | \'arguments\' | \'agent\' | \'parent\'>): ToolRecoveryExecution;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',
@@ -4928,6 +5066,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
+    name: 'UsageDiagnostic',
+    declaration: 'export interface UsageDiagnostic {\n    code: \'TOKEN_USAGE_INCONSISTENT\';\n    invariant: \'prompt-cache-decomposition\' | \'total-token-arithmetic\' | \'canonical-cache-miss\';\n    message: string;\n    observed: Record<string, number | undefined>;\n}',
   },
   {
     name: 'UserMessage',

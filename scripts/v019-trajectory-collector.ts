@@ -896,8 +896,7 @@ function buildTrajectoryFromEvents(
 ): TaskTrajectory {
   // Extract repair attempts from repair/evidence and repair/decision events.
   const repairEvents = allEvents.filter(e => e.type === 'repair/evidence' || e.type === 'repair/decision' || e.type === 'repair/completed')
-  const completedEvent = repairEvents.find(e => e.type === 'repair/completed') as
-    | Extract<SessionEvent, { type: 'repair/completed' }> | undefined
+  const completedEvent = repairEvents.find((e): e is Extract<SessionEvent, { type: 'repair/completed' }> => e.type === 'repair/completed')
 
   const flashAttempts = completedEvent?.data.flashAttempts ?? 0
   const proAttempts = completedEvent?.data.proAttempts ?? 0
@@ -1020,9 +1019,12 @@ function buildTrajectoryFromEvents(
         | Extract<SessionEvent, { type: 'repair/decision' }> | undefined
     const repairAction = repairDecision?.data.action ?? 'complete'
     const repairReason = repairDecision?.data.reason
-    const failureFingerprint = repairEvidence?.data.failureFingerprint as string | undefined
-    const progress = repairEvidence?.data.progress as string | undefined
-    const failedKind = repairEvidence?.data.failedKind as DiagnosticKind | undefined
+    const failureFingerprint = repairEvidence?.data.failureFingerprint
+    const progress = repairEvidence?.data.progress
+    const rawFailedKind = repairEvidence?.data.failedKind
+    const failedKind = rawFailedKind === 'test' || rawFailedKind === 'typecheck' || rawFailedKind === 'build' || rawFailedKind === 'lint'
+      ? rawFailedKind
+      : undefined
     const failedCriteria = repairEvidence?.data.failedCriteria ?? []
     const failingTests = repairEvidence?.data.failingTests ?? []
     const typeErrors = repairEvidence?.data.typeErrors ?? []

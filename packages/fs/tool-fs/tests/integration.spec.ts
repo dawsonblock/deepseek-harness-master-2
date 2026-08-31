@@ -23,7 +23,9 @@ let dir: string
 let ctx: Context
 let fiber: Awaited<ReturnType<Context['plugin']>>
 // No header cwd: sessionCwd returns undefined and the provider's configured test dir applies.
-const session = { header: {} }
+// `events` is required by the tool runtime's recovery-metadata path, which scans
+// the session event log for prior calls with the same operation key.
+const session = { header: {}, events: [] as unknown[] }
 
 let callCounter = 0
 function call(name: string, args: unknown) {
@@ -400,7 +402,7 @@ describe('per-session cwd', () => {
     })
 
   it('writes a relative path into the SESSION cwd, not config.cwd', async () => {
-    const result = await callIn({ header: { cwd: sessionDir } }, 'write', { file_path: 'note.txt', content: 'hi' })
+    const result = await callIn({ header: { cwd: sessionDir }, events: [] as unknown[] }, 'write', { file_path: 'note.txt', content: 'hi' })
     expect(result.isError).toBe(false)
     // Verify the WORLD: the file is in the session dir, and NOT in config.cwd.
     expect(await readFile(join(sessionDir, 'note.txt'), 'utf8')).toBe('hi')
@@ -410,7 +412,7 @@ describe('per-session cwd', () => {
   it('read + edit both resolve against the session cwd (end-to-end)', async () => {
     // ONE session object across both calls — observed-state keys by owner
     // identity, so read must record under the same owner the edit reads.
-    const session = { header: { cwd: sessionDir } }
+    const session = { header: { cwd: sessionDir }, events: [] as unknown[] }
     await writeFile(join(sessionDir, 'code.txt'), 'alpha')
     expect((await callIn(session, 'read', { file_path: 'code.txt' })).isError).toBe(false)
     const edited = await callIn(session, 'edit', { file_path: 'code.txt', old_string: 'alpha', new_string: 'beta' })
@@ -434,7 +436,7 @@ describe('signal, concurrency, and the fs/observed contract', () => {
     fiber = await ctx.plugin(ToolFs)
   })
 
-  const session = { header: {} }
+  const session = { header: {}, events: [] as unknown[] }
   const callSig = (signal: AbortSignal, name: string, args: unknown) =>
     ctx.tools.execute({ callId: CallId(`c-${++callCounter}`), name, arguments: args, agent: { session } as never, signal })
   const callOwned = (name: string, args: unknown) =>

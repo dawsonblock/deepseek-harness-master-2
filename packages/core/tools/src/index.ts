@@ -245,14 +245,14 @@ export type ToolReconciliationResult =
 /** Definition-owned retry/reconciliation contract. */
 export type ToolRecoveryDefinition =
   | {
-      readonly mode: 'idempotent'
-      operationKey?(args: unknown): string
-    }
+    readonly mode: 'idempotent'
+    operationKey?(args: unknown): string
+  }
   | {
-      readonly mode: 'reconcile'
-      operationKey?(args: unknown): string
-      reconcile(args: unknown, context: ToolReconciliationContext): Promise<ToolReconciliationResult>
-    }
+    readonly mode: 'reconcile'
+    operationKey?(args: unknown): string
+    reconcile(args: unknown, context: ToolReconciliationContext): Promise<ToolReconciliationResult>
+  }
 
 /** A registered tool: its schema plus the execution function. */
 export interface ToolDefinition extends ToolSchema {
@@ -829,7 +829,10 @@ function canonicalRecoveryJson(value: unknown): string {
     if (candidate !== null && typeof candidate === 'object') {
       const record = candidate as Record<string, JsonValue>
       const out: Record<string, JsonValue> = {}
-      for (const key of Object.keys(record).sort()) out[key] = normalize(record[key]!)
+      for (const key of Object.keys(record).sort()) {
+        const value = record[key]
+        if (value !== undefined) out[key] = normalize(value)
+      }
       return out
     }
     return candidate
@@ -1030,7 +1033,6 @@ export class ToolRuntime extends Service {
         yield ctx.systemPrompt.section(this.sdkSection())
       }
     }.bind(this), 'tools.presentAs()')
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous composite teardown; direct return preserves disposer identity
     return dispose
   }
 
@@ -1346,7 +1348,11 @@ export class ToolRuntime extends Service {
   }
 
 
-  /** Resolve the durable recovery identity for a pending call without executing it. */
+  /**
+   * Resolve the durable recovery identity for a pending call without executing it.
+   * @param exec - the tool execution input identifying the call.
+   * @returns the recovery execution descriptor for the call.
+   */
   recoveryMetadata(exec: Pick<ToolExecutionInput, 'name' | 'arguments' | 'agent' | 'parent'>): ToolRecoveryExecution {
     const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined)
     const recovery = tool?.recovery

@@ -212,6 +212,67 @@ create(agent: Agent, request: CreateGoalRequest): GoalView
 @Remote('resume') resume(agent: Agent, ref: GoalRef): GoalView
 
 /**
+ * Register an objective acceptance verifier. Duplicate names are rejected.
+ * @param verifier - the verifier to register.
+ * @returns a disposer that removes the verifier.
+ */
+registerAcceptanceVerifier(verifier: GoalCompletionVerifier): () => void
+
+/**
+ * Register an additional runtime-integrity verifier that does not by itself prove objective success.
+ * @param verifier - the verifier to register.
+ * @returns a disposer that removes the verifier.
+ */
+registerIntegrityVerifier(verifier: GoalCompletionVerifier): () => void
+
+/**
+ * Backward-compatible alias: historically every caller-registered completion verifier
+ * was treated as an objective acceptance authority. New code should use
+ * registerAcceptanceVerifier() or registerIntegrityVerifier() explicitly.
+ * @param verifier - the verifier to register.
+ * @returns a disposer that removes the verifier.
+ */
+registerCompletionVerifier(verifier: GoalCompletionVerifier): () => void
+
+/**
+ * Evaluate every registered verifier against one exact current goal revision.
+ * No verifier means fail-closed; verifier exceptions become failed checks.
+ * The report is appended durably but never enters model-visible history.
+ *
+ * When `workspaceSnapshotProvider` is supplied, it is called AFTER all
+ * verifiers have run, so the hash binds the workspace state that was
+ * actually tested — not a pre-verification snapshot that diagnostic
+ * commands may have mutated.
+ *
+ * @param agent - owning live agent.
+ * @param ref - expected current goal revision.
+ * @param workspaceSnapshotProvider - optional function that computes a
+ *   content hash of the workspace after verifiers execute; bound to the
+ *   verification event and checked by completeVerified().
+ * @returns the verification report.
+ */
+async verifyCompletion( agent: Agent, ref: GoalRef, workspaceSnapshotProvider?: () => string, ): Promise<GoalVerificationReport>
+
+/**
+ * Commit autonomous completion only when the immediately preceding durable
+ * event is a passing verification for this exact goal revision. This closes
+ * the verification-to-completion gap: any intervening event invalidates the
+ * authorization and requires verification to run again.
+ *
+ * When the verification event carries a `workspaceHash` and the caller
+ * supplies `currentWorkspaceHash`, the two must match. A mismatch indicates
+ * the workspace mutated between verification and completion, invalidating
+ * the verification basis.
+ *
+ * @param agent - owning live agent.
+ * @param ref - expected current goal revision.
+ * @param currentWorkspaceHash - optional current workspace content hash; checked against the verification
+ *   event's workspaceHash when present.
+ * @returns the completed view.
+ */
+completeVerified(agent: Agent, ref: GoalRef, currentWorkspaceHash?: string): GoalView
+
+/**
  * Mark a current non-complete goal complete and disarm it.
  * @param agent - owning live agent.
  * @param ref - expected current revision.

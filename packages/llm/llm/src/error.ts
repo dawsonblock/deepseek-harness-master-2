@@ -24,6 +24,11 @@ export class HarnessError extends Error {
 /** Canonical provider-neutral code for a model request rejected because its context window was exceeded. */
 export const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED'
 
+/** Canonical code for a preflight context budget rejection. Distinct from
+ * `CONTEXT_WINDOW_EXCEEDED_CODE` so compaction recovery can compact without
+ * consuming the adapter-overflow retry budget. */
+export const PREFLIGHT_CONTEXT_EXCEEDED_CODE = 'PREFLIGHT_CONTEXT_EXCEEDED'
+
 /** Canonical provider-neutral code for an exhausted account quota or balance. */
 export const QUOTA_EXCEEDED_CODE = 'QUOTA'
 

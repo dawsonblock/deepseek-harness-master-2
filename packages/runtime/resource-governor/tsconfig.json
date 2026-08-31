@@ -11,6 +11,7 @@
     { "path": "../../core/agent" },
     { "path": "../../core/session" },
     { "path": "../../subagent/subagent" },
-    { "path": "../agent-kernel-hardening" }
+    { "path": "../agent-kernel-hardening" },
+    { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

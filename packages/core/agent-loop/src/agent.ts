@@ -28,7 +28,7 @@ import {
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { TokenEstimate, TokenEstimator, ContextUtilization } from '@deepseek-ai/dsh-llm'
-import { ContextBudgetExceededError, DEFAULT_CONTEXT_BUDGET_POLICY, evaluateContextBudget } from '@deepseek-ai/dsh-llm'
+import { ContextBudgetExceededError, DEFAULT_CONTEXT_BUDGET_POLICY, evaluateContextBudget, PREFLIGHT_CONTEXT_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { EpochHeader, RequestContext, Session, SessionEvent, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
 import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -80,7 +80,7 @@ function requestProposal(header: EpochHeader): LlmCallConfig {
  */
 function latestRoutingDecisionId(events: readonly SessionEvent[], turn: number, step: number): string | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]! as { type: string; data: { turn?: number; step?: number; routingDecisionId?: string } }
+    const event = events[i] as { type: string; data: { turn?: number; step?: number; routingDecisionId?: string } }
     if (event.type === 'model/routing-decision' && event.data.turn === turn && event.data.step === step) {
       return event.data.routingDecisionId
     }
@@ -457,6 +457,7 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
     const system = renderPrompt(assembly)
     let requestAttempt = 0
+    let preflightCompacted = false
 
     while (true) {
       const { request, preparedCall } = await this.buildRequest(
@@ -467,14 +468,30 @@ export class ReactLoopAgent implements Agent {
       const preflightUtilization = await this.emitPreflight(turn, step, requestAttempt, request, 'post-routing', routingDecisionId)
       if (preflightUtilization !== undefined
         && preflightUtilization.status === 'reject'
-        && preflightUtilization.contextWindowTokens > 0) {
-        throw new ContextBudgetExceededError({
+        && preflightUtilization.contextWindowTokens > 0
+        && !preflightCompacted) {
+        const budgetError = new ContextBudgetExceededError({
           contextWindowTokens: preflightUtilization.contextWindowTokens,
           estimatedInputTokens: preflightUtilization.estimatedInputTokens,
           reservedOutputTokens: preflightUtilization.reservedOutputTokens,
           safetyMarginTokens: preflightUtilization.safetyMarginTokens,
           usageRatio: preflightUtilization.usageRatio,
         })
+        const action = await this.dispatch.waterfall(
+          'agent/request-error', {
+            turn,
+            step,
+            provider: request.provider,
+            failure: { message: budgetError.message, code: PREFLIGHT_CONTEXT_EXCEEDED_CODE },
+            retryPolicy: preparedCall?.retryPolicy,
+            signal,
+          },
+          () => Promise.resolve<RequestErrorAction>(undefined),
+        )
+        signal.throwIfAborted()
+        if (action?.kind !== 'retry') throw budgetError
+        preflightCompacted = true
+        continue
       }
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []

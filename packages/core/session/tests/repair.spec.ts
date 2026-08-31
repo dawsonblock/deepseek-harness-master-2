@@ -256,7 +256,7 @@ describe('interruptedTurnClosers', () => {
     if (result.type !== 'tool/result' || result.data.message.content[0].content[0]?.type !== 'text') {
       throw new Error('expected a text tool result')
     }
-    expect(result.data.message.content[0].content[0].text).toContain('retry only if the operation is read-only or idempotent')
+    expect(result.data.message.content[0].content[0].text).toContain('Retry only if the operation is read-only or idempotent')
     expect(result.data.message.content[0].content[0].text).toContain('first verify external state or ask the user')
   })
 

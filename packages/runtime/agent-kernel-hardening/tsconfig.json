@@ -12,7 +12,15 @@
     "exactOptionalPropertyTypes": true,
     "rootDir": "src",
     "outDir": "lib/types",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@deepseek-ai/cordis": ["../../../vendor/cordis/src/index.ts"],
+      "@deepseek-ai/dsh-invariants": ["../../runtime-diagnostics/invariants/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../runtime-diagnostics/invariants" }
+  ]
 }

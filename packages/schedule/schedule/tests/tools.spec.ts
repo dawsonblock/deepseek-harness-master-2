@@ -6,7 +6,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { registerScheduleTools } from '../src/tools.ts'
 import { runScheduleTransaction } from '../src/transaction.ts'
@@ -435,7 +435,7 @@ describe('Schedule persistence failure boundaries', () => {
 
     await expect(creating).resolves.toMatchObject({
       isError: true,
-      error: { info: { name: 'AbortError', code: 'ABORTED' } },
+      error: { info: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH } },
     })
     expect(test.flushes.count).toBe(0)
     expect(test.agent.session.events.filter(event => event.type === 'schedule/change')).toEqual([])

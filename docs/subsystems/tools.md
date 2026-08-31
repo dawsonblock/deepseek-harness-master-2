@@ -553,6 +553,13 @@ schemas(scope?: ScopeKey): ToolSchema[]
 executionMode(exec: ToolExecutionInput): ToolExecutionMode
 
 /**
+ * Resolve the durable recovery identity for a pending call without executing it.
+ * @param exec - the tool execution input identifying the call.
+ * @returns the recovery execution descriptor for the call.
+ */
+recoveryMetadata(exec: Pick<ToolExecutionInput, 'name' | 'arguments' | 'agent' | 'parent'>): ToolRecoveryExecution
+
+/**
  * Execute through pre-policy, guards, around-dispatch, post-policy,
  * definition-owned content finalization, and final notification. Tool and
  * listener failures resolve as materialized error results; an invisible tool

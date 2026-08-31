@@ -5,8 +5,16 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 // Import the events module to trigger declaration merging for repair/* events.
 import '@deepseek-ai/dsh-repair-controller/events'
+
+const PACKAGE_NAME = '@deepseek-ai/dsh-repair-runtime'
+
+/** Cordis companion plugin name. */
+export const name = 'repair-runtime-invariant'
+/** Services required before the companion can register. */
+export const inject = ['invariants']
 
 /**
  * Asserts that repair/evidence, repair/decision, model/escalation, and
@@ -21,7 +29,7 @@ import '@deepseek-ai/dsh-repair-controller/events'
  * - Repair-sequence completion: `repair/completed` preceded by at least
  *   one `repair/evidence` and one `repair/decision` for the same repairId.
  */
-export default function invariant(ctx: Context): void {
+const install: InvariantInstaller = (ctx, fail) => {
   ctx.on('session/event', (session, event) => {
     if ((event.type as string) !== 'repair/completed') return
     const events = session.events
@@ -35,9 +43,17 @@ export default function invariant(ctx: Context): void {
     // One-shot terminal outcomes do not require prior evidence/decision.
     const isOneShot = data.outcome === 'verified' || data.outcome === 'qualification-failed'
     if (!isOneShot && (!hasEvidence || !hasDecision)) {
-      throw new Error(
+      fail(
         `repair-runtime invariant: repair/completed for "${data.repairId}" with outcome "${data.outcome}" without preceding evidence and decision`,
       )
     }
   })
 }
+
+/**
+ * Register the repair-runtime invariant companion.
+ * @param ctx - Cordis context carrying the invariant service.
+ * @returns the installed registration's disposer after setup succeeds.
+ */
+export const apply = (ctx: Context): Promise<() => void> =>
+  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))

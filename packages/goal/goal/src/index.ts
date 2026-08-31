@@ -446,12 +446,20 @@ export class GoalService extends TypertRemoteService {
     return this.commitCurrent(agent, cache, 'resume', this.withPhase(current, 'active'), 'armed')
   }
 
-  /** Register an objective acceptance verifier. Duplicate names are rejected. */
+  /**
+   * Register an objective acceptance verifier. Duplicate names are rejected.
+   * @param verifier - the verifier to register.
+   * @returns a disposer that removes the verifier.
+   */
   registerAcceptanceVerifier(verifier: GoalCompletionVerifier): () => void {
     return this.registerVerifier(verifier, 'acceptance')
   }
 
-  /** Register an additional runtime-integrity verifier that does not by itself prove objective success. */
+  /**
+   * Register an additional runtime-integrity verifier that does not by itself prove objective success.
+   * @param verifier - the verifier to register.
+   * @returns a disposer that removes the verifier.
+   */
   registerIntegrityVerifier(verifier: GoalCompletionVerifier): () => void {
     return this.registerVerifier(verifier, 'integrity')
   }
@@ -460,6 +468,8 @@ export class GoalService extends TypertRemoteService {
    * Backward-compatible alias: historically every caller-registered completion verifier
    * was treated as an objective acceptance authority. New code should use
    * registerAcceptanceVerifier() or registerIntegrityVerifier() explicitly.
+   * @param verifier - the verifier to register.
+   * @returns a disposer that removes the verifier.
    */
   registerCompletionVerifier(verifier: GoalCompletionVerifier): () => void {
     return this.registerAcceptanceVerifier(verifier)

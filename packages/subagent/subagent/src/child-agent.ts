@@ -204,6 +204,19 @@ export function captureDelegatedPolicyOverrides(parent: Agent): DelegatedPolicyO
 }
 
 /**
+ * Capture delegation policy overrides without throwing when the parent context
+ * is unavailable. Used before the continuation manager's availability check so
+ * a parent without a context (e.g. a test stub) does not crash before the
+ * expected `CONTINUATION_UNAVAILABLE` rejection.
+ * @param parent - the delegating parent agent.
+ * @returns the captured overrides, or `undefined` when the parent context is unavailable.
+ */
+export function safeCaptureDelegatedPolicyOverrides(parent: Agent): DelegatedPolicyOverrides | undefined {
+  if (parent.ctx === undefined) return undefined
+  return captureDelegatedPolicyOverrides(parent)
+}
+
+/**
  * Append the captured delegation policy onto the child's own log as
  * `source: 'delegation'` events inside the unpublished creation window, so the
  * child's effective policy is reconstructable from its log alone. Appends land

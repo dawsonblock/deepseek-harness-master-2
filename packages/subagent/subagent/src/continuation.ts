@@ -127,6 +127,15 @@ export interface ContinuableStartSpec {
   readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+  /**
+   * Pre-captured delegation policy overrides. When the caller captures these
+   * synchronously before any await, the child receives the policy at the
+   * caller's capture point rather than after the admission-guard await.
+   * Omission captures at the manager's first synchronous point.
+   * `undefined` signals the parent context was unavailable; the continuation
+   * manager rejects before using the overrides.
+   */
+  readonly delegatedPolicies?: DelegatedPolicyOverrides | undefined
 }
 
 /** Identities returned once a continuable child accepted its initial prompt. */
@@ -429,8 +438,14 @@ export class SubagentContinuationManager {
       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
     })
     // Capture before the first await: a later parent switch belongs to the
-    // parent's future, not to this child.
-    const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
+    // parent's future, not to this child. Use the pre-captured overrides when
+    // the caller captured them before the admission-guard await. When the
+    // pre-capture returned undefined (parent context unavailable), use empty
+    // overrides — the continuation manager will reject before these are used.
+    const delegatedPolicies: DelegatedPolicyOverrides = spec.delegatedPolicies
+      ?? (parent.ctx === undefined
+        ? { sandboxMode: undefined, approvalPolicy: undefined }
+        : captureDelegatedPolicyOverrides(parent))
 
     const prepared = await this.host.prepareContinuable(spec.provider, {
       sessionId: childId,
@@ -605,7 +620,6 @@ export class SubagentContinuationManager {
    * @throws {SubagentError} when the sender is unauthorized, the parent is not
    *   live, or continuation admission is closing.
    */
-  // oxlint-disable-next-line typescript/require-await -- keep rejection semantics without yielding during admission
   async reportFrom(
     child: Agent,
     content: ContentBlock[],

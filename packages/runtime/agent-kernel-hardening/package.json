@@ -18,11 +18,16 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "lib/*.js",
     "lib/*.js.map",
+    "lib/invariant.js",
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "README.md"
@@ -31,6 +36,14 @@
     "build": "node scripts/clean.mjs && tsc -p tsconfig.json && node scripts/copy-runtime.mjs",
     "test": "npm run build && node --test tests/qualification.mjs",
     "test:packed": "npm run build && node tests/packed-consumer.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^"
   },
   "license": "MIT"
 }

@@ -57,6 +57,7 @@ import { assertSubagentMaxDepth } from './depth.ts'
 import { createActivationObserver, createLifecycleEmitter, observeRun } from './lifecycle.ts'
 import type { ActivationObserver, LifecycleEmitter } from './lifecycle.ts'
 import SubagentContinuationManager from './continuation.ts'
+import { safeCaptureDelegatedPolicyOverrides } from './child-agent.ts'
 import type {
   ContinuableStart,
   ContinuableStartSpec,
@@ -113,6 +114,7 @@ export {
   childSessionMeta,
   resolveChildAgentOptions,
   resolveChildDepth,
+  safeCaptureDelegatedPolicyOverrides,
   SubagentDepthError,
 } from './child-agent.ts'
 export type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts'
@@ -218,11 +220,20 @@ export class SubagentRuntime extends Service {
    * @throws when continuation services are unavailable or materialization fails.
    */
   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
+    // Capture delegation policy synchronously before the admission-guard await:
+    // a later parent switch belongs to the parent's future, not to this child.
+    // Skip the capture when the caller pre-captured or when the parent context
+    // is unavailable (the continuation manager will reject with
+    // CONTINUATION_UNAVAILABLE before the policies are used).
+    const delegatedPolicies = spec.delegatedPolicies ?? safeCaptureDelegatedPolicyOverrides(spec.request.parent)
     const leases = await this.acquireAdmissionGuards({
       kind: 'continuable', provider: spec.provider, parent: spec.request.parent, signal: spec.signal,
     })
     try {
-      const started = await this.requireContinuations().startContinuable(spec)
+      const started = await this.requireContinuations().startContinuable({
+        ...spec,
+        delegatedPolicies,
+      })
       for (const lease of leases) lease.commit()
       // Continuable admission guards govern creation/start-rate/descendant budgets.
       // Runtime residency is separately observable through subagent/start/end.
@@ -305,7 +316,6 @@ export class SubagentRuntime extends Service {
    * @returns the exact Cordis effect disposer.
    */
   registerContinuableSetup(contribution: ContinuableSetupContribution): () => void {
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
     return this.ctx.effect(
       () => this.setupRegistry.register(contribution),
       'subagents.registerContinuableSetup()',
@@ -405,7 +415,6 @@ export class SubagentRuntime extends Service {
    */
   registerProvider(provider: SubagentProvider): () => void {
     const name = provider.name
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
     return this.ctx.effect(function* (this: SubagentRuntime) {
       if (this.providers.has(name)) {
         throw new SubagentError(`a subagent provider named "${name}" is already registered`, 'DUPLICATE_PROVIDER')
@@ -421,7 +430,11 @@ export class SubagentRuntime extends Service {
     }.bind(this), 'subagents.registerProvider()')
   }
 
-  /** Register a deployment-owned admission guard. Registration is effect-scoped. */
+  /**
+   * Register a deployment-owned admission guard. Registration is effect-scoped.
+   * @param guard - the admission guard to register.
+   * @returns a disposer that removes the guard.
+   */
   registerAdmissionGuard(guard: SubagentAdmissionGuard): () => void {
     return this.ctx.effect(function* (this: SubagentRuntime) {
       if ([...this.admissionGuards].some(existing => existing.name === guard.name)) {

@@ -16,9 +16,21 @@
       "DOM"
     ],
     "composite": true,
-    "tsBuildInfoFile": "lib/types/.tsbuildinfo"
+    "tsBuildInfoFile": "lib/types/.tsbuildinfo",
+    "paths": {
+      "@deepseek-ai/cordis": ["../../../vendor/cordis/src/index.ts"],
+      "@deepseek-ai/dsh-invariants": ["../../runtime-diagnostics/invariants/src/index.ts"]
+    }
   },
   "include": [
     "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    }
   ]
 }

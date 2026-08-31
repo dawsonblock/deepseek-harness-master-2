@@ -2842,7 +2842,7 @@ describe('native tool recovery enforcement', () => {
     expect(bodyRuns).toBe(0)
     expect(reconciliations).toBe(1)
     expect(appended).toHaveLength(1)
-    expect(appended[0]).toMatchObject(['tool/reconciliation', { state: 'completed', priorCallId: 'old' }])
+    expect(appended[0]).toMatchObject(['tool/reconciliation', { state: 'completed', priorCallId: 'old' }, { ignorable: true }])
   })
 
   it('blocks an ambiguous reconcile-mode retry when external state remains unknown', async () => {
