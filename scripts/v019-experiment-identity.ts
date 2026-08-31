@@ -60,6 +60,10 @@ export interface ExperimentManifest {
   readonly repositoryCount: number
   /** False for B0 infrastructure validation; true for the baseline cohort. */
   readonly benchmarkEligible: boolean
+  /** 'benchmark' for qualified runs, 'exploratory' for security-gate-bypassed runs, 'b0' for infrastructure validation. */
+  readonly runClass: 'benchmark' | 'exploratory' | 'b0'
+  /** True when the security gate was bypassed via --skip-security-gate. Forces benchmarkEligible=false. */
+  readonly securityGateBypassed: boolean
   /** Repair strategy: 'transactional' rolls back to baseline before each attempt; 'iterative' preserves workspace state. */
   readonly repairStrategy: 'transactional' | 'iterative'
   /** Actual selected sandbox backend (runner name, path, version, enforcement, network isolation). */
@@ -102,6 +106,8 @@ export function buildExperimentManifest(params: {
   taskCount: number
   repositoryCount: number
   benchmarkEligible: boolean
+  /** True when --skip-security-gate was passed. Forces benchmarkEligible=false and runClass='exploratory'. */
+  securityGateBypassed?: boolean
   /** Skip the clean-source enforcement gate. Tests use this to avoid depending on the repo's working-tree state. */
   skipCleanSourceCheck?: boolean
   repairStrategy: 'transactional' | 'iterative'
@@ -120,6 +126,20 @@ export function buildExperimentManifest(params: {
    */
   qualificationArtifactHash: string
 }): ExperimentManifest {
+  // Invariant: security-gate bypass forces benchmark ineligibility.
+  // This prevents exploratory runs from being mistaken for qualified evidence.
+  const securityGateBypassed = params.securityGateBypassed ?? false
+  if (securityGateBypassed && params.benchmarkEligible) {
+    throw new Error(
+      'Invariant violation: securityGateBypassed=true requires benchmarkEligible=false. '
+      + 'A bypassed security gate cannot produce benchmark-eligible results.',
+    )
+  }
+  const runClass: 'benchmark' | 'exploratory' | 'b0' = securityGateBypassed
+    ? 'exploratory'
+    : params.benchmarkEligible
+      ? 'benchmark'
+      : 'b0'
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
   const porcelain = execSync('git status --porcelain', { encoding: 'utf8' }).trim()
   const sourceTreeDirty = porcelain.length > 0
@@ -164,6 +184,8 @@ export function buildExperimentManifest(params: {
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
+    runClass,
+    securityGateBypassed,
     repairStrategy: params.repairStrategy,
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
@@ -189,6 +211,8 @@ export function buildExperimentManifest(params: {
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
+    runClass,
+    securityGateBypassed,
     repairStrategy: params.repairStrategy,
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,

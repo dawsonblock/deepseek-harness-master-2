@@ -33,7 +33,6 @@ python/**/.pytest_cache/
 apps/web/dist/
 .artifacts/
 artifacts/evals/
-evals/
 artifacts/reports/*.checkpoint.json
 .dsh-build/
 .playwright-mcp/

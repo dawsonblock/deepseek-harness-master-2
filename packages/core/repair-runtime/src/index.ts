@@ -587,6 +587,21 @@ function latestRoutingDecisionId(events: readonly SessionEvent[], turn: number):
   return undefined
 }
 
+/** Find the first routing decision id for a turn. The first routing decision
+ * establishes the model that started the attempt; a mid-turn escalation to a
+ * heavier model is a routing feature, not a repair escalation, so repair
+ * counters must attribute the attempt to the starting model. */
+function firstRoutingDecisionId(events: readonly SessionEvent[], turn: number): string | undefined {
+  for (const event of events) {
+    if ((event.type as string) !== 'model/routing-decision') continue
+    const data = event.data as unknown as { turn?: number; routingDecisionId?: string }
+    if (data.turn === turn && data.routingDecisionId !== undefined) {
+      return data.routingDecisionId
+    }
+  }
+  return undefined
+}
+
 /** Derive the current turn number from the session log. Prefers the latest
  * turn/start event; falls back to the latest model/routing-decision's turn
  * field so repair works when the agent-loop has not yet opened a turn (e.g.
@@ -1659,7 +1674,11 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
     // and Pro success.
     if (data.passed) {
       const passState = state ?? stateFor(agent, goal)
-      const routingDecisionId = latestRoutingDecisionId(session.events, turn) ?? 'unknown'
+      // Use the FIRST routing decision for the turn, not the latest. A
+      // mid-turn escalation from Flash to Pro is a routing feature, not a
+      // repair escalation. The attempt's model attribution must reflect
+      // which model started the attempt, not which model finished it.
+      const routingDecisionId = firstRoutingDecisionId(session.events, turn) ?? 'unknown'
       const passChangedFiles = config.changedFilesProvider !== undefined
         ? [...config.changedFilesProvider()]
         : changedFilesInTurn(session.events, turn)

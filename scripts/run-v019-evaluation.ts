@@ -146,6 +146,7 @@ async function main(): Promise<void> {
     taskCount: Math.min(TASK_CORPUS.length, maxTasks),
     repositoryCount: new Set(TASK_CORPUS.slice(0, maxTasks).map(t => t.repository.name)).size,
     benchmarkEligible,
+    securityGateBypassed: false,
     repairStrategy: 'transactional',
     sandboxBackend: {
       runner: composedRecord.backend.runner,

@@ -930,12 +930,16 @@ function buildTrajectoryFromEvents(
   const repairEvents = allEvents.filter(e => e.type === 'repair/evidence' || e.type === 'repair/decision' || e.type === 'repair/completed')
   const completedEvent = repairEvents.find((e): e is Extract<SessionEvent, { type: 'repair/completed' }> => e.type === 'repair/completed')
 
-  const flashAttempts = completedEvent?.data.flashAttempts ?? 0
-  const proAttempts = completedEvent?.data.proAttempts ?? 0
+  // Derive flash/pro attempt counts from the attempts array after it is
+  // built, not from the repair/completed event. The repair runtime's
+  // counters can diverge from the actual attempt models when a mid-turn
+  // routing escalation occurs (Flash starts the turn, Pro finishes it).
+  // The attempts array is built from model/usage events grouped by turn,
+  // with the model extracted from the first routing decision for the turn,
+  // so it correctly attributes the attempt to the starting model.
   const totalCostUsd = completedEvent?.data.totalCostUsd ?? 0
   const finalVerified = completedEvent?.data.verified ?? false
   const outcome = completedEvent?.data.outcome ?? 'unknown'
-  const escalatedToPro = proAttempts > 0
 
   // Determine holdout pass from the outcome.
   const holdoutPass = outcome === 'qualification-failed' ? false : finalVerified
@@ -1008,7 +1012,7 @@ function buildTrajectoryFromEvents(
       && (e.data as { turn?: number }).turn === turn,
     ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
     const routingDecisionId = routingEvent?.data.routingDecisionId ?? `unrouted-turn-${turn}`
-    const model = (routingEvent?.data as { selection?: { model?: string } }).selection?.model
+    const model = (routingEvent?.data as { selected?: { model?: string } }).selected?.model
       ?? (firstUsageEvent.data as { model?: string }).model
       ?? 'unknown'
 
@@ -1181,6 +1185,12 @@ function buildTrajectoryFromEvents(
       || outcome === 'unknown'
       ? 'FAIL'
       : 'PASS'
+  // Derive flash/pro counts from the attempts array. Each attempt's model
+  // is extracted from the first routing decision for its turn, so mid-turn
+  // routing escalations do not inflate the Pro counter.
+  const flashAttempts = attempts.filter(a => a.model === 'deepseek-v4-flash').length
+  const proAttempts = attempts.filter(a => a.model === 'deepseek-v4-pro').length
+  const escalatedToPro = proAttempts > 0
   // Model capability is NOT_EVALUATED when the control plane failed before
   // the model had a fair chance to demonstrate capability. For rollback
   // failures and unknown outcomes, the model's capability cannot be assessed

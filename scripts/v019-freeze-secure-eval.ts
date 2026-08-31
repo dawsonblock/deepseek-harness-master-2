@@ -16,8 +16,8 @@
  */
 
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { runSecurityQualification, SECURITY_QUALIFICATION_ID } from './v019-security-qualification.ts'
 import { runComposedRuntimeQualification } from './v019-composed-runtime-qualification.ts'
 
@@ -185,7 +185,8 @@ export async function generateFreezeRecord(): Promise<SecureEvalFreezeRecord> {
  * @param artifactsDir - the artifacts directory path.
  */
 export function writeFreezeRecord(record: SecureEvalFreezeRecord, artifactsDir: string): void {
-  const path = join(artifactsDir, 'evals', `${FREEZE_ID}.json`)
+  const path = join(artifactsDir, 'artifacts', 'evals', `${FREEZE_ID}.json`)
+  mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(record, null, 2) + '\n', 'utf8')
 }
 
@@ -196,7 +197,7 @@ export function writeFreezeRecord(record: SecureEvalFreezeRecord, artifactsDir: 
  * @returns the persisted freeze record, or undefined if none exists.
  */
 export function readFreezeRecord(artifactsDir: string): SecureEvalFreezeRecord | undefined {
-  const path = join(artifactsDir, 'evals', `${FREEZE_ID}.json`)
+  const path = join(artifactsDir, 'artifacts', 'evals', `${FREEZE_ID}.json`)
   try {
     const content = readFileSync(path, 'utf8')
     return JSON.parse(content) as SecureEvalFreezeRecord

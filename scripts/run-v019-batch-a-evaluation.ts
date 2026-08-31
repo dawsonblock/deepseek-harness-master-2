@@ -224,7 +224,13 @@ async function main(): Promise<void> {
   process.stderr.write('\n')
 
   const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
-  const benchmarkEligible = true
+  // Security-gate bypass forces benchmark ineligibility. The invariant
+  // skipSecurityGate => !benchmarkEligible prevents exploratory runs from
+  // being mistaken for qualified evidence.
+  const benchmarkEligible = !skipSecurityGate
+  if (skipSecurityGate) {
+    process.stderr.write('Run class: exploratory (benchmarkEligible=false, security gate bypassed)\n')
+  }
 
   const experimentManifest = buildExperimentManifest({
     repairControllerVersion: '0.18.0',
@@ -238,6 +244,7 @@ async function main(): Promise<void> {
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,
     benchmarkEligible,
+    securityGateBypassed: skipSecurityGate,
     repairStrategy: 'transactional',
     sandboxBackend: {
       runner: composedRecord.backend.runner,
