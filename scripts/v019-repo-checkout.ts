@@ -71,10 +71,10 @@ export function restoreBaseline(workspace: string, snapshot: BaselineSnapshot): 
 export const WORKSPACE_SNAPSHOT_ALGORITHM = 'sha256-tree-v2'
 
 /** Workspace snapshot exclusion set version. Changes to the excluded directory set bump this. */
-export const WORKSPACE_SNAPSHOT_EXCLUSIONS = 'verifier-snapshot-exclusions-v1'
+export const WORKSPACE_SNAPSHOT_EXCLUSIONS = 'verifier-snapshot-exclusions-v2'
 
 /** Directories excluded from the workspace hash and snapshot content hash. */
-export const SNAPSHOT_EXCLUDED_DIRS = new Set(['node_modules', '.git', 'dist'])
+export const SNAPSHOT_EXCLUDED_DIRS = new Set(['node_modules', '.git', 'dist', '.tmp'])
 
 /**
  * Compute a SHA-256 hash of workspace source files, excluding the directories

@@ -628,9 +628,19 @@ function hashVerifierControlledFiles(workspace: string): string {
       const content = readFileSync(absPath)
       hash.update(file).update(':').update(content).update('\n')
     } catch {
-      // File doesn't exist in this workspace — include its absence in the hash
-      // so a model creating it would be detected.
-      hash.update(file).update(':absent\n')
+      // Config files and test setup files are always included in the hash,
+      // even when absent, so a model creating them is detected. Test files
+      // discovered by walking test directories are only hashed when they
+      // exist: multi-file-feature tasks legitimately ask the model to create
+      // new test files, and recording their absence would reject every
+      // multi-file-feature task before verification.
+      const isConfigOrSetup = controlledFiles.includes(file) || testSetupFiles.includes(file)
+      if (isConfigOrSetup) {
+        hash.update(file).update(':absent\n')
+      }
+      // Test files that don't exist at baseline are simply not in the hash.
+      // The diagnostic verifier still runs the actual tests, so a new test
+      // file that doesn't test the right thing will fail verification.
     }
   }
 
@@ -1272,7 +1282,7 @@ function getChangedFiles(workspace: string, checkout?: RepoCheckout): string[] {
         `git --git-dir="${checkout.cloneDir}/.git" archive "${checkout.commit}" | tar -t`,
         { encoding: 'utf8', timeout: 30000 },
       ).trim().split('\n').filter(f => f.length > 0 && !f.endsWith('/'))
-      const workspaceFiles = execSync(`find "${workspace}" -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*'`, {
+      const workspaceFiles = execSync(`find "${workspace}" -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/.tmp/*'`, {
         encoding: 'utf8',
         timeout: 30000,
       }).trim().split('\n').filter(f => f.length > 0)

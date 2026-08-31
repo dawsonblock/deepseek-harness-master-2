@@ -360,8 +360,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: '8b66134a5a7dc932a512b2f2aa5aa7d4c6a03f20',
-      referenceFixCommit: '2919491af79def3fa6531c86662fa15c448aa40f',
+      baseCommit: '4e8fd70c87480b7462645b3ea7307aff26d878a6',
+      referenceFixCommit: 'c103c6d012fc2f7fec228dcf13c8304d9f6d887c',
     },
     repoSize: 'small',
     task: {
@@ -385,8 +385,8 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: '8b66134a5a7dc932a512b2f2aa5aa7d4c6a03f20',
-      referenceFixCommit: '2919491af79def3fa6531c86662fa15c448aa40f',
+      baseCommit: '4e8fd70c87480b7462645b3ea7307aff26d878a6',
+      referenceFixCommit: 'c103c6d012fc2f7fec228dcf13c8304d9f6d887c',
     },
     repoSize: 'small',
     task: {
@@ -410,13 +410,13 @@ export const BATCH_A_CORPUS: TaskManifest[] = [
     repository: {
       name: 'ts-http',
       url: `${REPO_BASE}/ts-http`,
-      baseCommit: '8b66134a5a7dc932a512b2f2aa5aa7d4c6a03f20',
-      referenceFixCommit: '2919491af79def3fa6531c86662fa15c448aa40f',
+      baseCommit: '4e8fd70c87480b7462645b3ea7307aff26d878a6',
+      referenceFixCommit: 'c103c6d012fc2f7fec228dcf13c8304d9f6d887c',
     },
     repoSize: 'small',
     task: {
-      title: 'Fix package.json dependency version conflict',
-      description: 'The project has a dependency version conflict in `package.json`. The `typescript` version is pinned to `5.0.0` but the `tsconfig.json` uses features from TypeScript 5.4+. Also, `vitest` is listed as a dependency but should be a devDependency. Fix `package.json` so `npm install` succeeds and `npm test` passes.',
+      title: 'Fix package.json dependency classification',
+      description: 'The `vitest` package is listed in `dependencies` but should be in `devDependencies` since it is only used for testing. Move `vitest` from `dependencies` to `devDependencies` in `package.json`. Also move `typescript` to `devDependencies` since it is a build-time tool, not a runtime dependency. `npm install` and `npm test` should still pass after the fix.',
       source: 'synthetic',
     },
     verification: {

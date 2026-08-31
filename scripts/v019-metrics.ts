@@ -51,6 +51,27 @@ export interface MetricsReport {
   readonly proCostShare: number
   readonly cacheHitPercentage: number
   readonly incrementalRepairCost: number
+  /** Latency breakdown by attempt type. */
+  readonly latencyByAttemptType: {
+    readonly oneShotFlash: number | null
+    readonly flashRepair: number | null
+    readonly proInitial: number | null
+    readonly proRescue: number | null
+    readonly failed: number | null
+  }
+  /** Cost breakdown by terminal outcome. */
+  readonly costByOutcome: {
+    readonly verifiedOneShot: number | null
+    readonly verifiedRescued: number | null
+    readonly ultimatelyFailed: number | null
+  }
+  /** Per-task cache semantics for cross-run comparability. */
+  readonly cacheSemantics: {
+    readonly totalCacheReadTokens: number
+    readonly totalCacheMissTokens: number
+    readonly meanCacheReadPerTask: number
+    readonly meanCacheMissPerTask: number
+  }
   readonly categoryBreakdown: readonly CategoryMetric[]
 }
 
@@ -221,6 +242,14 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     proCostShare: totalCost > 0 ? proCost / totalCost : 0,
     cacheHitPercentage: totalInputTokens > 0 ? totalCacheRead / totalInputTokens : 0,
     incrementalRepairCost: incrementalRepairSpend,
+    latencyByAttemptType: computeLatencyByAttemptType(evaluated),
+    costByOutcome: computeCostByOutcome(evaluated),
+    cacheSemantics: {
+      totalCacheReadTokens: totalCacheRead,
+      totalCacheMissTokens: totalCacheMiss,
+      meanCacheReadPerTask: evalN > 0 ? totalCacheRead / evalN : 0,
+      meanCacheMissPerTask: evalN > 0 ? totalCacheMiss / evalN : 0,
+    },
     categoryBreakdown: categories,
   }
 }
@@ -294,6 +323,70 @@ function emptyMetrics(): MetricsReport {
     referenceFixFileMissRate: 0, referenceFixFileInspectionRate: 0,
     referenceFixFileInspectionRecall: 0,
     flashCostShare: 0, proCostShare: 0, cacheHitPercentage: 0,
-    incrementalRepairCost: 0, categoryBreakdown: [],
+    incrementalRepairCost: 0,
+    latencyByAttemptType: {
+      oneShotFlash: null, flashRepair: null, proInitial: null, proRescue: null, failed: null,
+    },
+    costByOutcome: {
+      verifiedOneShot: null, verifiedRescued: null, ultimatelyFailed: null,
+    },
+    cacheSemantics: {
+      totalCacheReadTokens: 0, totalCacheMissTokens: 0,
+      meanCacheReadPerTask: 0, meanCacheMissPerTask: 0,
+    },
+    categoryBreakdown: [],
   }
+}
+
+function computeLatencyByAttemptType(evaluated: readonly TaskTrajectory[]): {
+  readonly oneShotFlash: number | null
+  readonly flashRepair: number | null
+  readonly proInitial: number | null
+  readonly proRescue: number | null
+  readonly failed: number | null
+} {
+  const oneShotFlash = evaluated.filter(t =>
+    t.attempts.length === 1 && t.attempts[0]?.model === 'deepseek-v4-flash' && t.finalVerified,
+  ).map(t => t.totalLatencyMs)
+  const flashRepair = evaluated.filter(t =>
+    t.attempts.length > 1 && t.proAttempts === 0 && t.finalVerified,
+  ).map(t => t.totalLatencyMs)
+  const proInitial = evaluated.filter(t =>
+    t.attempts.length === 1 && t.attempts[0]?.model === 'deepseek-v4-pro' && t.finalVerified,
+  ).map(t => t.totalLatencyMs)
+  const proRescue = evaluated.filter(t =>
+    t.proAttempts > 0 && t.attempts.length > 1 && t.finalVerified,
+  ).map(t => t.totalLatencyMs)
+  const failed = evaluated.filter(t => !t.finalVerified).map(t => t.totalLatencyMs)
+  return {
+    oneShotFlash: meanOrNull(oneShotFlash),
+    flashRepair: meanOrNull(flashRepair),
+    proInitial: meanOrNull(proInitial),
+    proRescue: meanOrNull(proRescue),
+    failed: meanOrNull(failed),
+  }
+}
+
+function computeCostByOutcome(evaluated: readonly TaskTrajectory[]): {
+  readonly verifiedOneShot: number | null
+  readonly verifiedRescued: number | null
+  readonly ultimatelyFailed: number | null
+} {
+  const verifiedOneShot = evaluated.filter(t =>
+    t.attempts.length === 1 && t.finalVerified,
+  ).map(t => t.totalCostUsd)
+  const verifiedRescued = evaluated.filter(t =>
+    t.attempts.length > 1 && t.finalVerified,
+  ).map(t => t.totalCostUsd)
+  const ultimatelyFailed = evaluated.filter(t => !t.finalVerified).map(t => t.totalCostUsd)
+  return {
+    verifiedOneShot: meanOrNull(verifiedOneShot),
+    verifiedRescued: meanOrNull(verifiedRescued),
+    ultimatelyFailed: meanOrNull(ultimatelyFailed),
+  }
+}
+
+function meanOrNull(values: readonly number[]): number | null {
+  if (values.length === 0) return null
+  return values.reduce((s, v) => s + v, 0) / values.length
 }

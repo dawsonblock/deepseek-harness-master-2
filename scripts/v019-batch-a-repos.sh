@@ -938,7 +938,8 @@ create_ts_http() {
   rm -rf "$dir"
   mkdir -p "$dir/src" "$dir/tests"
 
-  # BUG: typescript pinned to 5.0.0, vitest in dependencies instead of devDependencies
+  # Base has typescript ^5.4.0 but vitest in dependencies (not devDependencies).
+  # The deps task asks the model to move vitest to devDependencies.
   cat > "$dir/package.json" <<'EOF'
 {
   "name": "ts-http",
@@ -949,7 +950,7 @@ create_ts_http() {
     "test": "vitest run"
   },
   "dependencies": {
-    "typescript": "5.0.0",
+    "typescript": "^5.4.0",
     "vitest": "^2.0.0"
   }
 }

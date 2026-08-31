@@ -53,7 +53,7 @@ import {
 import { SANDBOX_QUALIFICATION_ID } from './v018-sandbox-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v2')
+const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v3')
 const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
 const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
 const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
     sandboxQualificationId: SANDBOX_QUALIFICATION_ID,
-    taskCorpusVersion: 'v019-synthetic-multirepo-v2',
+    taskCorpusVersion: 'v019-synthetic-multirepo-v3',
     corpusManifestHash: computeCorpusManifestHash(TASK_CORPUS.slice(0, maxTasks)),
     taskCount: Math.min(TASK_CORPUS.length, maxTasks),
     repositoryCount: new Set(TASK_CORPUS.slice(0, maxTasks).map(t => t.repository.name)).size,

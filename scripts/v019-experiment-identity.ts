@@ -17,10 +17,10 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
 /** Experiment identity for the v0.19 synthetic multi-repo cohort. */
-export const EXPERIMENT_ID = 'v019-synthetic-multirepo-validation-v2'
+export const EXPERIMENT_ID = 'v019-synthetic-multirepo-validation-v3'
 
 /** Experiment identity for the B0 infrastructure validation shakedown. */
-export const B0_EXPERIMENT_ID = 'v019-infra-validation-v2'
+export const B0_EXPERIMENT_ID = 'v019-infra-validation-v3'
 
 /** v0.18.0 tag that this experiment freezes as experimental control. */
 export const FROZEN_V018_TAG = 'v0.18.0'
