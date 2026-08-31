@@ -1923,7 +1923,7 @@ export function apply(ctx: Context, config: RepairRuntimeConfig = { enabled: fal
           if (result.followupContent !== undefined) {
             const message = createUserMessage({
               content: result.followupContent,
-              source: { kind: 'goal', goalId: goal.id, revision: goal.revision, round: goal.roundsStarted + 1 },
+              source: { kind: 'plugin', plugin: 'repair-runtime' },
             })
             agent.followup(message)
           }
