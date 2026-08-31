@@ -96,8 +96,11 @@ export interface CategoryMetric {
 /**
  * Compute the full metrics report from a set of task trajectories.
  *
- * Only `benchmarkEligible` trajectories with `modelCapabilityStatus !== 'NOT_EVALUATED'`
- * contribute to capability metrics. Infrastructure failures are reported separately.
+ * Trajectories with `modelCapabilityStatus !== 'NOT_EVALUATED'` contribute
+ * to capability metrics. Infrastructure failures are reported separately.
+ * Both benchmark-eligible and exploratory trajectories produce metrics;
+ * the `benchmarkEligible` flag classifies the run, it does not suppress
+ * metrics computation.
  */
 export function computeMetrics(trajectories: readonly TaskTrajectory[]): MetricsReport {
   const n = trajectories.length
@@ -109,7 +112,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   // floating-point addition is not associative.
   const sorted = [...trajectories].sort((a, b) => a.taskId.localeCompare(b.taskId))
 
-  const evaluated = sorted.filter(t => t.benchmarkEligible && t.modelCapabilityStatus !== 'NOT_EVALUATED')
+  const evaluated = sorted.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
   const evalN = evaluated.length
   const infraFailures = sorted.filter(t => t.taskState === 'FAILED_INFRA')
 
@@ -139,7 +142,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   // tasks. This is the true provider/transport failure rate, distinct from
   // control-plane errors (F19) which are harness defects, not provider
   // failures.
-  const eligibleTrajectories = sorted.filter(t => t.benchmarkEligible && t.taskState !== 'FAILED_INFRA')
+  const eligibleTrajectories = sorted.filter(t => t.taskState !== 'FAILED_INFRA')
   const allOutcomes = eligibleTrajectories.flatMap(t => t.providerRequestOutcomes)
   const providerFailures = allOutcomes.filter(o => o.outcome === 'error' || o.outcome === 'aborted')
   const sameFailureEscalations = proEscalations.filter((t) => {
@@ -262,9 +265,9 @@ function groupByCategory(trajectories: readonly TaskTrajectory[]): CategoryMetri
     categories.set(t.category, list)
   }
   return [...categories.entries()].map(([category, tasks]) => {
-    // Apply the same benchmarkEligible filter as global metrics so
-    // category metrics exclude non-benchmark trajectories (e.g. B0).
-    const eligibleTasks = tasks.filter(t => t.benchmarkEligible)
+    // Apply the same evaluation filter as global metrics so
+    // category metrics exclude infrastructure failures.
+    const eligibleTasks = tasks.filter(t => t.taskState !== 'FAILED_INFRA')
     const evalTasks = eligibleTasks.filter(t => t.modelCapabilityStatus !== 'NOT_EVALUATED')
     return {
       category,
