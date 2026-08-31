@@ -71,7 +71,11 @@ interface Checkpoint {
 async function loadCheckpoint(): Promise<Checkpoint | undefined> {
   try {
     const content = await readFile(CHECKPOINT_PATH, 'utf8')
-    return JSON.parse(content) as Checkpoint
+    const parsed = JSON.parse(content) as Partial<Checkpoint>
+    // Old checkpoints from v1 lack experimentManifestHash. Treat them as
+    // incompatible rather than crashing on the field access.
+    if (parsed.experimentId === undefined || parsed.experimentManifestHash === undefined) return undefined
+    return parsed as Checkpoint
   } catch { return undefined }
 }
 

@@ -105,8 +105,11 @@ export function landlockProfileArgs(policy: SandboxPolicy): string[] {
   }
   // readOnlyPaths: add as readOnly grants. Landlock's nested rule model
   // restricts writes to subdirectories even when the parent is read-write.
-  // Protects verifier-affecting state such as node_modules.
-  const roPaths = policy.readOnlyPaths ?? []
+  // Protects verifier-affecting state such as node_modules. Skip paths
+  // that do not exist — the Landlock launcher opens each grant path with
+  // O_PATH and fails closed if the path is missing, so optional
+  // directories like dist must be filtered out.
+  const roPaths = (policy.readOnlyPaths ?? []).filter(existsSync)
   if (policy.mode === 'workspace-isolated') {
     return landlockGrantArgs({
       readOnly: ['/usr', '/lib', '/lib64', '/bin', '/etc', '/dev', '/proc', ...roPaths],
@@ -137,8 +140,10 @@ export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
     const denyForms = denyPaths.map(p => `(deny file-read* (subpath ${sbplString(p)}))`)
     // readOnlyPaths: deny writes to specified subdirectories within the
     // workspace. Protects verifier-affecting state such as node_modules
-    // from model mutation via shell subprocesses.
-    const roPaths = (policy.readOnlyPaths ?? []).map(canonicalPath)
+    // from model mutation via shell subprocesses. Skip paths that do not
+    // exist — deny rules for missing paths are no-ops but filtering keeps
+    // the SBPL profile consistent with the in-process fs fence.
+    const roPaths = (policy.readOnlyPaths ?? []).filter(existsSync).map(canonicalPath)
     const roDenyForms = roPaths.map(p => `(deny file-write* (subpath ${sbplString(p)}))`)
     const forms = [
       '(version 1)',
@@ -166,7 +171,8 @@ export function seatbeltProfileArgs(policy: SandboxPolicy): string[] {
     forms.push(`(allow file-write* ${roots.map(root => `(subpath ${sbplString(root)})`).join(' ')})`)
   }
   // readOnlyPaths under workspace-write: deny writes to specified subdirectories.
-  const roPaths = (policy.readOnlyPaths ?? []).map(canonicalPath)
+  // Skip paths that do not exist for consistency with bwrap and Landlock.
+  const roPaths = (policy.readOnlyPaths ?? []).filter(existsSync).map(canonicalPath)
   for (const p of roPaths) {
     forms.push(`(deny file-write* (subpath ${sbplString(p)}))`)
   }

@@ -14,7 +14,7 @@
  * @module v019-trajectory-collector
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
@@ -171,12 +171,15 @@ export async function runTaskTrajectory(
   let uninstallFailLoud: (() => void) | undefined
   let ctx: Context | undefined
 
+  let configHarnessDir: string | undefined
+  let sessionsDir: string | undefined
   try {
-    const configPath = await generateRepoConfig(flashModel.model, workspace)
+    const { configPath, harnessDir: configDir } = await generateRepoConfig(flashModel.model, workspace)
+    configHarnessDir = configDir
     // Sessions directory is kept outside the model workspace so it does
     // not contaminate the B0 baseline or appear in changed-file diffs.
-    const harnessDir = join(tmpdir(), `dsh-v019-sessions-${Date.now()}`)
-    await mkdir(harnessDir, { recursive: true })
+    const sessionsDir = join(tmpdir(), `dsh-v019-sessions-${Date.now()}`)
+    await mkdir(sessionsDir, { recursive: true })
     loadEnv('v019-evaluation')
     uninstallFailLoud = installFailLoud('v019-evaluation')
     ctx = await boot('v019-evaluation', resolveConfigPath(configPath, undefined))
@@ -313,6 +316,13 @@ export async function runTaskTrajectory(
       try { await ctx.fiber.dispose() } catch { /* context may already be disposed */ }
     }
     uninstallFailLoud?.()
+    // Clean up harness and session directories from os.tmpdir().
+    if (configHarnessDir !== undefined) {
+      await rm(configHarnessDir, { recursive: true, force: true })
+    }
+    if (sessionsDir !== undefined) {
+      await rm(sessionsDir, { recursive: true, force: true })
+    }
   }
 
   // Extract trajectory from session events.
@@ -376,7 +386,7 @@ export function buildInfraFailureTrajectory(
   }
 }
 
-export async function generateRepoConfig(model: string, workspace: string): Promise<string> {
+export async function generateRepoConfig(model: string, workspace: string): Promise<{ configPath: string; harnessDir: string }> {
   const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
   let base = await readFile(basePath, 'utf8')
   base = base.replace(/model: deepseek-v4-flash/, `model: ${model}`)
@@ -451,11 +461,12 @@ export async function generateRepoConfig(model: string, workspace: string): Prom
   // Write the config outside the model workspace so it does not
   // contaminate the B0 baseline or appear in changed-file diffs.
   // The sessions directory is also kept outside the workspace.
+  // The caller is responsible for cleaning up the returned harnessDir.
   const harnessDir = join(tmpdir(), `dsh-v019-harness-${Date.now()}`)
   await mkdir(harnessDir, { recursive: true })
   const configPath = join(harnessDir, 'cordis.yml')
   await writeFile(configPath, base, 'utf8')
-  return configPath
+  return { configPath, harnessDir }
 }
 
 // ---------------------------------------------------------------------------

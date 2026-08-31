@@ -338,11 +338,12 @@ async function bootComposedRuntime(
   workspace: string,
   snapshotDir: string,
 ): Promise<{ ctx: Context; uninstall: () => void }> {
-  const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+  const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
   loadEnv('v019-composed-qual')
   const uninstall = installFailLoud('v019-composed-qual')
 
   const ctx = await boot('v019-composed-qual', resolveConfigPath(configPath, undefined))
+  rmSync(configDir, { recursive: true, force: true })
 
   // Use the shared runtime factory so the qualified and live compositions
   // use the same configuration. The qualifier creates a BaselineSnapshot
@@ -1427,10 +1428,11 @@ async function checkScenarioHoldoutFail(_ctx: Context, workspace: string, snapsh
   let freshCtx: Context | undefined
   let freshUninstall: (() => void) | undefined
   try {
-    const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
     loadEnv('v019-composed-qual-s2')
     freshUninstall = installFailLoud('v019-composed-qual-s2')
     freshCtx = await boot('v019-composed-qual-s2', resolveConfigPath(configPath, undefined))
+    rmSync(configDir, { recursive: true, force: true })
 
     const repairConfig: RepairRuntimeConfig = {
       enabled: true,
@@ -1733,10 +1735,11 @@ async function checkScenarioRollbackFailureStops(_ctx: Context, workspace: strin
   let freshCtx: Context | undefined
   let freshUninstall: (() => void) | undefined
   try {
-    const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
     loadEnv('v019-composed-qual-s6')
     freshUninstall = installFailLoud('v019-composed-qual-s6')
     freshCtx = await boot('v019-composed-qual-s6', resolveConfigPath(configPath, undefined))
+    rmSync(configDir, { recursive: true, force: true })
 
     const repairConfig: RepairRuntimeConfig = {
       enabled: true,
@@ -1910,10 +1913,11 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
   let freshUninstall: (() => void) | undefined
   let failCount = 0
   try {
-    const configPath = await generateRepoConfig('deepseek-v4-flash', workspace)
+    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
     loadEnv('v019-composed-qual-s8')
     freshUninstall = installFailLoud('v019-composed-qual-s8')
     freshCtx = await boot('v019-composed-qual-s8', resolveConfigPath(configPath, undefined))
+    rmSync(configDir, { recursive: true, force: true })
 
     const repairConfig: RepairRuntimeConfig = {
       enabled: true,
@@ -2161,6 +2165,8 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
   } finally {
     if (workspace !== undefined) {
       rmSync(workspace, { recursive: true, force: true })
+      // bootComposedRuntime creates a baseline tar next to the workspace.
+      rmSync(`${workspace}.qual-baseline.tar`, { force: true })
     }
     if (snapshotDir !== undefined) {
       rmSync(snapshotDir, { recursive: true, force: true })

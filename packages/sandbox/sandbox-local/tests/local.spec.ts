@@ -132,6 +132,38 @@ describe('profile dialects', () => {
     expect(profile).toContain('(allow file-write* (subpath "/ws"))')
     expect(profile).toContain('(deny file-read* (subpath "/secret"))')
   })
+
+  it('readOnlyPaths: bwrap skips nonexistent paths', () => {
+    const WI: SandboxPolicy = {
+      mode: 'workspace-isolated',
+      workspaceRoot: '/ws',
+      readOnlyPaths: ['/ws/node_modules', '/ws/dist', '/ws/nonexistent-dir'],
+    }
+    const args = bwrapProfileArgs(WI)
+    // node_modules and dist exist on most systems; nonexistent-dir does not.
+    // The key assertion: nonexistent paths are never in the argv.
+    expect(args).not.toContain('/ws/nonexistent-dir')
+  })
+
+  it('readOnlyPaths: landlock skips nonexistent paths', () => {
+    const WI: SandboxPolicy = {
+      mode: 'workspace-isolated',
+      workspaceRoot: '/ws',
+      readOnlyPaths: ['/ws/nonexistent-dir'],
+    }
+    const args = landlockProfileArgs(WI)
+    expect(args).not.toContain('/ws/nonexistent-dir')
+  })
+
+  it('readOnlyPaths: seatbelt skips nonexistent paths', () => {
+    const WI: SandboxPolicy = {
+      mode: 'workspace-isolated',
+      workspaceRoot: '/ws',
+      readOnlyPaths: ['/ws/nonexistent-dir'],
+    }
+    const profile = seatbeltProfileArgs(WI)[1] as string
+    expect(profile).not.toContain('/ws/nonexistent-dir')
+  })
 })
 
 describe('runnerCommand config', () => {
@@ -296,6 +328,26 @@ describe('the platform chains', () => {
     expect(confined.argv[0]).toBe(exec)
     expect(confined.enforcement).toBe('full')
     expect(probeBwrap).toHaveBeenCalledTimes(1)
+  })
+
+  it('selectedBackend returns undefined before the first confine call', async () => {
+    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap: () => true })
+    expect(sandbox.selectedBackend()).toBeUndefined()
+  })
+
+  it('selectedBackend returns the probed runner and enforcement after confine', async () => {
+    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap: () => true })
+    sandbox.confine(['true'], RO)
+    const backend = sandbox.selectedBackend()
+    expect(backend).toBeDefined()
+    expect(backend!.runner).toBe('bwrap')
+    expect(backend!.enforcement).toBe('full')
+  })
+
+  it('selectedBackend returns undefined when no runner is available', async () => {
+    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap: () => false, probeLandlock: () => 'unusable' as const })
+    expect(() => sandbox.confine(['true'], RO)).toThrow(SandboxUnavailableError)
+    expect(sandbox.selectedBackend()).toBeUndefined()
   })
 
   it('a rogue chain entry throws via the probe walk\'s exhaustiveness guard (closed union)', async () => {
