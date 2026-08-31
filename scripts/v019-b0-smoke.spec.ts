@@ -71,10 +71,11 @@ describe('v019 post-security B0 smoke test', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     expect(manifest.benchmarkEligible).toBe(false)
-    expect(manifest.experimentId).toBe('v019-infra-validation-v1')
+    expect(manifest.experimentId).toBe('v019-infra-validation-v2')
   })
 
   it('B0.3: evaluator config uses fs-sandbox, not fs-local', () => {

@@ -269,6 +269,16 @@ export async function cleanupWorkspace(workspace: string): Promise<void> {
   await rm(workspace, { recursive: true, force: true })
 }
 
+/**
+ * Clean up a baseline snapshot tar archive after task completion.
+ * Removes the `${workspace}.baseline.tar` file left by `freezeBaseline`.
+ *
+ * @param workspace - the workspace root whose baseline tar to remove.
+ */
+export async function cleanupBaseline(workspace: string): Promise<void> {
+  await rm(`${workspace}.baseline.tar`, { force: true })
+}
+
 /** Record repository metadata for trajectory provenance. */
 export interface RepoMetadata {
   readonly name: string

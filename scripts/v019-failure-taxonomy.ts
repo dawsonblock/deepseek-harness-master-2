@@ -127,21 +127,44 @@ export function classifyFailure(trajectory: TaskTrajectory): FailureClassificati
 }
 
 function classifyControlPlaneFailure(t: TaskTrajectory, facts: FailureObjectiveFacts): FailureClassification {
-  if (t.aborted && t.abortReason !== undefined) {
-    return {
-      taskId: t.taskId,
-      category: 'F14-provider-failure',
-      reason: `Provider failure: ${t.abortReason}`,
-      facts,
-      evidence: `aborted=true, abortReason=${t.abortReason}`,
-    }
-  }
-  return {
-    taskId: t.taskId,
-    category: 'F13-rollback',
-    reason: 'Control plane failure without provider abort',
-    facts,
-    evidence: `controlPlaneStatus=FAIL, aborted=${t.aborted}`,
+  // Explicit terminal-outcome mappings. Do not force every runtime failure
+  // into F13/F14 — different control-plane failures have different root
+  // causes and require different architectural responses.
+  switch (t.terminalOutcome) {
+    case 'rollback-failed':
+      return {
+        taskId: t.taskId,
+        category: 'F13-rollback',
+        reason: `Rollback failed: ${t.abortReason ?? 'unknown'}`,
+        facts,
+        evidence: `terminalOutcome=rollback-failed, abortReason=${t.abortReason ?? 'undefined'}`,
+      }
+    case 'model-unavailable':
+    case 'authority-undecidable':
+      return {
+        taskId: t.taskId,
+        category: 'F14-provider-failure',
+        reason: `Provider/control-plane failure: ${t.abortReason ?? t.terminalOutcome}`,
+        facts,
+        evidence: `terminalOutcome=${t.terminalOutcome}, abortReason=${t.abortReason ?? 'undefined'}`,
+      }
+    case 'repair-handler-error':
+      return {
+        taskId: t.taskId,
+        category: 'F14-provider-failure',
+        reason: `Repair handler error: ${t.abortReason ?? 'repair-handler-error'}`,
+        facts,
+        evidence: `terminalOutcome=repair-handler-error, abortReason=${t.abortReason ?? 'undefined'}`,
+      }
+    default:
+      // Unclassified control-plane failure. Do not force into F13/F14.
+      return {
+        taskId: t.taskId,
+        category: 'F14-provider-failure',
+        reason: `Unclassified control-plane failure: ${t.abortReason ?? t.terminalOutcome}`,
+        facts,
+        evidence: `controlPlaneStatus=FAIL, terminalOutcome=${t.terminalOutcome}, aborted=${t.aborted}, abortReason=${t.abortReason ?? 'undefined'}`,
+      }
   }
 }
 

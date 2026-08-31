@@ -29,6 +29,7 @@ const repo: RepoMetadata = {
 function makeAttempt(over: Partial<AttemptTrajectory>): AttemptTrajectory {
   return {
     attempt: 1,
+    attemptId: undefined,
     model: 'deepseek-v4-flash',
     routingDecisionId: 'rd-1',
     verified: false,
@@ -58,6 +59,7 @@ function makeTrajectory(over: Partial<TaskTrajectory> & { attempts: readonly Att
     taskId: 'task-1',
     taskManifestHash: 'hash',
     experimentId: 'exp-1',
+    experimentManifestHash: 'test-manifest-hash',
     benchmarkEligible: true,
     repository: repo,
     category: 'bug-fix',
@@ -118,6 +120,7 @@ describe('v019-failure-taxonomy precedence', () => {
       controlPlaneStatus: 'FAIL',
       aborted: true,
       abortReason: 'provider timeout',
+      terminalOutcome: 'model-unavailable',
       attempts: [makeAttempt({})],
     })
     const result = classifyFailure(t)
@@ -128,6 +131,7 @@ describe('v019-failure-taxonomy precedence', () => {
     const t = makeTrajectory({
       controlPlaneStatus: 'FAIL',
       aborted: false,
+      terminalOutcome: 'rollback-failed',
       attempts: [makeAttempt({})],
     })
     const result = classifyFailure(t)

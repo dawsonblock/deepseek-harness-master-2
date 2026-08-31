@@ -368,6 +368,19 @@ export class LocalSandboxProvider extends SandboxProvider {
     }
   }
 
+  /**
+   * The actual selected sandbox backend identity, or `undefined` before
+   * the first `confine` call probes the platform chain. Qualification
+   * and experiment manifests read this directly rather than reconstructing
+   * the selection algorithm independently.
+   *
+   * @returns the selected runner name and enforcement, or `undefined` when no runner has been selected yet.
+   */
+  selectedBackend(): { runner: string; enforcement: SandboxEnforcement } | undefined {
+    if (this.selectedRunner === undefined || this.selectedRunner === 'unavailable') return undefined
+    return { runner: this.selectedRunner.runner, enforcement: this.selectedRunner.enforcement }
+  }
+
   /** The selected rung's runner invocation (program + profile arguments) for one policy. */
   private runnerArgv(runner: SelectedRunner['runner'], policy: SandboxPolicy): string[] {
     switch (runner) {

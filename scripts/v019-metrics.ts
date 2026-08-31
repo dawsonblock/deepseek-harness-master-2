@@ -112,7 +112,16 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   const proRescued = proEscalations.filter(t => t.finalVerified)
   const budgetStops = evaluated.filter(t => t.terminalOutcome === 'budget-stop')
   const rollbacks = evaluated.filter(t => t.rollbackUsed)
-  const providerFailures = evaluated.filter(t => t.aborted && t.abortReason !== undefined)
+  // Control-plane failure rate: measured against all benchmark-eligible tasks
+  // that reached model/request, not just `evaluated` (which excludes
+  // NOT_EVALUATED). A genuine provider failure causes NOT_EVALUATED, which
+  // would exclude it from the `evaluated` population and hide the very
+  // failures this metric is intended to measure.
+  const reachedModelRequest = sorted.filter(t => t.benchmarkEligible && t.taskState !== 'FAILED_INFRA')
+  const providerFailuresAll = reachedModelRequest.filter(t =>
+    t.aborted && t.abortReason !== undefined
+    && (t.abortReason === 'model-unavailable' || t.abortReason === 'authority-undecidable'),
+  )
   const sameFailureEscalations = proEscalations.filter((t) => {
     const flashFingerprints = t.attempts
       .filter(a => a.model === 'deepseek-v4-flash')
@@ -157,7 +166,12 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     s + t.attempts.filter(a => a.model === 'deepseek-v4-flash').reduce((a, x) => a + x.costUsd, 0), 0)
   const proCost = evaluated.reduce((s, t) =>
     s + t.attempts.filter(a => a.model === 'deepseek-v4-pro').reduce((a, x) => a + x.costUsd, 0), 0)
-  const oneShotFlashCost = oneShotFlash.reduce((s, t) => s + t.totalCostUsd, 0)
+  // Incremental repair cost: the sum of costs for all attempts after
+  // the first across all evaluated tasks. This measures the actual
+  // additional spend on repair, not total cost minus one-shot cost
+  // (which conflates repair spend with non-repair task cost).
+  const incrementalRepairSpend = evaluated.reduce((s, t) =>
+    s + t.attempts.slice(1).reduce((a, x) => a + x.costUsd, 0), 0)
 
   const latencies = evaluated.map(t => t.totalLatencyMs).sort((a, b) => a - b)
   const costs = evaluated.map(t => t.totalCostUsd).sort((a, b) => a - b)
@@ -194,7 +208,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     rollbackRate: evalN > 0 ? rollbacks.length / evalN : 0,
     budgetStopRate: evalN > 0 ? budgetStops.length / evalN : 0,
     replayMismatchRate: null,
-    providerFailureRate: evalN > 0 ? providerFailures.length / evalN : 0,
+    providerFailureRate: reachedModelRequest.length > 0 ? providerFailuresAll.length / reachedModelRequest.length : 0,
     referenceFixFileMissRate: failedWithReference.length > 0
       ? referenceFixFileMisses.length / failedWithReference.length
       : 0,
@@ -207,7 +221,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     flashCostShare: totalCost > 0 ? flashCost / totalCost : 0,
     proCostShare: totalCost > 0 ? proCost / totalCost : 0,
     cacheHitPercentage: totalInputTokens > 0 ? totalCacheRead / totalInputTokens : 0,
-    incrementalRepairCost: totalCost - oneShotFlashCost,
+    incrementalRepairCost: incrementalRepairSpend,
     categoryBreakdown: categories,
   }
 }

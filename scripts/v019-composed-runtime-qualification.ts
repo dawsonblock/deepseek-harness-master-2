@@ -56,6 +56,7 @@
 
 
 import { execSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -79,8 +80,9 @@ import { handleVerificationPass, handleVerificationFailure, reconstructRepairSta
 
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 
-import { generateRepoConfig } from './v019-trajectory-collector.ts'
-import { hashWorkspaceContents, WORKSPACE_SNAPSHOT_ALGORITHM, WORKSPACE_SNAPSHOT_EXCLUSIONS } from './v019-repo-checkout.ts'
+import { generateRepoConfig, createRepairRuntimeConfig } from './v019-trajectory-collector.ts'
+import { hashWorkspaceContents, WORKSPACE_SNAPSHOT_ALGORITHM, WORKSPACE_SNAPSHOT_EXCLUSIONS, type BaselineSnapshot } from './v019-repo-checkout.ts'
+import type { TaskManifest } from './v019-task-manifest.ts'
 
 /** Qualification artifact identifier. */
 export const COMPOSED_QUALIFICATION_ID = 'v019-composed-runtime-qualification-v1'
@@ -124,6 +126,35 @@ export interface ComposedQualificationRecord {
 
 /** Persisted artifact directory for the composed qualification record. */
 const ARTIFACTS_DIR = join(import.meta.dirname, '..', 'artifacts')
+
+/**
+ * Compute a semantic hash of the composed qualification record, excluding
+ * non-deterministic fields (timestamp, environment details). Two runs with
+ * identical source, corpus, sandbox, and controller produce the same
+ * semantic hash. This hash is part of the experiment identity.
+ *
+ * @param record - the composed qualification record.
+ * @returns a hex SHA-256 digest of the semantic content.
+ */
+export function computeQualificationSemanticHash(record: ComposedQualificationRecord): string {
+  const semanticContent = JSON.stringify({
+    qualificationId: record.qualificationId,
+    sourceCommit: record.sourceCommit,
+    checks: record.checks.map(c => ({ id: c.id, status: c.status })),
+    passed: record.passed,
+    backend: {
+      runner: record.backend.runner,
+      enforcement: record.backend.enforcement,
+      networkDenied: record.backend.networkDenied,
+    },
+    filesystem: record.filesystem,
+    holdout: record.holdout,
+    repair: record.repair,
+    snapshot: record.snapshot,
+    ready: record.ready,
+  })
+  return createHash('sha256').update(semanticContent).digest('hex')
+}
 
 /**
  * Write the composed qualification record to the artifacts directory.
@@ -313,18 +344,28 @@ async function bootComposedRuntime(
 
   const ctx = await boot('v019-composed-qual', resolveConfigPath(configPath, undefined))
 
-  const repairConfig: RepairRuntimeConfig = {
-    enabled: true,
-    flashModel: FLASH_MODEL,
-    proModel: PRO_MODEL,
-    maxFlashAttempts: 3,
-    maxProAttempts: 2,
-    maxTotalAttempts: 5,
-    holdoutVerifier: createPassingHoldoutVerifier(),
-    workspaceProvenanceProvider: createProvenanceProvider(workspace),
-    rollbackProvider: createRollbackProvider(workspace, snapshotDir),
-    failOnMissingUsage: true,
+  // Use the shared runtime factory so the qualified and live compositions
+  // use the same configuration. The qualifier creates a BaselineSnapshot
+  // from the snapshot directory so the factory's rollback provider uses
+  // the same tar-based restore mechanism as the live evaluator.
+  const baselineArchivePath = `${workspace}.qual-baseline.tar`
+  execSync(`tar -cf "${baselineArchivePath}" -C "${snapshotDir}" .`, { stdio: 'pipe', timeout: 60000 })
+  const baseline: BaselineSnapshot = {
+    archivePath: baselineArchivePath,
+    hash: hashWorkspaceContents(snapshotDir),
   }
+  const qualManifest: TaskManifest = {
+    taskId: 'composed-qual',
+    category: 'bug-fix',
+    benchmarkEligible: false,
+    repository: { name: 'composed-qual', url: '', baseCommit: '', referenceFixCommit: undefined },
+    repoSize: 'small',
+    task: { title: 'Composed qualification', description: '', source: 'synthetic' },
+    limits: QUAL_LIMITS,
+    verification: { build: { command: 'true', expectedExitCode: 0 }, strength: 'V0', diagnostic: [], holdout: [] },
+    manifestHash: '',
+  }
+  const repairConfig = createRepairRuntimeConfig(workspace, qualManifest, undefined, baseline, 'transactional')
   await ctx.plugin(repairRuntimePlugin, repairConfig)
 
   return { ctx, uninstall }

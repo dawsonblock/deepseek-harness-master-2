@@ -14,12 +14,13 @@
 
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 /** Experiment identity for the v0.19 synthetic multi-repo cohort. */
-export const EXPERIMENT_ID = 'v019-synthetic-multirepo-validation-v1'
+export const EXPERIMENT_ID = 'v019-synthetic-multirepo-validation-v2'
 
 /** Experiment identity for the B0 infrastructure validation shakedown. */
-export const B0_EXPERIMENT_ID = 'v019-infra-validation-v1'
+export const B0_EXPERIMENT_ID = 'v019-infra-validation-v2'
 
 /** v0.18.0 tag that this experiment freezes as experimental control. */
 export const FROZEN_V018_TAG = 'v0.18.0'
@@ -28,6 +29,10 @@ export const FROZEN_V018_TAG = 'v0.18.0'
 export interface ExperimentManifest {
   readonly experimentId: string
   readonly sourceCommit: string
+  /** SHA-256 of the working tree contents (excluding node_modules/.git/dist) at manifest build time. */
+  readonly sourceTreeHash: string
+  /** True when the working tree had uncommitted changes at manifest build time. */
+  readonly sourceTreeDirty: boolean
   readonly frozenV018Tag: string
   readonly repairControllerVersion: string
   readonly repairRuntimeVersion: string
@@ -62,7 +67,18 @@ export interface ExperimentManifest {
   /** Workspace snapshot algorithm and exclusion set versions. */
   readonly snapshotAlgorithm: string
   readonly snapshotExclusions: string
-  /** Hash of the composed qualification artifact that must pass before the cohort runs. */
+  /**
+   * Semantic hash of the composed qualification artifact, excluding
+   * non-deterministic fields (timestamp, environment noise). This hash
+   * is part of the experiment identity: two runs with identical source,
+   * corpus, sandbox, and controller produce the same semantic hash.
+   */
+  readonly qualificationSemanticHash: string
+  /**
+   * Full hash of the composed qualification artifact including
+   * timestamp and environment fields. This is audit evidence, not
+   * experiment identity.
+   */
   readonly qualificationArtifactHash: string
   readonly manifestHash: string
 }
@@ -83,9 +99,22 @@ export function buildExperimentManifest(params: {
   sandboxBackend: { runner: string; runnerPath: string; runnerVersion: string; enforcement: string; networkDenied: boolean }
   snapshotAlgorithm: string
   snapshotExclusions: string
+  /**
+   * Semantic hash of the composed qualification artifact excluding
+   * non-deterministic fields (timestamp, environment). Used as
+   * experiment identity.
+   */
+  qualificationSemanticHash: string
+  /**
+   * Full hash of the composed qualification artifact including
+   * timestamp and environment. Used as audit evidence.
+   */
   qualificationArtifactHash: string
 }): ExperimentManifest {
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
+  const porcelain = execSync('git status --porcelain', { encoding: 'utf8' }).trim()
+  const sourceTreeDirty = porcelain.length > 0
+  const sourceTreeHash = computeSourceTreeHash()
   const experimentId = params.benchmarkEligible ? EXPERIMENT_ID : B0_EXPERIMENT_ID
   const modelRoutes = [
     { alias: 'flash', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
@@ -102,6 +131,8 @@ export function buildExperimentManifest(params: {
   const manifestHash = computeExperimentManifestHash({
     experimentId,
     sourceCommit,
+    sourceTreeHash,
+    sourceTreeDirty,
     frozenV018Tag: FROZEN_V018_TAG,
     repairControllerVersion: params.repairControllerVersion,
     repairRuntimeVersion: params.repairRuntimeVersion,
@@ -119,11 +150,14 @@ export function buildExperimentManifest(params: {
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
+    qualificationSemanticHash: params.qualificationSemanticHash,
     qualificationArtifactHash: params.qualificationArtifactHash,
   })
   return {
     experimentId,
     sourceCommit,
+    sourceTreeHash,
+    sourceTreeDirty,
     frozenV018Tag: FROZEN_V018_TAG,
     repairControllerVersion: params.repairControllerVersion,
     repairRuntimeVersion: params.repairRuntimeVersion,
@@ -141,6 +175,7 @@ export function buildExperimentManifest(params: {
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
+    qualificationSemanticHash: params.qualificationSemanticHash,
     qualificationArtifactHash: params.qualificationArtifactHash,
     manifestHash,
   }
@@ -156,6 +191,8 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
   const manifestContent = [
     fields.experimentId,
     fields.sourceCommit,
+    fields.sourceTreeHash,
+    String(fields.sourceTreeDirty),
     fields.frozenV018Tag,
     fields.repairControllerVersion,
     fields.repairRuntimeVersion,
@@ -173,7 +210,32 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     backendLine,
     fields.snapshotAlgorithm,
     fields.snapshotExclusions,
+    fields.qualificationSemanticHash,
     fields.qualificationArtifactHash,
   ].join(':')
   return createHash('sha256').update(manifestContent).digest('hex')
+}
+
+/**
+ * Compute a SHA-256 hash of the repository source tree, excluding
+ * `node_modules`, `.git`, and `dist`. This catches dirty working trees
+ * that share the same `git rev-parse HEAD` but differ in content.
+ */
+function computeSourceTreeHash(): string {
+  const hash = createHash('sha256')
+  const output = execSync(
+    'git ls-files -z --cached --others --exclude-standard',
+    { encoding: 'utf8', maxBuffer: 1024 * 1024 * 256 },
+  )
+  const files = output.split('\0').filter(f => f.length > 0)
+  for (const file of files.sort()) {
+    hash.update(file).update(':')
+    try {
+      hash.update(readFileSync(file))
+    } catch {
+      hash.update('[unreadable]')
+    }
+    hash.update('\n')
+  }
+  return hash.digest('hex')
 }

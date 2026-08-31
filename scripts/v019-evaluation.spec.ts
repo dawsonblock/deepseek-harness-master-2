@@ -21,7 +21,7 @@ import type { TaskTrajectory } from './v019-trajectory-collector.ts'
 
 describe('v019-experiment-identity', () => {
   it('exports the correct experiment ID', () => {
-    expect(EXPERIMENT_ID).toBe('v019-synthetic-multirepo-validation-v1')
+    expect(EXPERIMENT_ID).toBe('v019-synthetic-multirepo-validation-v2')
   })
 
   it('freezes the v0.18.0 tag', () => {
@@ -44,6 +44,7 @@ describe('v019-experiment-identity', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     const m2 = buildExperimentManifest({
@@ -61,6 +62,7 @@ describe('v019-experiment-identity', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     expect(m1.manifestHash).toBe(m2.manifestHash)
@@ -83,6 +85,7 @@ describe('v019-experiment-identity', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     expect(m.frozenRepairLimits.maxFlashAttempts).toBe(3)
@@ -204,7 +207,8 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
   return {
     taskId: 'task-001',
     taskManifestHash: 'abc',
-    experimentId: 'v019-synthetic-multirepo-validation-v1',
+    experimentId: 'v019-synthetic-multirepo-validation-v2',
+    experimentManifestHash: 'test-manifest-hash',
     benchmarkEligible: true,
     repository: {
       name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
@@ -230,6 +234,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
     totalCacheMissTokens: 500,
     attempts: [{
       attempt: 1,
+      attemptId: undefined,
       model: 'deepseek-v4-flash',
       routingDecisionId: 'rd-001',
       verified: true,
@@ -311,7 +316,8 @@ describe('v019-failure-taxonomy', () => {
     return {
       taskId: 'fail-001',
       taskManifestHash: 'abc',
-      experimentId: 'v019-synthetic-multirepo-validation-v1',
+      experimentId: 'v019-synthetic-multirepo-validation-v2',
+      experimentManifestHash: 'test-manifest-hash',
       benchmarkEligible: true,
       repository: {
         name: 'test-repo', url: 'file:///tmp/test', baseCommit: 'abc',
@@ -358,7 +364,7 @@ describe('v019-failure-taxonomy', () => {
   it('classifies holdout edge-case failures', () => {
     const t = makeFailedTrajectory({
       attempts: [{
-        attempt: 1, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1',
+        attempt: 1, attemptId: undefined, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1',
         verified: false, diagnosticPass: true, holdoutPass: false,
         failureFingerprint: undefined, progress: undefined,
         failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [],
@@ -393,8 +399,8 @@ describe('v019-failure-taxonomy', () => {
       proAttempts: 1,
       escalatedToPro: true,
       attempts: [
-        { attempt: 1, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp1', progress: 'none', failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'pro-escalate', repairReason: 'flash-exhausted', changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'pro-escalate' },
-        { attempt: 2, model: 'deepseek-v4-pro', routingDecisionId: 'rd-2', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp2', progress: undefined, failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'complete', repairReason: undefined, changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'failed-no-rescue' },
+        { attempt: 1, attemptId: undefined, model: 'deepseek-v4-flash', routingDecisionId: 'rd-1', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp1', progress: 'none', failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'pro-escalate', repairReason: 'flash-exhausted', changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'pro-escalate' },
+        { attempt: 2, attemptId: undefined, model: 'deepseek-v4-pro', routingDecisionId: 'rd-2', verified: false, diagnosticPass: false, holdoutPass: undefined, failureFingerprint: 'fp2', progress: undefined, failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheMissTokens: 0 }, costUsd: 0, latencyMs: 0, repairAction: 'complete', repairReason: undefined, changedFiles: [], toolCallCount: 0, filesInspected: [], terminalOutcome: 'failed-no-rescue' },
       ],
     })
     const classification = classifyFailure(t)
@@ -442,10 +448,11 @@ describe('v019 B0 vs benchmark separation', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     expect(m.benchmarkEligible).toBe(false)
-    expect(m.experimentId).toBe('v019-infra-validation-v1')
+    expect(m.experimentId).toBe('v019-infra-validation-v2')
   })
 
   it('benchmark manifest is benchmark-eligible', () => {
@@ -464,10 +471,11 @@ describe('v019 B0 vs benchmark separation', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     expect(m.benchmarkEligible).toBe(true)
-    expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v1')
+    expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v2')
   })
 
   it('B0 and benchmark produce different experiment IDs', () => {
@@ -486,6 +494,7 @@ describe('v019 B0 vs benchmark separation', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     const bench = buildExperimentManifest({
@@ -503,6 +512,7 @@ describe('v019 B0 vs benchmark separation', () => {
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
     })
     expect(b0.experimentId).not.toBe(bench.experimentId)

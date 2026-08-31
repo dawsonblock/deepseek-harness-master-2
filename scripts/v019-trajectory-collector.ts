@@ -17,7 +17,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 
@@ -62,6 +62,8 @@ export interface TaskTrajectory {
   readonly taskId: string
   readonly taskManifestHash: string
   readonly experimentId: string
+  /** Hash of the experiment manifest that produced this task. Binds the trajectory to exact runtime configuration. */
+  readonly experimentManifestHash: string
   readonly benchmarkEligible: boolean
   readonly repository: RepoMetadata
   readonly category: string
@@ -101,6 +103,8 @@ export interface TaskTrajectory {
 /** Full trajectory record for one attempt within a task. */
 export interface AttemptTrajectory {
   readonly attempt: number
+  /** Durable attempt ID from the repair controller: `${repairId}#attempt-${attempt}`. */
+  readonly attemptId: string | undefined
   readonly model: string
   readonly routingDecisionId: string
   readonly verified: boolean
@@ -148,6 +152,7 @@ export async function runTaskTrajectory(
   manifest: TaskManifest,
   workspace: string,
   experimentId: string,
+  experimentManifestHash: string,
   benchmarkEligible: boolean,
   repoMetadata: RepoMetadata,
   referenceFixFiles: readonly string[],
@@ -168,7 +173,10 @@ export async function runTaskTrajectory(
 
   try {
     const configPath = await generateRepoConfig(flashModel.model, workspace)
-    await mkdir(join(workspace, 'sessions'), { recursive: true })
+    // Sessions directory is kept outside the model workspace so it does
+    // not contaminate the B0 baseline or appear in changed-file diffs.
+    const harnessDir = join(tmpdir(), `dsh-v019-sessions-${Date.now()}`)
+    await mkdir(harnessDir, { recursive: true })
     loadEnv('v019-evaluation')
     uninstallFailLoud = installFailLoud('v019-evaluation')
     ctx = await boot('v019-evaluation', resolveConfigPath(configPath, undefined))
@@ -309,7 +317,7 @@ export async function runTaskTrajectory(
 
   // Extract trajectory from session events.
   return buildTrajectoryFromEvents(
-    allEvents, manifest, workspace, experimentId, benchmarkEligible,
+    allEvents, manifest, workspace, experimentId, experimentManifestHash, benchmarkEligible,
     repoMetadata, referenceFixFiles, wallClockStart, checkout, baseline,
   )
 }
@@ -318,6 +326,7 @@ export async function runTaskTrajectory(
 export function buildInfraFailureTrajectory(
   manifest: TaskManifest,
   experimentId: string,
+  experimentManifestHash: string,
   benchmarkEligible: boolean,
   repoMetadata: RepoMetadata | undefined,
   failureReason: string,
@@ -326,6 +335,7 @@ export function buildInfraFailureTrajectory(
     taskId: manifest.taskId,
     taskManifestHash: manifest.manifestHash,
     experimentId,
+    experimentManifestHash,
     benchmarkEligible,
     repository: repoMetadata ?? {
       name: manifest.repository.name,
@@ -438,7 +448,12 @@ export async function generateRepoConfig(model: string, workspace: string): Prom
   name: '@deepseek-ai/dsh-repair-controller'
 - id: persistence`,
   )
-  const configPath = join(workspace, '.v019-cordis.yml')
+  // Write the config outside the model workspace so it does not
+  // contaminate the B0 baseline or appear in changed-file diffs.
+  // The sessions directory is also kept outside the workspace.
+  const harnessDir = join(tmpdir(), `dsh-v019-harness-${Date.now()}`)
+  await mkdir(harnessDir, { recursive: true })
+  const configPath = join(harnessDir, 'cordis.yml')
   await writeFile(configPath, base, 'utf8')
   return configPath
 }
@@ -671,25 +686,17 @@ function runHoldoutInCleanWorkspace(
     // Copy model-modified source files into the verifier workspace.
     // Exclude node_modules, .git, dist — the baseline's immutable layer
     // is already in place and must not be overwritten by model changes.
+    // rsync --delete ensures candidate deletions are reflected: a
+    // correct candidate that deletes a baseline source file must be
+    // tested as though that file no longer exists. The weaker cp -R
+    // fallback was removed because it does not apply deletions.
     try {
       execSync(
         `rsync -a --delete --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='sessions' "${workspace}/" "${verifierWorkspace}/"`,
         { stdio: 'pipe', timeout: 60000 },
       )
     } catch {
-      // rsync may not be available; fall back to cp for source files only.
-      try {
-        execSync(
-          `cp -R "${workspace}/." "${verifierWorkspace}/" 2>/dev/null || true`,
-          { stdio: 'pipe', timeout: 60000 },
-        )
-        // Remove mutable excluded dirs that cp may have overwritten.
-        execSync(`rm -rf "${join(verifierWorkspace, 'node_modules')}" "${join(verifierWorkspace, 'sessions')}"`, { stdio: 'pipe', timeout: 30000 })
-        // Restore immutable dirs from baseline.
-        execSync(`tar -xf "${baseline.archivePath}" -C "${verifierWorkspace}" --include='node_modules' --include='sessions' 2>/dev/null || true`, { stdio: 'pipe', timeout: 60000 })
-      } catch {
-        return { passed: false, reason: 'failed to copy candidate changes to verifier workspace' }
-      }
+      return { passed: false, reason: 'rsync is required for holdout verification but failed or is unavailable' }
     }
 
     // Stage holdout files in the verifier workspace.
@@ -887,6 +894,7 @@ function buildTrajectoryFromEvents(
   manifest: TaskManifest,
   workspace: string,
   experimentId: string,
+  experimentManifestHash: string,
   benchmarkEligible: boolean,
   repoMetadata: RepoMetadata,
   referenceFixFiles: readonly string[],
@@ -1037,8 +1045,13 @@ function buildTrajectoryFromEvents(
     })
     const attemptObservation = extractRepositoryObservation(turnEvents, workspace)
 
+    // Extract the durable attemptId from repair events. Falls back to
+    // undefined for one-shot success (no repair/evidence event).
+    const attemptId = repairEvidence?.data.attemptId ?? repairDecision?.data.attemptId
+
     attempts.push({
       attempt: i + 1,
+      attemptId,
       model,
       routingDecisionId,
       verified: repairAction === 'complete' && finalVerified,
@@ -1070,38 +1083,39 @@ function buildTrajectoryFromEvents(
     })
   }
 
-  // Fail closed: every paid model routing decision must reconcile with
-  // canonical model/usage evidence. A routing decision represents a paid
-  // request to the provider. Missing usage for any routing decision means
-  // cost and token accounting is incomplete — this is a control-plane
-  // failure, not a model capability failure.
+  // Fail closed: every model/request (actual provider invocation) must
+  // reconcile with canonical model/usage evidence. A model/request represents
+  // a paid call to the provider. A model/routing-decision that is rejected
+  // by post-routing context preflight does NOT produce a model/request and
+  // is not billed — so reconciliation against model/request, not
+  // model/routing-decision, is the correct accounting boundary.
   //
   // This is broader than checking only repair/evidence events: one-shot
-  // success and the final successful repair attempt also have routing
-  // decisions but may not have repair/evidence events. Every paid request
+  // success and the final successful repair attempt also have model/request
+  // events but may not have repair/evidence events. Every paid request
   // must be accounted for.
-  const routingDecisionEvents = allEvents.filter(e => e.type === 'model/routing-decision')
-  if (routingDecisionEvents.length > 0 && usageEvents.length === 0) {
-    throw new Error(`MISSING_USAGE_EVIDENCE: ${routingDecisionEvents.length} model/routing-decision event(s) but 0 model/usage events for task ${manifest.taskId}`)
+  const requestEvents = allEvents.filter(e => e.type === 'model/request')
+  if (requestEvents.length > 0 && usageEvents.length === 0) {
+    throw new Error(`MISSING_USAGE_EVIDENCE: ${requestEvents.length} model/request event(s) but 0 model/usage events for task ${manifest.taskId}`)
   }
 
-  // Per-request reconciliation: each routing decision must have at least
-  // one matching model/usage event by routingDecisionId. This catches
-  // missing usage for one-shot success, final successful repair, and
-  // failed attempts alike.
-  for (const routingEvent of routingDecisionEvents) {
-    const routingData = routingEvent.data as { routingDecisionId?: string; turn?: number }
-    const routingRdId = routingData.routingDecisionId
-    const routingTurn = routingData.turn
+  // Per-request reconciliation: each model/request must have at least
+  // one matching model/usage event by routingDecisionId or turn. This
+  // catches missing usage for one-shot success, final successful repair,
+  // and failed attempts alike.
+  for (const requestEvent of requestEvents) {
+    const requestData = requestEvent.data as { routingDecisionId?: string; turn?: number }
+    const requestRdId = requestData.routingDecisionId
+    const requestTurn = requestData.turn
     const hasMatchingUsage = usageEvents.some((usageEvent) => {
       const usageData = usageEvent.data as { routingDecisionId?: string; turn?: number }
-      if (routingRdId !== undefined && usageData.routingDecisionId !== undefined) {
-        return usageData.routingDecisionId === routingRdId
+      if (requestRdId !== undefined && usageData.routingDecisionId !== undefined) {
+        return usageData.routingDecisionId === requestRdId
       }
-      return usageData.turn === routingTurn
+      return usageData.turn === requestTurn
     })
     if (!hasMatchingUsage) {
-      throw new Error(`MISSING_USAGE_EVIDENCE: model/routing-decision (routingDecisionId=${routingRdId ?? 'undefined'}, turn=${routingTurn ?? 'undefined'}) has no matching model/usage event for task ${manifest.taskId}`)
+      throw new Error(`MISSING_USAGE_EVIDENCE: model/request (routingDecisionId=${requestRdId ?? 'undefined'}, turn=${requestTurn ?? 'undefined'}) has no matching model/usage event for task ${manifest.taskId}`)
     }
   }
 
@@ -1162,6 +1176,7 @@ function buildTrajectoryFromEvents(
     taskId: manifest.taskId,
     taskManifestHash: manifest.manifestHash,
     experimentId,
+    experimentManifestHash,
     benchmarkEligible,
     repository: repoMetadata,
     category: manifest.category,

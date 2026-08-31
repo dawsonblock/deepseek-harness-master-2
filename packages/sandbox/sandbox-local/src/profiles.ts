@@ -35,6 +35,7 @@
 import { grantArgs as landlockGrantArgs } from '@deepseek-ai/node-addon-landlock-run'
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import { existsSync } from 'node:fs'
 
 /**
  * Build the bwrap profile arguments for one file-effect policy.
@@ -63,8 +64,13 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
     // earlier ones, so a --ro-bind for a subdirectory overrides the
     // parent --bind. Protects verifier-affecting state such as
     // node_modules from model mutation via shell subprocesses.
+    // Skip paths that do not exist — bwrap fails if asked to bind a
+    // nonexistent path, and optional directories like dist may not be
+    // present in all workspaces.
     for (const roPath of policy.readOnlyPaths ?? []) {
-      args.push('--ro-bind', roPath, roPath)
+      if (existsSync(roPath)) {
+        args.push('--ro-bind', roPath, roPath)
+      }
     }
     return args
   }
@@ -73,7 +79,9 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
     args.push('--tmpfs', '/tmp')
     args.push('--bind', policy.workspaceRoot, policy.workspaceRoot)
     for (const roPath of policy.readOnlyPaths ?? []) {
-      args.push('--ro-bind', roPath, roPath)
+      if (existsSync(roPath)) {
+        args.push('--ro-bind', roPath, roPath)
+      }
     }
   }
   return args

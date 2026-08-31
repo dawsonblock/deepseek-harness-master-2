@@ -25,6 +25,7 @@ import {
 import {
   checkoutRepo,
   cleanupWorkspace,
+  cleanupBaseline,
   computeRepoMetadata,
   freezeBaseline,
   installDependencies,
@@ -43,12 +44,12 @@ import {
 } from './v019-failure-taxonomy.ts'
 import { SECURITY_QUALIFICATION_ID, runSecurityQualification } from './v019-security-qualification.ts'
 import { generateFreezeRecord, verifyVerifierIntegrity, FREEZE_ID, readFreezeRecord, writeFreezeRecord } from './v019-freeze-secure-eval.ts'
-import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord } from './v019-composed-runtime-qualification.ts'
+import { COMPOSED_QUALIFICATION_ID, runComposedRuntimeQualification, writeComposedQualificationRecord, computeQualificationSemanticHash } from './v019-composed-runtime-qualification.ts'
 import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v1')
+const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v2')
 const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
 const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
 const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
@@ -58,6 +59,8 @@ const REPORT_PATH = join(EVAL_DIR, 'README.md')
 
 interface Checkpoint {
   experimentId: string
+  /** Manifest hash that produced this checkpoint. Resume is rejected on mismatch. */
+  experimentManifestHash: string
   benchmarkEligible: boolean
   startedAt: string
   updatedAt: string
@@ -205,6 +208,7 @@ async function main(): Promise<void> {
     },
     snapshotAlgorithm: composedRecord.snapshot.algorithm,
     snapshotExclusions: composedRecord.snapshot.exclusions,
+    qualificationSemanticHash: computeQualificationSemanticHash(composedRecord),
     qualificationArtifactHash: createHash('sha256')
       .update(JSON.stringify(composedRecord))
       .digest('hex'),
@@ -226,14 +230,21 @@ async function main(): Promise<void> {
     process.stderr.write(
       'WARNING: checkpoint experiment ID differs. Starting fresh.\n',
     )
+  } else if (checkpoint !== undefined && checkpoint.experimentManifestHash !== experimentManifest.manifestHash) {
+    process.stderr.write(
+      'WARNING: checkpoint experiment manifest hash differs. Starting fresh.\n',
+    )
   }
+  const checkpointValid = checkpoint !== undefined
+    && checkpoint.experimentId === experimentManifest.experimentId
+    && checkpoint.experimentManifestHash === experimentManifest.manifestHash
   const completedTaskIds = new Set(
-    checkpoint?.experimentId === experimentManifest.experimentId
+    checkpointValid
       ? checkpoint.completedTaskIds
       : [],
   )
   const trajectories: TaskTrajectory[] =
-    checkpoint?.experimentId === experimentManifest.experimentId
+    checkpointValid
       ? checkpoint.trajectories
       : []
 
@@ -290,6 +301,7 @@ async function main(): Promise<void> {
         taskManifest,
         workspace,
         experimentManifest.experimentId,
+        experimentManifest.manifestHash,
         benchmarkEligible,
         repoMetadata,
         referenceFixFiles,
@@ -311,6 +323,7 @@ async function main(): Promise<void> {
 
       await saveCheckpoint({
         experimentId: experimentManifest.experimentId,
+        experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
         startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -323,6 +336,7 @@ async function main(): Promise<void> {
       const failedTrajectory = buildInfraFailureTrajectory(
         taskManifest,
         experimentManifest.experimentId,
+        experimentManifest.manifestHash,
         benchmarkEligible,
         undefined,
         `${taskState}: ${errorMsg}`,
@@ -331,6 +345,7 @@ async function main(): Promise<void> {
       completedTaskIds.add(taskManifest.taskId)
       await saveCheckpoint({
         experimentId: experimentManifest.experimentId,
+        experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
         startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -340,6 +355,7 @@ async function main(): Promise<void> {
     } finally {
       if (workspace !== undefined) {
         await cleanupWorkspace(workspace)
+        await cleanupBaseline(workspace)
       }
     }
   }

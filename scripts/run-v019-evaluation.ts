@@ -24,13 +24,14 @@ import { fileURLToPath } from 'node:url'
 import {
   buildExperimentManifest,
 } from './v019-experiment-identity.ts'
-import { runComposedRuntimeQualification } from './v019-composed-runtime-qualification.ts'
+import { runComposedRuntimeQualification, computeQualificationSemanticHash } from './v019-composed-runtime-qualification.ts'
 import {
   FROZEN_V018_LIMITS,
 } from './v019-task-manifest.ts'
 import {
   checkoutRepo,
   cleanupWorkspace,
+  cleanupBaseline,
   computeRepoMetadata,
   freezeBaseline,
   installDependencies,
@@ -51,7 +52,7 @@ import {
 import { SANDBOX_QUALIFICATION_ID } from './v018-sandbox-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v1')
+const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v2')
 const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
 const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
 const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
@@ -71,6 +72,8 @@ import { TASK_CORPUS } from './v019-task-corpus.ts'
 
 interface Checkpoint {
   experimentId: string
+  /** Manifest hash that produced this checkpoint. Resume is rejected on mismatch. */
+  experimentManifestHash: string
   benchmarkEligible: boolean
   startedAt: string
   updatedAt: string
@@ -147,6 +150,7 @@ async function main(): Promise<void> {
     },
     snapshotAlgorithm: composedRecord.snapshot.algorithm,
     snapshotExclusions: composedRecord.snapshot.exclusions,
+    qualificationSemanticHash: computeQualificationSemanticHash(composedRecord),
     qualificationArtifactHash: createHash('sha256')
       .update(JSON.stringify(composedRecord))
       .digest('hex'),
@@ -174,8 +178,15 @@ async function main(): Promise<void> {
     )
     return
   }
-  const completedTaskIds = new Set(checkpoint?.completedTaskIds ?? [])
-  const trajectories: TaskTrajectory[] = checkpoint?.trajectories ?? []
+  if (checkpoint !== undefined && checkpoint.experimentManifestHash !== experimentManifest.manifestHash) {
+    process.stderr.write(
+      'WARNING: checkpoint experiment manifest hash differs. Starting fresh.\n',
+    )
+  }
+  const checkpointValid = checkpoint !== undefined
+    && checkpoint.experimentManifestHash === experimentManifest.manifestHash
+  const completedTaskIds = new Set(checkpointValid ? checkpoint.completedTaskIds : [])
+  const trajectories: TaskTrajectory[] = checkpointValid ? checkpoint.trajectories : []
 
   const tasks = TASK_CORPUS.slice(0, maxTasks)
   process.stderr.write(`Tasks to run: ${tasks.length - completedTaskIds.size} remaining\n\n`)
@@ -234,6 +245,7 @@ async function main(): Promise<void> {
         taskManifest,
         workspace,
         experimentManifest.experimentId,
+        experimentManifest.manifestHash,
         benchmarkEligible,
         repoMetadata,
         referenceFixFiles,
@@ -258,6 +270,7 @@ async function main(): Promise<void> {
       // Checkpoint after each task
       await saveCheckpoint({
         experimentId: experimentManifest.experimentId,
+        experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
         startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -270,6 +283,7 @@ async function main(): Promise<void> {
       const failedTrajectory = buildInfraFailureTrajectory(
         taskManifest,
         experimentManifest.experimentId,
+        experimentManifest.manifestHash,
         benchmarkEligible,
         undefined,
         `${taskState}: ${errorMsg}`,
@@ -278,6 +292,7 @@ async function main(): Promise<void> {
       completedTaskIds.add(taskManifest.taskId)
       await saveCheckpoint({
         experimentId: experimentManifest.experimentId,
+        experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
         startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -287,6 +302,7 @@ async function main(): Promise<void> {
     } finally {
       if (workspace !== undefined) {
         await cleanupWorkspace(workspace)
+        await cleanupBaseline(workspace)
       }
     }
   }
