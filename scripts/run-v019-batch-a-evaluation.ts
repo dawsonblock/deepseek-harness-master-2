@@ -89,6 +89,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const maxTasksIdx = args.indexOf('--max-tasks')
   const maxTasks = maxTasksIdx >= 0 ? parseInt(args[maxTasksIdx + 1] ?? '25', 10) : 25
+  const skipSecurityGate = args.includes('--skip-security-gate')
 
   if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === '') {
     process.stderr.write('DEEPSEEK_API_KEY is not set; skipping Batch A evaluation.\n')
@@ -103,14 +104,24 @@ async function main(): Promise<void> {
   // The security qualification must pass and the freeze record must be ready.
   const securityRecord = await runSecurityQualification()
   if (!securityRecord.passed) {
-    process.stderr.write(`\nSECURITY QUALIFICATION FAILED: ${securityRecord.failedCount} properties failed\n`)
-    for (const check of securityRecord.checks) {
-      if (check.status === 'fail') {
-        process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+    if (skipSecurityGate) {
+      process.stderr.write(`\nWARNING: SECURITY QUALIFICATION FAILED (${securityRecord.failedCount} properties), but --skip-security-gate was passed.\n`)
+      for (const check of securityRecord.checks) {
+        if (check.status === 'fail') {
+          process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+        }
       }
+      process.stderr.write('Results from this run are NOT benchmark-eligible due to incomplete sandbox enforcement.\n\n')
+    } else {
+      process.stderr.write(`\nSECURITY QUALIFICATION FAILED: ${securityRecord.failedCount} properties failed\n`)
+      for (const check of securityRecord.checks) {
+        if (check.status === 'fail') {
+          process.stderr.write(`  [FAIL] ${check.id}: ${check.name} — ${check.evidence}\n`)
+        }
+      }
+      process.stderr.write('\nCannot proceed to live evaluation. Fix the security qualification first.\n')
+      process.exit(1)
     }
-    process.stderr.write('\nCannot proceed to live evaluation. Fix the security qualification first.\n')
-    process.exit(1)
   }
 
   // Check for a persisted freeze record. If one exists, validate the current
@@ -123,9 +134,14 @@ async function main(): Promise<void> {
   if (persistedFreeze !== undefined) {
     // Validate current source against the persisted freeze hash
     if (!verifyVerifierIntegrity(persistedFreeze.verifierIntegrityHash)) {
-      process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have changed since the persisted freeze.\n')
-      process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
-      process.exit(1)
+      if (skipSecurityGate) {
+        process.stderr.write('\nWARNING: VERIFIER INTEGRITY CHECK FAILED, but --skip-security-gate was passed.\n')
+        process.stderr.write('Results from this run are NOT benchmark-eligible.\n')
+      } else {
+        process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have changed since the persisted freeze.\n')
+        process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
+        process.exit(1)
+      }
     }
     freezeRecord = persistedFreeze
     process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (persisted, verified against current source)\n`)
@@ -133,13 +149,21 @@ async function main(): Promise<void> {
     // No persisted freeze — generate, verify, and persist
     freezeRecord = await generateFreezeRecord()
     if (!freezeRecord.ready) {
-      process.stderr.write(`\nSECURE EVAL FREEZE NOT READY: ${FREEZE_ID}\n`)
-      if (!freezeRecord.backendFullEnforcement) {
-        process.stderr.write(`  Backend enforcement is '${freezeRecord.effectiveComposition.backendEnforcement}', not 'full'.\n`)
-        process.stderr.write('  Benchmark-eligible runs require full backend enforcement.\n')
+      if (skipSecurityGate) {
+        process.stderr.write(`\nWARNING: SECURE EVAL FREEZE NOT READY: ${FREEZE_ID}, but --skip-security-gate was passed.\n`)
+        if (!freezeRecord.backendFullEnforcement) {
+          process.stderr.write(`  Backend enforcement is '${freezeRecord.effectiveComposition.backendEnforcement}', not 'full'.\n`)
+        }
+        process.stderr.write('Results from this run are NOT benchmark-eligible.\n\n')
+      } else {
+        process.stderr.write(`\nSECURE EVAL FREEZE NOT READY: ${FREEZE_ID}\n`)
+        if (!freezeRecord.backendFullEnforcement) {
+          process.stderr.write(`  Backend enforcement is '${freezeRecord.effectiveComposition.backendEnforcement}', not 'full'.\n`)
+          process.stderr.write('  Benchmark-eligible runs require full backend enforcement.\n')
+        }
+        process.stderr.write('Cannot proceed to live evaluation. Fix the freeze record first.\n')
+        process.exit(1)
       }
-      process.stderr.write('Cannot proceed to live evaluation. Fix the freeze record first.\n')
-      process.exit(1)
     }
     writeFreezeRecord(freezeRecord, REPO_ROOT)
     process.stderr.write(`Secure eval freeze: ${FREEZE_ID} (newly generated and persisted)\n`)
@@ -177,14 +201,24 @@ async function main(): Promise<void> {
   // (e.g. Landlock without network isolation) are acceptable for product
   // operation but not for benchmark-eligible evaluation.
   if (composedRecord.backend.enforcement !== 'full') {
-    process.stderr.write(`\nBACKEND ENFORCEMENT INSUFFICIENT: ${composedRecord.backend.enforcement} (required: full)\n`)
-    process.stderr.write('Benchmark-eligible tasks require full sandbox enforcement with network isolation.\n')
-    process.exit(1)
+    if (skipSecurityGate) {
+      process.stderr.write(`\nWARNING: BACKEND ENFORCEMENT INSUFFICIENT: ${composedRecord.backend.enforcement} (required: full)\n`)
+      process.stderr.write('Results from this run are NOT benchmark-eligible due to incomplete sandbox enforcement.\n\n')
+    } else {
+      process.stderr.write(`\nBACKEND ENFORCEMENT INSUFFICIENT: ${composedRecord.backend.enforcement} (required: full)\n`)
+      process.stderr.write('Benchmark-eligible tasks require full sandbox enforcement with network isolation.\n')
+      process.exit(1)
+    }
   }
   if (!composedRecord.backend.networkDenied) {
-    process.stderr.write('\nBACKEND NETWORK ISOLATION FAILED: network access not denied\n')
-    process.stderr.write('Benchmark-eligible tasks require network isolation.\n')
-    process.exit(1)
+    if (skipSecurityGate) {
+      process.stderr.write('\nWARNING: BACKEND NETWORK ISOLATION FAILED: network access not denied\n')
+      process.stderr.write('Results from this run are NOT benchmark-eligible due to incomplete network isolation.\n\n')
+    } else {
+      process.stderr.write('\nBACKEND NETWORK ISOLATION FAILED: network access not denied\n')
+      process.stderr.write('Benchmark-eligible tasks require network isolation.\n')
+      process.exit(1)
+    }
   }
   process.stderr.write(`Backend enforcement: ${composedRecord.backend.enforcement}, network denied: ${composedRecord.backend.networkDenied}\n`)
   process.stderr.write('\n')
