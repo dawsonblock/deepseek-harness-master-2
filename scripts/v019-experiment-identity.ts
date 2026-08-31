@@ -50,6 +50,12 @@ export interface ExperimentManifest {
     maxOutputTokens: number | undefined
   }>
   readonly taskCorpusVersion: string
+  /**
+   * SHA-256 of sorted (taskId + taskManifestHash + baseCommit +
+   * referenceFixCommit + strength + benchmarkEligible). Proves the exact
+   * task set without relying on a version label.
+   */
+  readonly corpusManifestHash: string
   readonly taskCount: number
   readonly repositoryCount: number
   /** False for B0 infrastructure validation; true for the baseline cohort. */
@@ -92,9 +98,12 @@ export function buildExperimentManifest(params: {
   sandboxPolicyVersion: string
   sandboxQualificationId: string
   taskCorpusVersion: string
+  corpusManifestHash: string
   taskCount: number
   repositoryCount: number
   benchmarkEligible: boolean
+  /** Skip the clean-source enforcement gate. Tests use this to avoid depending on the repo's working-tree state. */
+  skipCleanSourceCheck?: boolean
   repairStrategy: 'transactional' | 'iterative'
   sandboxBackend: { runner: string; runnerPath: string; runnerVersion: string; enforcement: string; networkDenied: boolean }
   snapshotAlgorithm: string
@@ -114,6 +123,14 @@ export function buildExperimentManifest(params: {
   const sourceCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
   const porcelain = execSync('git status --porcelain', { encoding: 'utf8' }).trim()
   const sourceTreeDirty = porcelain.length > 0
+  if (params.benchmarkEligible && sourceTreeDirty && !params.skipCleanSourceCheck) {
+    const count = porcelain.split('\n').filter(l => l.length > 0).length
+    throw new Error(
+      'Benchmark-eligible evaluation requires a clean source tree. '
+      + `Found ${count} uncommitted change(s). Commit or stash changes, `
+      + 'or run with --b0 for non-benchmark infrastructure validation.',
+    )
+  }
   const sourceTreeHash = computeSourceTreeHash()
   const experimentId = params.benchmarkEligible ? EXPERIMENT_ID : B0_EXPERIMENT_ID
   const modelRoutes = [
@@ -143,6 +160,7 @@ export function buildExperimentManifest(params: {
     modelRoutes,
     frozenRepairLimits,
     taskCorpusVersion: params.taskCorpusVersion,
+    corpusManifestHash: params.corpusManifestHash,
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
@@ -151,7 +169,6 @@ export function buildExperimentManifest(params: {
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
     qualificationSemanticHash: params.qualificationSemanticHash,
-    qualificationArtifactHash: params.qualificationArtifactHash,
   })
   return {
     experimentId,
@@ -168,6 +185,7 @@ export function buildExperimentManifest(params: {
     modelRoutes,
     frozenRepairLimits,
     taskCorpusVersion: params.taskCorpusVersion,
+    corpusManifestHash: params.corpusManifestHash,
     taskCount: params.taskCount,
     repositoryCount: params.repositoryCount,
     benchmarkEligible: params.benchmarkEligible,
@@ -181,7 +199,7 @@ export function buildExperimentManifest(params: {
   }
 }
 
-function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifestHash'>): string {
+function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifestHash' | 'qualificationArtifactHash'>): string {
   const routeLines = fields.modelRoutes
     .map(r => `${r.alias}=${r.provider}:${r.model}`)
     .sort()
@@ -203,6 +221,7 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     routeLines,
     limitLine,
     fields.taskCorpusVersion,
+    fields.corpusManifestHash,
     String(fields.taskCount),
     String(fields.repositoryCount),
     String(fields.benchmarkEligible),
@@ -211,7 +230,6 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     fields.snapshotAlgorithm,
     fields.snapshotExclusions,
     fields.qualificationSemanticHash,
-    fields.qualificationArtifactHash,
   ].join(':')
   return createHash('sha256').update(manifestContent).digest('hex')
 }
@@ -238,4 +256,26 @@ function computeSourceTreeHash(): string {
     hash.update('\n')
   }
   return hash.digest('hex')
+}
+
+/**
+ * Compute a deterministic SHA-256 over a set of task manifests. The hash
+ * covers sorted (taskId, taskManifestHash, baseCommit, referenceFixCommit,
+ * verificationStrength, benchmarkEligible) tuples so any single task change
+ * produces a different corpus identity.
+ */
+export function computeCorpusManifestHash(
+  tasks: readonly {
+    readonly taskId: string
+    readonly manifestHash: string
+    readonly repository: { readonly baseCommit: string; readonly referenceFixCommit: string | undefined }
+    readonly verification: { readonly strength: string }
+    readonly benchmarkEligible: boolean
+  }[],
+): string {
+  const lines = tasks
+    .map(t => `${t.taskId}:${t.manifestHash}:${t.repository.baseCommit}:${t.repository.referenceFixCommit ?? 'none'}:${t.verification.strength}:${String(t.benchmarkEligible)}`)
+    .sort()
+    .join('\n')
+  return createHash('sha256').update(lines).digest('hex')
 }

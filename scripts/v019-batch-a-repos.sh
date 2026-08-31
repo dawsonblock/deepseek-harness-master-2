@@ -775,10 +775,19 @@ describe('HashMap', () => {
     map.delete('a')
     expect(map.size()).toBe(1)
   })
+  it('does not inherit prototype properties', () => {
+    const map = new HashMap<string, number>()
+    expect(map.has('toString')).toBe(false)
+    expect(map.has('constructor')).toBe(false)
+  })
 })
 EOF
 
   init_repo "$dir"
+  local base_commit=$(git -C "$dir" rev-parse HEAD)
+
+  # Apply fixes
+  cat > "$dir/src/LinkedList.ts" <<'EOF'
 interface Node<T> { value: T; next: Node<T> | null }
 export class LinkedList<T> {
   private head: Node<T> | null = null
@@ -1154,8 +1163,8 @@ EOF
 
   cat > "$dir/src/template.ts" <<'EOF'
 export function template(str: string, vars: Record<string, string>): string {
-  // Uses regex replace — refactor target
-  return str.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? '')
+  // Uses regex replace — only replaces first match per call
+  return str.replace(/\{(\w+)\}/, (_, key: string) => vars[key] ?? '')
 }
 EOF
 
@@ -1260,10 +1269,16 @@ describe('template', () => {
   it('handles no variables', () => {
     expect(template('plain text', {})).toBe('plain text')
   })
+  it('replaces repeated variables', () => {
+    expect(template('{a} and {a}', { a: 'X' })).toBe('X and X')
+  })
 })
 EOF
 
   init_repo "$dir"
+  local base_commit=$(git -C "$dir" rev-parse HEAD)
+
+  # Apply fixes
   cat > "$dir/src/truncate.ts" <<'EOF'
 export function truncate(str: string, maxLen: number): string {
   const chars = Array.from(str)

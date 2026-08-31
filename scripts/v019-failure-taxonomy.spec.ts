@@ -89,6 +89,7 @@ function makeTrajectory(over: Partial<TaskTrajectory> & { attempts: readonly Att
     abortReason: undefined,
     terminalOutcome: 'attempts-exhausted',
     failureCategory: undefined,
+    providerRequestOutcomes: [],
     timestamp: new Date().toISOString(),
     ...over,
   }

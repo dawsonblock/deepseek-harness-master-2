@@ -73,6 +73,7 @@ describe('v019 post-security B0 smoke test', () => {
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     expect(manifest.benchmarkEligible).toBe(false)
     expect(manifest.experimentId).toBe('v019-infra-validation-v2')

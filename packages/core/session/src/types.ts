@@ -325,6 +325,30 @@ export interface SessionEventMap {
     routingDecisionId?: string
   }
   /**
+   * Per-attempt provider request outcome, emitted exactly once for every
+   * `model/request` — success, error, abort, or max-tokens. Ignorable so
+   * older readers may safely skip it. Pairs 1:1 with the preceding
+   * `model/request` via `(turn, step, attempt)`. A failed attempt may carry
+   * `failure` and no `usage`; a successful attempt carries `usage` when the
+   * adapter reported it. Downstream accounting reconciles `model/request`
+   * against either `model/usage` or this outcome, so a provider failure with
+   * no usage is no longer a missing-evidence violation.
+   */
+  'model/request-outcome': {
+    turn: number
+    step: number
+    attempt: number
+    provider: string
+    model: string
+    /** Joins to the routing decision that selected this model, when a router was active. */
+    routingDecisionId?: string
+    outcome: 'success' | 'error' | 'aborted' | 'max-tokens'
+    /** Present when `outcome` is `error` or `aborted`. */
+    failure?: LlmFailure
+    /** Present when the adapter reported usage (can be zero-token usage). */
+    usage?: TokenUsage
+  }
+  /**
    * Per-attempt provider usage invariant violation. Ignorable so older readers
    * may safely skip it. Emitted when the provider's reported token buckets do
    * not sum correctly. Raw provider values are preserved in `observed`; the

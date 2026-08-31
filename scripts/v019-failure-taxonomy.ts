@@ -30,6 +30,7 @@ export type FailureCategory =
   | 'F16-decomposition'
   | 'F17-cross-file-consistency'
   | 'F18-holdout-edge-case'
+  | 'F19-control-plane-error'
 
 /**
  * Categories that cannot be automatically detected from trajectory evidence
@@ -140,27 +141,26 @@ function classifyControlPlaneFailure(t: TaskTrajectory, facts: FailureObjectiveF
         evidence: `terminalOutcome=rollback-failed, abortReason=${t.abortReason ?? 'undefined'}`,
       }
     case 'model-unavailable':
-    case 'authority-undecidable':
       return {
         taskId: t.taskId,
         category: 'F14-provider-failure',
-        reason: `Provider/control-plane failure: ${t.abortReason ?? t.terminalOutcome}`,
+        reason: `Provider unavailable: ${t.abortReason ?? t.terminalOutcome}`,
         facts,
         evidence: `terminalOutcome=${t.terminalOutcome}, abortReason=${t.abortReason ?? 'undefined'}`,
       }
+    case 'authority-undecidable':
     case 'repair-handler-error':
       return {
         taskId: t.taskId,
-        category: 'F14-provider-failure',
-        reason: `Repair handler error: ${t.abortReason ?? 'repair-handler-error'}`,
+        category: 'F19-control-plane-error',
+        reason: `Control-plane error: ${t.abortReason ?? t.terminalOutcome}`,
         facts,
-        evidence: `terminalOutcome=repair-handler-error, abortReason=${t.abortReason ?? 'undefined'}`,
+        evidence: `terminalOutcome=${t.terminalOutcome}, abortReason=${t.abortReason ?? 'undefined'}`,
       }
     default:
-      // Unclassified control-plane failure. Do not force into F13/F14.
       return {
         taskId: t.taskId,
-        category: 'F14-provider-failure',
+        category: 'F19-control-plane-error',
         reason: `Unclassified control-plane failure: ${t.abortReason ?? t.terminalOutcome}`,
         facts,
         evidence: `controlPlaneStatus=FAIL, terminalOutcome=${t.terminalOutcome}, aborted=${t.aborted}, abortReason=${t.abortReason ?? 'undefined'}`,

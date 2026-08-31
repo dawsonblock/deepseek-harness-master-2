@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   buildExperimentManifest,
+  computeCorpusManifestHash,
 } from './v019-experiment-identity.ts'
 import { runComposedRuntimeQualification, computeQualificationSemanticHash } from './v019-composed-runtime-qualification.ts'
 import {
@@ -140,7 +141,8 @@ async function main(): Promise<void> {
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
     sandboxQualificationId: SANDBOX_QUALIFICATION_ID,
-    taskCorpusVersion: 'v1',
+    taskCorpusVersion: 'v019-synthetic-multirepo-v2',
+    corpusManifestHash: computeCorpusManifestHash(TASK_CORPUS.slice(0, maxTasks)),
     taskCount: Math.min(TASK_CORPUS.length, maxTasks),
     repositoryCount: new Set(TASK_CORPUS.slice(0, maxTasks).map(t => t.repository.name)).size,
     benchmarkEligible,
@@ -191,6 +193,10 @@ async function main(): Promise<void> {
     && checkpoint.experimentManifestHash === experimentManifest.manifestHash
   const completedTaskIds = new Set(checkpointValid ? checkpoint.completedTaskIds : [])
   const trajectories: TaskTrajectory[] = checkpointValid ? checkpoint.trajectories : []
+  // Preserve startedAt only from a valid checkpoint. An invalid checkpoint
+  // represents a different experiment; inheriting its startedAt would make
+  // the audit record inaccurate.
+  const startedAt = checkpointValid ? checkpoint.startedAt : new Date().toISOString()
 
   const tasks = TASK_CORPUS.slice(0, maxTasks)
   process.stderr.write(`Tasks to run: ${tasks.length - completedTaskIds.size} remaining\n\n`)
@@ -276,7 +282,7 @@ async function main(): Promise<void> {
         experimentId: experimentManifest.experimentId,
         experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
-        startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
+        startedAt,
         updatedAt: new Date().toISOString(),
         completedTaskIds: [...completedTaskIds],
         trajectories,
@@ -298,7 +304,7 @@ async function main(): Promise<void> {
         experimentId: experimentManifest.experimentId,
         experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
-        startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
+        startedAt,
         updatedAt: new Date().toISOString(),
         completedTaskIds: [...completedTaskIds],
         trajectories,

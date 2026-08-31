@@ -98,7 +98,14 @@ function runCommand(
     return { passed: 0 === expectedExitCode, output }
   } catch (error: unknown) {
     const exitCode = (error as { status?: number }).status ?? -1
-    return { passed: exitCode === expectedExitCode, output: String(error) }
+    // execSync captures stdout/stderr on the error object when stdio is 'pipe'.
+    // String(error) alone drops both, so the task-specific reproduction gate
+    // cannot find the target test file name in the failure output.
+    const err = error as { stdout?: string | Buffer; stderr?: string | Buffer; message?: string }
+    const stdout = typeof err.stdout === 'string' ? err.stdout : ''
+    const stderr = typeof err.stderr === 'string' ? err.stderr : ''
+    const message = err.message ?? String(error)
+    return { passed: exitCode === expectedExitCode, output: `${stdout}\n${stderr}\n${message}` }
   }
 }
 
@@ -270,6 +277,7 @@ export function qualifyVerifierValidated(
     details.push(`Target test file ${targetTestFile} found in base failure output`)
   }
   details.push('Diagnostic verifier fails at base commit (expected)')
+  details.push(`base stdout/stderr (truncated):\n${baseResult.output.slice(0, 2000)}`)
 
   // Step 2: Apply reference fix and verify diagnostic passes.
   if (manifest.repository.referenceFixCommit === undefined) {
@@ -339,6 +347,7 @@ export function qualifyVerifierValidated(
     details.push(`Target test file ${targetTestFile} found in fix pass output`)
   }
   details.push('Diagnostic verifier passes at reference fix commit')
+  details.push(`fix stdout/stderr (truncated):\n${fixResult.output.slice(0, 2000)}`)
 
   // Run holdout at fix commit if V3.
   if (manifest.verification.holdout.length > 0) {

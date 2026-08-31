@@ -813,6 +813,7 @@ export function computeAttemptAccounting(
   let costUsd = 0
   let outputTokens = 0
   let usageFound = false
+  let failureFound = false
 
   for (const event of events) {
     if ((event.type as string) === 'model/routing-decision') {
@@ -848,10 +849,16 @@ export function computeAttemptAccounting(
         break
       }
     }
+    if ((event.type as string) === 'model/request-outcome') {
+      const data = event.data as { routingDecisionId?: string; outcome: string; usage?: import('@deepseek-ai/dsh-llm').TokenUsage }
+      if (data.routingDecisionId === routingDecisionId && (data.outcome === 'error' || data.outcome === 'aborted')) {
+        failureFound = true
+      }
+    }
   }
 
-  if (failOnMissingUsage && !usageFound) {
-    throw new Error(`MISSING_USAGE: no model/usage event found for routingDecisionId ${routingDecisionId}`)
+  if (failOnMissingUsage && !usageFound && !failureFound) {
+    throw new Error(`MISSING_USAGE: no model/usage or model/request-outcome(failure) event found for routingDecisionId ${routingDecisionId}`)
   }
 
   const latencyMs = routingTime !== undefined && usageTime !== undefined

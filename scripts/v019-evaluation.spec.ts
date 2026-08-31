@@ -39,13 +39,14 @@ describe('v019-experiment-identity', () => {
       taskCorpusVersion: 'v1',
       taskCount: 75,
       repositoryCount: 10,
-      benchmarkEligible: true,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
       repairStrategy: 'transactional',
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     const m2 = buildExperimentManifest({
       repairControllerVersion: '0.18.0',
@@ -57,16 +58,47 @@ describe('v019-experiment-identity', () => {
       taskCorpusVersion: 'v1',
       taskCount: 75,
       repositoryCount: 10,
-      benchmarkEligible: true,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
       repairStrategy: 'transactional',
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     expect(m1.manifestHash).toBe(m2.manifestHash)
     expect(m1.manifestHash).toHaveLength(64)
+  })
+
+  it('manifest hash is independent of qualificationArtifactHash', () => {
+    const base = {
+      repairControllerVersion: '0.18.0',
+      repairRuntimeVersion: '0.18.0',
+      eventSchemaVersion: 0,
+      pricingVersion: '2026-08-25',
+      sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'test-sandbox-id',
+      taskCorpusVersion: 'v1',
+      taskCount: 75,
+      repositoryCount: 10,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
+      repairStrategy: 'transactional' as const,
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
+      corpusManifestHash: 'test-corpus-hash',
+    }
+    const m1 = buildExperimentManifest({ ...base, qualificationArtifactHash: 'artifact-hash-A' })
+    const m2 = buildExperimentManifest({ ...base, qualificationArtifactHash: 'artifact-hash-B' })
+    // The artifact hash includes timestamps and environment data; it must
+    // not affect experiment identity or checkpoint resume would break on
+    // every qualification re-run.
+    expect(m1.manifestHash).toBe(m2.manifestHash)
+    // The artifact hash is still preserved in the manifest for audit.
+    expect(m1.qualificationArtifactHash).toBe('artifact-hash-A')
+    expect(m2.qualificationArtifactHash).toBe('artifact-hash-B')
   })
 
   it('freezes maxFlashAttempts=3, maxProAttempts=2, maxTotalAttempts=5', () => {
@@ -80,13 +112,14 @@ describe('v019-experiment-identity', () => {
       taskCorpusVersion: 'v1',
       taskCount: 5,
       repositoryCount: 1,
-      benchmarkEligible: true,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
       repairStrategy: 'transactional',
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     expect(m.frozenRepairLimits.maxFlashAttempts).toBe(3)
     expect(m.frozenRepairLimits.maxProAttempts).toBe(2)
@@ -105,7 +138,7 @@ describe('v019-task-manifest', () => {
     const base = {
       taskId: 'test-001',
       category: 'bug-fix' as const,
-      benchmarkEligible: true,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
       repository: {
         name: 'test-repo',
         url: 'file:///tmp/test',
@@ -265,6 +298,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
     abortReason: undefined,
     terminalOutcome: 'verified-complete',
     failureCategory: undefined,
+    providerRequestOutcomes: [{ outcome: 'success', provider: 'deepseek-official', model: 'deepseek-v4-flash' }],
     timestamp: '2026-08-28T00:00:00.000Z',
     ...overrides,
   }
@@ -348,6 +382,7 @@ describe('v019-failure-taxonomy', () => {
       abortReason: undefined,
       terminalOutcome: 'failed-no-rescue',
       failureCategory: undefined,
+      providerRequestOutcomes: [],
       referenceFixFiles: [],
       referenceFixFilesInspected: [],
       referenceFixFilesModified: [],
@@ -387,10 +422,22 @@ describe('v019-failure-taxonomy', () => {
     const t = makeFailedTrajectory({
       controlPlaneStatus: 'FAIL',
       aborted: true,
-      abortReason: 'provider-error',
+      abortReason: 'model-unavailable',
+      terminalOutcome: 'model-unavailable',
     })
     const classification = classifyFailure(t)
     expect(classification?.category).toBe('F14-provider-failure')
+  })
+
+  it('classifies control-plane errors separately from provider failures', () => {
+    const t = makeFailedTrajectory({
+      controlPlaneStatus: 'FAIL',
+      aborted: true,
+      abortReason: 'authority-undecidable',
+      terminalOutcome: 'authority-undecidable',
+    })
+    const classification = classifyFailure(t)
+    expect(classification?.category).toBe('F19-control-plane-error')
   })
 
   it('classifies premature escalation', () => {
@@ -450,6 +497,7 @@ describe('v019 B0 vs benchmark separation', () => {
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     expect(m.benchmarkEligible).toBe(false)
     expect(m.experimentId).toBe('v019-infra-validation-v2')
@@ -466,13 +514,14 @@ describe('v019 B0 vs benchmark separation', () => {
       taskCorpusVersion: 'v1',
       taskCount: 75,
       repositoryCount: 10,
-      benchmarkEligible: true,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
       repairStrategy: 'transactional',
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     expect(m.benchmarkEligible).toBe(true)
     expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v2')
@@ -496,6 +545,7 @@ describe('v019 B0 vs benchmark separation', () => {
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     const bench = buildExperimentManifest({
       repairControllerVersion: '0.18.0',
@@ -507,13 +557,14 @@ describe('v019 B0 vs benchmark separation', () => {
       taskCorpusVersion: 'v1',
       taskCount: 75,
       repositoryCount: 10,
-      benchmarkEligible: true,
+      benchmarkEligible: true, skipCleanSourceCheck: true,
       repairStrategy: 'transactional',
       sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'full', networkDenied: true },
       snapshotAlgorithm: 'sha256-tree-v2',
       snapshotExclusions: 'verifier-snapshot-exclusions-v1',
       qualificationSemanticHash: 'test-semantic-hash',
       qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
     })
     expect(b0.experimentId).not.toBe(bench.experimentId)
     expect(b0.manifestHash).not.toBe(bench.manifestHash)

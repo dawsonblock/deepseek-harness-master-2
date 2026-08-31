@@ -16,7 +16,7 @@
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
@@ -97,6 +97,12 @@ export interface TaskTrajectory {
   readonly abortReason: string | undefined
   readonly terminalOutcome: string
   readonly failureCategory: string | undefined
+  /** Per-request provider outcomes for economic and reliability accounting. */
+  readonly providerRequestOutcomes: readonly {
+    readonly outcome: 'success' | 'error' | 'aborted' | 'max-tokens'
+    readonly provider: string
+    readonly model: string
+  }[]
   readonly timestamp: string
 }
 
@@ -174,12 +180,10 @@ export async function runTaskTrajectory(
   let configHarnessDir: string | undefined
   let sessionsDir: string | undefined
   try {
-    const { configPath, harnessDir: configDir } = await generateRepoConfig(flashModel.model, workspace)
-    configHarnessDir = configDir
-    // Sessions directory is kept outside the model workspace so it does
-    // not contaminate the B0 baseline or appear in changed-file diffs.
-    const sessionsDir = join(tmpdir(), `dsh-v019-sessions-${Date.now()}`)
+    sessionsDir = join(tmpdir(), `dsh-v019-sessions-${manifest.taskId}-${randomUUID()}`)
     await mkdir(sessionsDir, { recursive: true })
+    const { configPath, harnessDir: configDir } = await generateRepoConfig(flashModel.model, workspace, sessionsDir)
+    configHarnessDir = configDir
     loadEnv('v019-evaluation')
     uninstallFailLoud = installFailLoud('v019-evaluation')
     ctx = await boot('v019-evaluation', resolveConfigPath(configPath, undefined))
@@ -382,11 +386,16 @@ export function buildInfraFailureTrajectory(
     abortReason: failureReason,
     terminalOutcome: 'infra-failure',
     failureCategory: 'F6-build-environment',
+    providerRequestOutcomes: [],
     timestamp: new Date().toISOString(),
   }
 }
 
-export async function generateRepoConfig(model: string, workspace: string): Promise<{ configPath: string; harnessDir: string }> {
+export async function generateRepoConfig(
+  model: string,
+  workspace: string,
+  sessionRoot: string,
+): Promise<{ configPath: string; harnessDir: string }> {
   const basePath = join(REPO_ROOT, 'examples', 'headless-agent', 'cordis.yml')
   let base = await readFile(basePath, 'utf8')
   base = base.replace(/model: deepseek-v4-flash/, `model: ${model}`)
@@ -462,6 +471,10 @@ export async function generateRepoConfig(model: string, workspace: string): Prom
   // contaminate the B0 baseline or appear in changed-file diffs.
   // The sessions directory is also kept outside the workspace.
   // The caller is responsible for cleaning up the returned harnessDir.
+  base = base.replace(/root: '\.\/\.sessions'/, `root: '${sessionRoot}'`)
+  if (base.includes("root: './.sessions'")) {
+    throw new Error('Session root replacement failed — base cordis.yml still contains the default .sessions root')
+  }
   const harnessDir = join(tmpdir(), `dsh-v019-harness-${Date.now()}`)
   await mkdir(harnessDir, { recursive: true })
   const configPath = join(harnessDir, 'cordis.yml')
@@ -1095,38 +1108,37 @@ function buildTrajectoryFromEvents(
   }
 
   // Fail closed: every model/request (actual provider invocation) must
-  // reconcile with canonical model/usage evidence. A model/request represents
-  // a paid call to the provider. A model/routing-decision that is rejected
-  // by post-routing context preflight does NOT produce a model/request and
-  // is not billed — so reconciliation against model/request, not
-  // model/routing-decision, is the correct accounting boundary.
+  // reconcile with either a model/usage event or a model/request-outcome
+  // event. A model/request represents a paid call to the provider. A
+  // model/routing-decision that is rejected by post-routing context
+  // preflight does NOT produce a model/request and is not billed — so
+  // reconciliation against model/request, not model/routing-decision, is
+  // the correct accounting boundary.
   //
-  // This is broader than checking only repair/evidence events: one-shot
-  // success and the final successful repair attempt also have model/request
-  // events but may not have repair/evidence events. Every paid request
-  // must be accounted for.
+  // Reconciliation is one-to-one by (turn, step, attempt): routingDecisionId
+  // identifies route selection for a step, not an individual provider call,
+  // so retries of the same step share it. A failed attempt with a
+  // model/request-outcome carrying a failure is valid evidence; only a
+  // model/request with neither usage nor outcome is a lost request.
   const requestEvents = allEvents.filter(e => e.type === 'model/request')
-  if (requestEvents.length > 0 && usageEvents.length === 0) {
-    throw new Error(`MISSING_USAGE_EVIDENCE: ${requestEvents.length} model/request event(s) but 0 model/usage events for task ${manifest.taskId}`)
+  const outcomeEvents = allEvents.filter(e => e.type === 'model/request-outcome')
+  if (requestEvents.length > 0 && usageEvents.length === 0 && outcomeEvents.length === 0) {
+    throw new Error(`MISSING_USAGE_EVIDENCE: ${requestEvents.length} model/request event(s) but 0 model/usage and 0 model/request-outcome events for task ${manifest.taskId}`)
   }
 
-  // Per-request reconciliation: each model/request must have at least
-  // one matching model/usage event by routingDecisionId or turn. This
-  // catches missing usage for one-shot success, final successful repair,
-  // and failed attempts alike.
   for (const requestEvent of requestEvents) {
-    const requestData = requestEvent.data as { routingDecisionId?: string; turn?: number }
-    const requestRdId = requestData.routingDecisionId
-    const requestTurn = requestData.turn
-    const hasMatchingUsage = usageEvents.some((usageEvent) => {
-      const usageData = usageEvent.data as { routingDecisionId?: string; turn?: number }
-      if (requestRdId !== undefined && usageData.routingDecisionId !== undefined) {
-        return usageData.routingDecisionId === requestRdId
-      }
-      return usageData.turn === requestTurn
+    const requestData = requestEvent.data as { turn: number; step: number; attempt: number; routingDecisionId?: string }
+    const key = `${requestData.turn}:${requestData.step}:${requestData.attempt}`
+    const hasUsage = usageEvents.some((usageEvent) => {
+      const usageData = usageEvent.data as { turn: number; step: number; attempt: number }
+      return `${usageData.turn}:${usageData.step}:${usageData.attempt}` === key
     })
-    if (!hasMatchingUsage) {
-      throw new Error(`MISSING_USAGE_EVIDENCE: model/request (routingDecisionId=${requestRdId ?? 'undefined'}, turn=${requestTurn ?? 'undefined'}) has no matching model/usage event for task ${manifest.taskId}`)
+    const hasOutcome = outcomeEvents.some((outcomeEvent) => {
+      const outcomeData = outcomeEvent.data as { turn: number; step: number; attempt: number }
+      return `${outcomeData.turn}:${outcomeData.step}:${outcomeData.attempt}` === key
+    })
+    if (!hasUsage && !hasOutcome) {
+      throw new Error(`MISSING_USAGE_EVIDENCE: model/request (turn=${requestData.turn}, step=${requestData.step}, attempt=${requestData.attempt}) has no matching model/usage or model/request-outcome event for task ${manifest.taskId}`)
     }
   }
 
@@ -1222,6 +1234,12 @@ function buildTrajectoryFromEvents(
             : undefined,
     terminalOutcome,
     failureCategory: undefined,
+    providerRequestOutcomes: allEvents
+      .filter(e => e.type === 'model/request-outcome')
+      .map((e) => {
+        const d = e.data as { outcome: 'success' | 'error' | 'aborted' | 'max-tokens'; provider: string; model: string }
+        return { outcome: d.outcome, provider: d.provider, model: d.model }
+      }),
     timestamp: new Date().toISOString(),
   }
 }

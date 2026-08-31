@@ -112,16 +112,15 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   const proRescued = proEscalations.filter(t => t.finalVerified)
   const budgetStops = evaluated.filter(t => t.terminalOutcome === 'budget-stop')
   const rollbacks = evaluated.filter(t => t.rollbackUsed)
-  // Control-plane failure rate: measured against all benchmark-eligible tasks
-  // that reached model/request, not just `evaluated` (which excludes
-  // NOT_EVALUATED). A genuine provider failure causes NOT_EVALUATED, which
-  // would exclude it from the `evaluated` population and hide the very
-  // failures this metric is intended to measure.
-  const reachedModelRequest = sorted.filter(t => t.benchmarkEligible && t.taskState !== 'FAILED_INFRA')
-  const providerFailuresAll = reachedModelRequest.filter(t =>
-    t.aborted && t.abortReason !== undefined
-    && (t.abortReason === 'model-unavailable' || t.abortReason === 'authority-undecidable'),
-  )
+  // Provider failure rate: per-request, not per-task. Counted as
+  // model/request-outcome events with outcome 'error' or 'aborted' divided
+  // by total model/request-outcome events across all benchmark-eligible
+  // tasks. This is the true provider/transport failure rate, distinct from
+  // control-plane errors (F19) which are harness defects, not provider
+  // failures.
+  const eligibleTrajectories = sorted.filter(t => t.benchmarkEligible && t.taskState !== 'FAILED_INFRA')
+  const allOutcomes = eligibleTrajectories.flatMap(t => t.providerRequestOutcomes)
+  const providerFailures = allOutcomes.filter(o => o.outcome === 'error' || o.outcome === 'aborted')
   const sameFailureEscalations = proEscalations.filter((t) => {
     const flashFingerprints = t.attempts
       .filter(a => a.model === 'deepseek-v4-flash')
@@ -208,7 +207,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     rollbackRate: evalN > 0 ? rollbacks.length / evalN : 0,
     budgetStopRate: evalN > 0 ? budgetStops.length / evalN : 0,
     replayMismatchRate: null,
-    providerFailureRate: reachedModelRequest.length > 0 ? providerFailuresAll.length / reachedModelRequest.length : 0,
+    providerFailureRate: allOutcomes.length > 0 ? providerFailures.length / allOutcomes.length : 0,
     referenceFixFileMissRate: failedWithReference.length > 0
       ? referenceFixFileMisses.length / failedWithReference.length
       : 0,

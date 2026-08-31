@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { execSync } from 'node:child_process'
 
 import {
   qualifyLeakageChecked,
@@ -130,6 +131,18 @@ describe('v019-corpus-qualification', () => {
       const record = qualifyFrozen(manifest, [])
       expect(record.currentState).toBe('REJECTED')
       expect(record.qualifiedAt).toBeUndefined()
+    })
+  })
+
+  describe('v019-batch-a-repos.sh shell syntax', () => {
+    it('parses without syntax errors', () => {
+      // bash -n checks syntax without executing. A missing heredoc opener
+      // or other structural error fails here, preventing corpus breakage.
+      expect(() => execSync('bash -n v019-batch-a-repos.sh', {
+        cwd: import.meta.dirname,
+        encoding: 'utf8',
+        timeout: 10000,
+      })).not.toThrow()
     })
   })
 })

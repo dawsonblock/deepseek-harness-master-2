@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   buildExperimentManifest,
+  computeCorpusManifestHash,
 } from './v019-experiment-identity.ts'
 import {
   checkoutRepo,
@@ -198,7 +199,8 @@ async function main(): Promise<void> {
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
     sandboxQualificationId: SECURITY_QUALIFICATION_ID,
-    taskCorpusVersion: 'v019-synthetic-multirepo-v1',
+    taskCorpusVersion: 'v019-synthetic-multirepo-v2',
+    corpusManifestHash: computeCorpusManifestHash(tasks),
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,
     benchmarkEligible,
@@ -251,6 +253,10 @@ async function main(): Promise<void> {
     checkpointValid
       ? checkpoint.trajectories
       : []
+  // Preserve startedAt only from a valid checkpoint. An invalid checkpoint
+  // represents a different experiment; inheriting its startedAt would make
+  // the audit record inaccurate.
+  const startedAt = checkpointValid ? checkpoint.startedAt : new Date().toISOString()
 
   process.stderr.write(`Tasks to run: ${tasks.length - completedTaskIds.size} remaining\n\n`)
 
@@ -329,7 +335,7 @@ async function main(): Promise<void> {
         experimentId: experimentManifest.experimentId,
         experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
-        startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
+        startedAt,
         updatedAt: new Date().toISOString(),
         completedTaskIds: [...completedTaskIds],
         trajectories,
@@ -351,7 +357,7 @@ async function main(): Promise<void> {
         experimentId: experimentManifest.experimentId,
         experimentManifestHash: experimentManifest.manifestHash,
         benchmarkEligible,
-        startedAt: checkpoint?.startedAt ?? new Date().toISOString(),
+        startedAt,
         updatedAt: new Date().toISOString(),
         completedTaskIds: [...completedTaskIds],
         trajectories,

@@ -16,7 +16,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall, TokenUsage, UsageDiagnostic } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, LlmFailure, Message, PreparedLlmCall, TokenUsage, UsageDiagnostic } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
   LlmError,
@@ -114,6 +114,36 @@ function emitModelUsage(
     model: request.model,
     usage: routingDecisionId === undefined ? usage : { ...usage, routingDecisionId },
     ...routingDecisionId === undefined ? {} : { routingDecisionId },
+  }, { ignorable: true })
+}
+
+/**
+ * Emit a `model/request-outcome` event pairing 1:1 with the preceding
+ * `model/request`. Every provider attempt — success, error, abort, or
+ * max-tokens — emits exactly one outcome so downstream accounting can
+ * reconcile each request without relying on `routingDecisionId` alone.
+ */
+function emitRequestOutcome(
+  session: Session,
+  turn: number,
+  step: number,
+  attempt: number,
+  request: GenerateOptions,
+  routingDecisionId: string | undefined,
+  outcome: 'success' | 'error' | 'aborted' | 'max-tokens',
+  failure?: LlmFailure,
+  usage?: TokenUsage,
+): void {
+  session.append('model/request-outcome', {
+    turn,
+    step,
+    attempt,
+    provider: request.provider,
+    model: request.model,
+    ...routingDecisionId === undefined ? {} : { routingDecisionId },
+    outcome,
+    ...failure === undefined ? {} : { failure },
+    ...usage === undefined ? {} : { usage },
   }, { ignorable: true })
 }
 
@@ -516,6 +546,7 @@ export class ReactLoopAgent implements Agent {
         if (signal.aborted) {
           emitModelUsage(this.session, turn, step, requestAttempt, request, assembler.usage, routingDecisionId)
           emitUsageDiagnostics(this.session, turn, step, requestAttempt, request, assembler.diagnostics, routingDecisionId)
+          emitRequestOutcome(this.session, turn, step, requestAttempt, request, routingDecisionId, 'aborted', undefined, assembler.usage)
           const content = assembler.interruptedBlocks()
           if (content.length > 0) {
             this.session.append('assistant/message', {
@@ -529,6 +560,11 @@ export class ReactLoopAgent implements Agent {
               ...usageSpread(assembler.usage, routingDecisionId),
             }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
           }
+        } else {
+          emitRequestOutcome(
+            this.session, turn, step, requestAttempt, request, routingDecisionId, 'error',
+            { message: errorChain(error), code: 'UNKNOWN' },
+          )
         }
         throw error
       }
@@ -536,6 +572,10 @@ export class ReactLoopAgent implements Agent {
       if (finish.kind === 'error' || finish.kind === 'aborted') {
         emitModelUsage(this.session, turn, step, requestAttempt, request, assembler.usage, routingDecisionId)
         emitUsageDiagnostics(this.session, turn, step, requestAttempt, request, assembler.diagnostics, routingDecisionId)
+        emitRequestOutcome(
+          this.session, turn, step, requestAttempt, request, routingDecisionId,
+          finish.kind, finish.failure, assembler.usage,
+        )
         const action = await this.dispatch.waterfall(
           'agent/request-error', {
             turn,
@@ -564,6 +604,7 @@ export class ReactLoopAgent implements Agent {
       })
       emitModelUsage(this.session, turn, step, requestAttempt, request, assembler.usage, routingDecisionId)
       emitUsageDiagnostics(this.session, turn, step, requestAttempt, request, assembler.diagnostics, routingDecisionId)
+      emitRequestOutcome(this.session, turn, step, requestAttempt, request, routingDecisionId, finish.kind === 'max-tokens' ? 'max-tokens' : 'success', undefined, assembler.usage)
       this.session.append(
         'assistant/message',
         {

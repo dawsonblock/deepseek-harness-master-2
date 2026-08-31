@@ -56,7 +56,7 @@
 
 
 import { execSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -79,6 +79,7 @@ import type { RepairRuntimeConfig, RepairState, WorkspaceProvenanceProvider, Rol
 import { handleVerificationPass, handleVerificationFailure, reconstructRepairState } from '@deepseek-ai/dsh-repair-runtime'
 
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
+import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 
 import { generateRepoConfig, createRepairRuntimeConfig } from './v019-trajectory-collector.ts'
 import { hashWorkspaceContents, WORKSPACE_SNAPSHOT_ALGORITHM, WORKSPACE_SNAPSHOT_EXCLUSIONS, type BaselineSnapshot } from './v019-repo-checkout.ts'
@@ -338,7 +339,9 @@ async function bootComposedRuntime(
   workspace: string,
   snapshotDir: string,
 ): Promise<{ ctx: Context; uninstall: () => void }> {
-  const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
+  const sessionRoot = join(tmpdir(), `dsh-v019-qual-sessions-${randomUUID()}`)
+  mkdirSync(sessionRoot, { recursive: true })
+  const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace, sessionRoot)
   loadEnv('v019-composed-qual')
   const uninstall = installFailLoud('v019-composed-qual')
 
@@ -1428,7 +1431,9 @@ async function checkScenarioHoldoutFail(_ctx: Context, workspace: string, snapsh
   let freshCtx: Context | undefined
   let freshUninstall: (() => void) | undefined
   try {
-    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
+    const sessionRoot = join(tmpdir(), `dsh-v019-qual-sessions-${randomUUID()}`)
+    mkdirSync(sessionRoot, { recursive: true })
+    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace, sessionRoot)
     loadEnv('v019-composed-qual-s2')
     freshUninstall = installFailLoud('v019-composed-qual-s2')
     freshCtx = await boot('v019-composed-qual-s2', resolveConfigPath(configPath, undefined))
@@ -1735,7 +1740,9 @@ async function checkScenarioRollbackFailureStops(_ctx: Context, workspace: strin
   let freshCtx: Context | undefined
   let freshUninstall: (() => void) | undefined
   try {
-    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
+    const sessionRoot = join(tmpdir(), `dsh-v019-qual-sessions-${randomUUID()}`)
+    mkdirSync(sessionRoot, { recursive: true })
+    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace, sessionRoot)
     loadEnv('v019-composed-qual-s6')
     freshUninstall = installFailLoud('v019-composed-qual-s6')
     freshCtx = await boot('v019-composed-qual-s6', resolveConfigPath(configPath, undefined))
@@ -1913,7 +1920,9 @@ async function checkScenarioProEscalation(_ctx: Context, workspace: string, snap
   let freshUninstall: (() => void) | undefined
   let failCount = 0
   try {
-    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace)
+    const sessionRoot = join(tmpdir(), `dsh-v019-qual-sessions-${randomUUID()}`)
+    mkdirSync(sessionRoot, { recursive: true })
+    const { configPath, harnessDir: configDir } = await generateRepoConfig('deepseek-v4-flash', workspace, sessionRoot)
     loadEnv('v019-composed-qual-s8')
     freshUninstall = installFailLoud('v019-composed-qual-s8')
     freshCtx = await boot('v019-composed-qual-s8', resolveConfigPath(configPath, undefined))
@@ -2078,6 +2087,7 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
   let workspace: string | undefined
   let holdoutDir: string | undefined
   let snapshotDir: string | undefined
+  let selectedBackend: { runner: string; enforcement: 'full' | 'partial' } | undefined
 
   try {
     workspace = createQualificationWorkspace()
@@ -2125,6 +2135,13 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
 
       // C3: Bash isolation
       checks.push(await checkBashIsolation(ctx, workspace))
+
+      // Capture the actual selected backend from the sandbox provider
+      // after C3 has invoked confine(). This is the authoritative backend
+      // identity, not a `which` guess that may disagree with the provider's
+      // functional probe.
+      const sandbox = ctx.get('sandbox') as LocalSandboxProvider | undefined
+      selectedBackend = sandbox?.selectedBackend()
 
       // C4: No Git history
       checks.push(checkNoGitHistory(workspace))
@@ -2176,7 +2193,7 @@ export async function runComposedRuntimeQualification(): Promise<ComposedQualifi
     }
   }
 
-  return buildRecord(sourceCommit, checks)
+  return buildRecord(sourceCommit, checks, selectedBackend)
 }
 
 /** Build the qualification record from checks. */
@@ -2236,6 +2253,37 @@ function detectSandboxRunnerInfo(): { runner: string; runnerPath: string; runner
   return { runner: 'none', runnerPath: '', runnerVersion: '' }
 }
 
+/** Detect the path and version of a specific sandbox runner by name.
+ * Unlike {@link detectSandboxRunnerInfo}, this does not guess which runner
+ * to use — it probes only the runner that the sandbox provider actually
+ * selected via {@link LocalSandboxProvider.selectedBackend}.
+ */
+function detectRunnerPathVersion(runner: string): { runnerPath: string; runnerVersion: string } {
+  if (runner === 'none' || runner === '') return { runnerPath: '', runnerVersion: '' }
+  if (runner === 'seatbelt') {
+    try {
+      const runnerPath = execSync('which sandbox-exec', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+      let runnerVersion = 'unknown'
+      try {
+        runnerVersion = execSync('sw_vers -productVersion', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+      } catch { /* version probe failed */ }
+      return { runnerPath, runnerVersion }
+    } catch {
+      return { runnerPath: '', runnerVersion: '' }
+    }
+  }
+  try {
+    const runnerPath = execSync(`which ${runner}`, { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+    let runnerVersion = 'unknown'
+    try {
+      runnerVersion = execSync(`${runner} --version`, { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+    } catch { /* version probe failed */ }
+    return { runnerPath, runnerVersion }
+  } catch {
+    return { runnerPath: '', runnerVersion: 'unknown' }
+  }
+}
+
 /** Compute the current environment identity for qualification binding. */
 function currentEnvironmentIdentity(): { platform: string; arch: string; nodeVersion: string; runner: string } {
   return {
@@ -2260,13 +2308,21 @@ export function environmentMatches(record: ComposedQualificationRecord): boolean
     && record.snapshot.exclusions === WORKSPACE_SNAPSHOT_EXCLUSIONS
 }
 
-function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): ComposedQualificationRecord {
+function buildRecord(
+  sourceCommit: string,
+  checks: readonly ComposedCheck[],
+  selectedBackend?: { runner: string; enforcement: 'full' | 'partial' },
+): ComposedQualificationRecord {
   const passedCount = checks.filter(c => c.status === 'pass').length
   const failedCount = checks.filter(c => c.status === 'fail').length
   const skipCount = checks.filter(c => c.status === 'skip').length
   const passed = failedCount === 0
 
-  const runnerInfo = detectSandboxRunnerInfo()
+  // Use the actual selected backend from the sandbox provider when
+  // available; fall back to `which`-based detection only for path/version
+  // metadata that selectedBackend() does not expose.
+  const runner = selectedBackend?.runner ?? 'none'
+  const runnerInfo = detectRunnerPathVersion(runner)
   const c1 = checks.find(c => c.id === 'C1')
   const c2 = checks.find(c => c.id === 'C2')
   const c3 = checks.find(c => c.id === 'C3')
@@ -2282,14 +2338,14 @@ function buildRecord(sourceCommit: string, checks: readonly ComposedCheck[]): Co
     skipCount,
     passed,
     backend: {
-      runner: runnerInfo.runner,
+      runner,
       runnerPath: runnerInfo.runnerPath,
       runnerVersion: runnerInfo.runnerVersion,
-      networkIsolation: runnerInfo.runner === 'bwrap' ? 'netns'
-        : runnerInfo.runner === 'seatbelt' ? 'sandbox-denied'
-          : runnerInfo.runner === 'landlock' ? 'no-network-grant'
+      networkIsolation: runner === 'bwrap' ? 'netns'
+        : runner === 'seatbelt' ? 'sandbox-denied'
+          : runner === 'landlock' ? 'none'
             : 'unknown',
-      enforcement: c3?.status === 'pass' ? 'full' : 'unknown',
+      enforcement: selectedBackend?.enforcement ?? (c3?.status === 'pass' ? 'full' : 'unknown'),
       networkDenied: c3?.status === 'pass',
       probed: c3?.status === 'pass',
     },
