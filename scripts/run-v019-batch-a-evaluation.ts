@@ -51,13 +51,14 @@ import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v4')
-const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
-const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
-const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
-const TRAJECTORIES_DIR = join(EVAL_DIR, 'trajectories')
-const MANIFEST_PATH = join(EVAL_DIR, 'manifest.json')
-const REPORT_PATH = join(EVAL_DIR, 'README.md')
+const DEFAULT_EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v4')
+let EVAL_DIR = DEFAULT_EVAL_DIR
+let CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
+let METRICS_PATH = join(EVAL_DIR, 'metrics.json')
+let FAILURES_PATH = join(EVAL_DIR, 'failures.json')
+let TRAJECTORIES_DIR = join(EVAL_DIR, 'trajectories')
+let MANIFEST_PATH = join(EVAL_DIR, 'manifest.json')
+let REPORT_PATH = join(EVAL_DIR, 'README.md')
 
 interface Checkpoint {
   experimentId: string
@@ -91,6 +92,19 @@ async function main(): Promise<void> {
   const maxTasksIdx = args.indexOf('--max-tasks')
   const maxTasks = maxTasksIdx >= 0 ? parseInt(args[maxTasksIdx + 1] ?? '25', 10) : 25
   const skipSecurityGate = args.includes('--skip-security-gate')
+  const taskFilterIdx = args.indexOf('--task-filter')
+  const taskFilter = taskFilterIdx >= 0 ? (args[taskFilterIdx + 1] ?? '').split(',').map(s => s.trim()).filter(s => s.length > 0) : []
+  const outputDirIdx = args.indexOf('--output-dir')
+  const outputDir = outputDirIdx >= 0 ? args[outputDirIdx + 1] : undefined
+  if (outputDir !== undefined && outputDir.length > 0) {
+    EVAL_DIR = outputDir
+    CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
+    METRICS_PATH = join(EVAL_DIR, 'metrics.json')
+    FAILURES_PATH = join(EVAL_DIR, 'failures.json')
+    TRAJECTORIES_DIR = join(EVAL_DIR, 'trajectories')
+    MANIFEST_PATH = join(EVAL_DIR, 'manifest.json')
+    REPORT_PATH = join(EVAL_DIR, 'README.md')
+  }
 
   if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY === '') {
     process.stderr.write('DEEPSEEK_API_KEY is not set; skipping Batch A evaluation.\n')
@@ -224,7 +238,10 @@ async function main(): Promise<void> {
   process.stderr.write(`Backend enforcement: ${composedRecord.backend.enforcement}, network denied: ${composedRecord.backend.networkDenied}\n`)
   process.stderr.write('\n')
 
-  const tasks = BATCH_A_CORPUS.slice(0, maxTasks)
+  const allTasks = BATCH_A_CORPUS.slice(0, maxTasks)
+  const tasks = taskFilter.length > 0
+    ? allTasks.filter(t => taskFilter.some(f => t.taskId.includes(f)))
+    : allTasks
   // Security-gate bypass forces benchmark ineligibility. The invariant
   // skipSecurityGate => !benchmarkEligible prevents exploratory runs from
   // being mistaken for qualified evidence.
