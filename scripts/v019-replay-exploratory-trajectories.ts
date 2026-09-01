@@ -69,7 +69,7 @@ function upgradeAttempt(attempt: OldAttempt, index: number): AttemptTrajectory {
     usage: attempt.usage,
     costUsd: attempt.costUsd,
     latencyMs: attempt.latencyMs,
-    repairAction: attempt.repairAction,
+    repairAction: attempt.repairAction as AttemptTrajectory['repairAction'],
     repairReason: attempt.repairReason,
     changedFiles: attempt.changedFiles ?? [],
     toolCallCount: attempt.toolCallCount ?? 0,
@@ -89,10 +89,10 @@ interface OldAttempt {
   readonly holdoutPass: boolean | undefined
   readonly failureFingerprint: string | undefined
   readonly progress: string | undefined
-  readonly failedCriteria?: readonly unknown[]
-  readonly failingTests?: readonly unknown[]
-  readonly typeErrors?: readonly unknown[]
-  readonly buildErrors?: readonly unknown[]
+  readonly failedCriteria?: readonly string[]
+  readonly failingTests?: readonly string[]
+  readonly typeErrors?: readonly string[]
+  readonly buildErrors?: readonly string[]
   readonly usage: {
     readonly inputTokens: number
     readonly outputTokens: number
@@ -205,6 +205,7 @@ function upgradeTrajectory(old: OldTrajectory): TaskTrajectory {
     referenceFixFilesModified: old.referenceFixFilesModified,
     rollbackUsed: old.rollbackUsed,
     aborted: old.aborted,
+    abortReason: undefined,
     terminalOutcome: old.terminalOutcome as TaskTrajectory['terminalOutcome'],
     providerRequestOutcomes: old.providerRequestOutcomes,
     timestamp: old.timestamp,
