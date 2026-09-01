@@ -292,15 +292,18 @@ export function qualifyVerifierValidated(
     }
   }
 
-  // Check out the reference fix commit.
+  // Check out the reference fix commit. Remove node_modules first to
+  // avoid platform-specific files (e.g. fsevents on macOS) blocking
+  // the checkout.
   try {
+    rmSync(join(workspace, 'node_modules'), { recursive: true, force: true })
     execSync(
       `git checkout ${manifest.repository.referenceFixCommit}`,
       { cwd: workspace, encoding: 'utf8', timeout: 30000 },
     )
     // Reinstall dependencies at the fix commit — package.json may have changed.
     try {
-      execSync('npm install --silent', {
+      execSync('npm ci --silent', {
         cwd: workspace,
         encoding: 'utf8',
         timeout: 120000,
