@@ -15,7 +15,7 @@
  */
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, type Dirent } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -857,7 +857,7 @@ export function applyWorkspaceDelta(src: string, dst: string): void {
   // Build the set of files in the source workspace.
   const srcFiles = new Set<string>()
   const walkSrc = (dirRel: string, dirAbs: string): void => {
-    let entries: ReturnType<typeof readdirSync>
+    let entries: Dirent[]
     try {
       entries = readdirSync(dirAbs, { withFileTypes: true })
     } catch {
@@ -877,7 +877,7 @@ export function applyWorkspaceDelta(src: string, dst: string): void {
   // Build the set of files currently in the destination workspace.
   const dstFiles = new Set<string>()
   const walkDst = (dirRel: string, dirAbs: string): void => {
-    let entries: ReturnType<typeof readdirSync>
+    let entries: Dirent[]
     try {
       entries = readdirSync(dirAbs, { withFileTypes: true })
     } catch {
