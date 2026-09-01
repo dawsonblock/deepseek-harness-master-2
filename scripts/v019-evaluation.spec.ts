@@ -144,6 +144,7 @@ describe('v019-task-manifest', () => {
         url: 'file:///tmp/test',
         baseCommit: 'abc123',
         referenceFixCommit: undefined,
+        dependencyLockHash: '',
       },
       repoSize: 'small' as const,
       task: {
@@ -175,6 +176,7 @@ describe('v019-task-manifest', () => {
         url: 'file:///tmp/test',
         baseCommit: 'abc123',
         referenceFixCommit: undefined,
+        dependencyLockHash: '',
       },
       repoSize: 'small',
       task: {
@@ -200,6 +202,7 @@ describe('v019-task-manifest', () => {
       category: 'bug-fix',
       benchmarkEligible: true,
       repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
+      dependencyLockHash: '',
       repoSize: 'small',
       task: { title: 't', description: 'd', source: 'synthetic' },
       verification: {
@@ -220,6 +223,7 @@ describe('v019-task-manifest', () => {
       category: 'bug-fix',
       benchmarkEligible: true,
       repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
+      dependencyLockHash: '',
       repoSize: 'small',
       task: { title: 't', description: 'd', source: 'synthetic' },
       verification: {
@@ -251,6 +255,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
     taskDescription: 'Fix a bug',
     baseCommit: 'abc',
     referenceFixCommit: undefined,
+    dependencyLockHash: '',
     taskState: 'COMPLETED',
     controlPlaneStatus: 'PASS',
     modelCapabilityStatus: 'PASS',
@@ -361,6 +366,7 @@ describe('v019-failure-taxonomy', () => {
       taskDescription: 'Fix a bug',
       baseCommit: 'abc',
       referenceFixCommit: undefined,
+      dependencyLockHash: '',
       taskState: 'COMPLETED',
       controlPlaneStatus: 'PASS',
       modelCapabilityStatus: 'FAIL',
@@ -576,6 +582,7 @@ describe('v019 B0 vs benchmark separation', () => {
       category: 'bug-fix',
       benchmarkEligible: false,
       repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
+      dependencyLockHash: '',
       repoSize: 'small',
       task: { title: 't', description: 'd', source: 'synthetic' },
       verification: {
@@ -595,6 +602,7 @@ describe('v019 B0 vs benchmark separation', () => {
       category: 'bug-fix' as const,
       repoSize: 'small' as const,
       repository: { name: 'r', url: 'file:///t', baseCommit: 'a', referenceFixCommit: undefined },
+      dependencyLockHash: '',
       task: { title: 't', description: 'd', source: 'synthetic' as const },
       verification: {
         build: { command: 'npm run build', expectedExitCode: 0 },
@@ -649,6 +657,7 @@ describe('v019 metrics reproducibility', () => {
         finalVerified: false,
         modelCapabilityStatus: 'FAIL',
         referenceFixCommit: 'def456',
+        dependencyLockHash: '',
         referenceFixFilesInspected: [],
       }),
       makeTrajectory({
@@ -656,6 +665,7 @@ describe('v019 metrics reproducibility', () => {
         finalVerified: false,
         modelCapabilityStatus: 'FAIL',
         referenceFixCommit: 'def789',
+        dependencyLockHash: '',
         referenceFixFilesInspected: ['src/index.ts'],
       }),
     ]
@@ -669,6 +679,7 @@ describe('v019 metrics reproducibility', () => {
         taskId: 't1',
         finalVerified: true,
         referenceFixCommit: 'def456',
+        dependencyLockHash: '',
         referenceFixFilesInspected: ['src/index.ts'],
       }),
       makeTrajectory({
@@ -676,6 +687,7 @@ describe('v019 metrics reproducibility', () => {
         finalVerified: false,
         modelCapabilityStatus: 'FAIL',
         referenceFixCommit: 'def789',
+        dependencyLockHash: '',
         referenceFixFilesInspected: [],
       }),
     ]

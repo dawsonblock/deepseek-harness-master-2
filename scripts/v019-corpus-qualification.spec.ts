@@ -25,6 +25,7 @@ function makeManifest(overrides: Partial<Parameters<typeof buildTaskManifest>[0]
       url: 'file:///tmp/test',
       baseCommit: 'abc123def456789',
       referenceFixCommit: 'def456abc789012',
+      dependencyLockHash: '',
     },
     repoSize: 'small',
     task: {
@@ -84,6 +85,7 @@ describe('v019-corpus-qualification', () => {
           url: 'file:///tmp/test',
           baseCommit: 'abc123def456789',
           referenceFixCommit: undefined,
+          dependencyLockHash: '',
         },
       })
       const result = qualifyLeakageChecked(manifest, [])

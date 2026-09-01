@@ -59,8 +59,8 @@ describe('v019 corpus determinism', { timeout: 600000 }, () => {
     expect(Object.keys(receiptB).sort()).toEqual(REPOS)
 
     for (const repo of REPOS) {
-      const a = receiptA[repo]
-      const b = receiptB[repo]
+      const a = receiptA[repo]!
+      const b = receiptB[repo]!
       expect(a.baseCommit, `${repo} base commit`).toBe(b.baseCommit)
       expect(a.referenceFixCommit, `${repo} reference fix commit`).toBe(b.referenceFixCommit)
       expect(a.lockHash, `${repo} dependency lock hash`).toBe(b.lockHash)

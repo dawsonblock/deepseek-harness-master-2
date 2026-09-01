@@ -363,6 +363,7 @@ async function bootComposedRuntime(
     category: 'bug-fix',
     benchmarkEligible: false,
     repository: { name: 'composed-qual', url: '', baseCommit: '', referenceFixCommit: undefined },
+    dependencyLockHash: '',
     repoSize: 'small',
     task: { title: 'Composed qualification', description: '', source: 'synthetic' },
     limits: QUAL_LIMITS,
