@@ -11,11 +11,11 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { freezeVerifierSnapshot, verifyAgainstSnapshot } from './v019-trajectory-collector.ts'
+import { freezeVerifierSnapshot, verifyAgainstSnapshot, applyWorkspaceDelta } from './v019-trajectory-collector.ts'
 
 function makeBaselineWorkspace(): string {
   const dir = mkdtempSync(join(tmpdir(), 'v019-verifier-snap-'))
@@ -117,6 +117,72 @@ describe('v019 VerifierSnapshot multi-file regression', () => {
       expect(verifyAgainstSnapshot(workspace, snapshot)).toBe(true)
     } finally {
       rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('v019 applyWorkspaceDelta', () => {
+  function makeSrcWorkspace(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'v019-delta-src-'))
+    mkdirSync(join(dir, 'src'))
+    mkdirSync(join(dir, 'tests'))
+    mkdirSync(join(dir, 'node_modules'))
+    writeFileSync(join(dir, 'package.json'), '{"name":"src"}')
+    writeFileSync(join(dir, 'src/index.ts'), 'export const x = 1')
+    writeFileSync(join(dir, 'src/modified.ts'), 'export const orig = 1')
+    writeFileSync(join(dir, 'tests/existing.test.ts'), 'it("passes", () => {})')
+    writeFileSync(join(dir, 'node_modules/should-not-copy.ts'), '// excluded')
+    return dir
+  }
+
+  function makeDstWorkspace(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'v019-delta-dst-'))
+    mkdirSync(join(dir, 'src'))
+    mkdirSync(join(dir, 'tests'))
+    mkdirSync(join(dir, 'node_modules'))
+    writeFileSync(join(dir, 'package.json'), '{"name":"dst"}')
+    writeFileSync(join(dir, 'src/index.ts'), 'export const old = 0')
+    writeFileSync(join(dir, 'src/modified.ts'), 'export const orig = 0')
+    writeFileSync(join(dir, 'src/to-delete.ts'), 'export const gone = 1')
+    writeFileSync(join(dir, 'tests/existing.test.ts'), 'it("old", () => {})')
+    writeFileSync(join(dir, 'node_modules/baseline.ts'), '// baseline')
+    return dir
+  }
+
+  it('copies new files, updates modified files, deletes removed files', () => {
+    const src = makeSrcWorkspace()
+    const dst = makeDstWorkspace()
+    try {
+      applyWorkspaceDelta(src, dst)
+
+      // New file from src should exist.
+      expect(readFileSync(join(dst, 'package.json'), 'utf8')).toBe('{"name":"src"}')
+      // Modified file should be updated.
+      expect(readFileSync(join(dst, 'src/modified.ts'), 'utf8')).toBe('export const orig = 1')
+      // Deleted file should be gone.
+      expect(existsSync(join(dst, 'src/to-delete.ts'))).toBe(false)
+      // Existing file should be updated.
+      expect(readFileSync(join(dst, 'tests/existing.test.ts'), 'utf8')).toBe('it("passes", () => {})')
+      // node_modules should not be touched by delta.
+      expect(readFileSync(join(dst, 'node_modules/baseline.ts'), 'utf8')).toBe('// baseline')
+      expect(existsSync(join(dst, 'node_modules/should-not-copy.ts'))).toBe(false)
+    } finally {
+      rmSync(src, { recursive: true, force: true })
+      rmSync(dst, { recursive: true, force: true })
+    }
+  })
+
+  it('excludes .tmp directory from delta', () => {
+    const src = makeSrcWorkspace()
+    const dst = makeDstWorkspace()
+    try {
+      mkdirSync(join(src, '.tmp'))
+      writeFileSync(join(src, '.tmp/scratch.ts'), '// temp')
+      applyWorkspaceDelta(src, dst)
+      expect(existsSync(join(dst, '.tmp'))).toBe(false)
+    } finally {
+      rmSync(src, { recursive: true, force: true })
+      rmSync(dst, { recursive: true, force: true })
     }
   })
 })

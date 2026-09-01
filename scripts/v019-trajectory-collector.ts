@@ -15,10 +15,10 @@
  */
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { execSync } from 'node:child_process'
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -838,6 +838,90 @@ function createHoldoutVerifier(
   }
 }
 
+/** Directories excluded from workspace delta application. */
+const DELTA_EXCLUDE_DIRS = new Set(['node_modules', '.git', 'dist', 'sessions', '.tmp'])
+
+/**
+ * Apply the model workspace as a delta onto the verifier workspace.
+ *
+ * Walks the source workspace, copying new and modified files to the
+ * destination, and deletes files in the destination that no longer exist
+ * in the source. Excludes node_modules, .git, dist, sessions, and .tmp.
+ * This replaces the platform-dependent rsync --delete call with a
+ * deterministic Node implementation.
+ *
+ * @param src - the model workspace (candidate changes).
+ * @param dst - the verifier workspace (baseline restored).
+ */
+export function applyWorkspaceDelta(src: string, dst: string): void {
+  // Build the set of files in the source workspace.
+  const srcFiles = new Set<string>()
+  const walkSrc = (dirRel: string, dirAbs: string): void => {
+    let entries: ReturnType<typeof readdirSync>
+    try {
+      entries = readdirSync(dirAbs, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (DELTA_EXCLUDE_DIRS.has(entry.name)) continue
+        walkSrc(join(dirRel, entry.name), join(dirAbs, entry.name))
+      } else if (entry.isFile()) {
+        srcFiles.add(join(dirRel, entry.name))
+      }
+    }
+  }
+  walkSrc('', src)
+
+  // Build the set of files currently in the destination workspace.
+  const dstFiles = new Set<string>()
+  const walkDst = (dirRel: string, dirAbs: string): void => {
+    let entries: ReturnType<typeof readdirSync>
+    try {
+      entries = readdirSync(dirAbs, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (DELTA_EXCLUDE_DIRS.has(entry.name)) continue
+        walkDst(join(dirRel, entry.name), join(dirAbs, entry.name))
+      } else if (entry.isFile()) {
+        dstFiles.add(join(dirRel, entry.name))
+      }
+    }
+  }
+  walkDst('', dst)
+
+  // Copy new and modified files from source to destination.
+  for (const relPath of srcFiles) {
+    const srcPath = join(src, relPath)
+    const dstPath = join(dst, relPath)
+    const srcContent = readFileSync(srcPath)
+    try {
+      const dstContent = readFileSync(dstPath)
+      if (Buffer.compare(srcContent, dstContent) === 0) continue
+    } catch {
+      // Destination file doesn't exist — will be created.
+    }
+    mkdirSync(dirname(dstPath), { recursive: true })
+    writeFileSync(dstPath, srcContent)
+  }
+
+  // Delete files in destination that no longer exist in source.
+  for (const relPath of dstFiles) {
+    if (!srcFiles.has(relPath)) {
+      const dstPath = join(dst, relPath)
+      try {
+        rmSync(dstPath, { force: true })
+      } catch {
+        // Non-fatal: file may have already been removed.
+      }
+    }
+  }
+}
+
 /** Run holdout in a clean verifier workspace restored from the baseline. */
 function runHoldoutInCleanWorkspace(
   workspace: string,
@@ -852,29 +936,27 @@ function runHoldoutInCleanWorkspace(
       return { passed: false, reason: 'failed to restore verifier workspace from baseline' }
     }
 
-    // Copy model-modified source files into the verifier workspace.
-    // Exclude node_modules, .git, dist — the baseline's immutable layer
-    // is already in place and must not be overwritten by model changes.
-    // rsync --delete ensures candidate deletions are reflected: a
-    // correct candidate that deletes a baseline source file must be
-    // tested as though that file no longer exists. The weaker cp -R
-    // fallback was removed because it does not apply deletions.
+    // Apply model-modified source files as a delta onto the verifier
+    // workspace. The baseline's immutable layer (node_modules, .git,
+    // dist) is already in place and excluded from the delta. Deletions
+    // are reflected: a correct candidate that deletes a baseline source
+    // file is tested as though that file no longer exists.
     try {
-      execSync(
-        `rsync -a --delete --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='sessions' --exclude='.tmp' "${workspace}/" "${verifierWorkspace}/"`,
-        { stdio: 'pipe', timeout: 60000 },
-      )
-    } catch {
-      return { passed: false, reason: 'rsync is required for holdout verification but failed or is unavailable' }
+      applyWorkspaceDelta(workspace, verifierWorkspace)
+    } catch (error: unknown) {
+      return { passed: false, reason: `workspace delta application failed: ${String(error)}` }
     }
 
     // Stage holdout files in the verifier workspace.
     const holdoutDir = join(homedir(), '.dsh-v019-holdouts', manifest.repository.name)
     try {
-      const entries = execSync(`ls "${holdoutDir}"`, { encoding: 'utf8' }).trim().split('\n')
+      const entries = readdirSync(holdoutDir, { withFileTypes: true })
       for (const entry of entries) {
-        if (entry.endsWith('.holdout.test.ts')) {
-          execSync(`cp "${join(holdoutDir, entry)}" "${join(verifierWorkspace, 'tests', entry)}"`)
+        if (entry.isFile() && entry.name.endsWith('.holdout.test.ts')) {
+          const src = join(holdoutDir, entry.name)
+          const dst = join(verifierWorkspace, 'tests', entry.name)
+          mkdirSync(dirname(dst), { recursive: true })
+          copyFileSync(src, dst)
         }
       }
     } catch {
