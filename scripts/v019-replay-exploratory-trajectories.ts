@@ -122,6 +122,11 @@ interface OldTrajectory {
     readonly url: string
     readonly baseCommit: string
     readonly referenceFixCommit: string | undefined
+    readonly size: string
+    readonly loc: number
+    readonly fileCount: number
+    readonly packageCount: number
+    readonly testCount: number
   }
   readonly category: string
   readonly taskDescription: string
@@ -174,7 +179,7 @@ function upgradeTrajectory(old: OldTrajectory): TaskTrajectory {
     experimentId: EXPLORATORY_EXPERIMENT_ID,
     experimentManifestHash: old.experimentManifestHash,
     benchmarkEligible: false,
-    runClass: 'exploratory',
+    runClass: 'exploratory' as const,
     securityGateBypassed: true,
     repository: old.repository,
     category: old.category,
