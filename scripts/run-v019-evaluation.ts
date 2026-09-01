@@ -22,6 +22,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
+  ACCOUNTING_VERSION,
   buildExperimentManifest,
   computeCorpusManifestHash,
 } from './v019-experiment-identity.ts'
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
     benchmarkEligible,
     securityGateBypassed: false,
     repairStrategy: 'transactional',
+    accountingVersion: ACCOUNTING_VERSION,
     sandboxBackend: {
       runner: composedRecord.backend.runner,
       runnerPath: composedRecord.backend.runnerPath,

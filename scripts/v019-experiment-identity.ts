@@ -28,6 +28,9 @@ export const EXPLORATORY_EXPERIMENT_ID = 'v019-exploratory-v4'
 /** v0.18.0 tag that this experiment freezes as experimental control. */
 export const FROZEN_V018_TAG = 'v0.18.0'
 
+/** Accounting version: v2 sums all usage events per routing decision (v1 broke after first). */
+export const ACCOUNTING_VERSION = 'v2'
+
 /** Experiment manifest recording all version stamps for the evaluation cohort. */
 export interface ExperimentManifest {
   readonly experimentId: string
@@ -69,6 +72,8 @@ export interface ExperimentManifest {
   readonly securityGateBypassed: boolean
   /** Repair strategy: 'transactional' rolls back to baseline before each attempt; 'iterative' preserves workspace state. */
   readonly repairStrategy: 'transactional' | 'iterative'
+  /** Accounting version: 'v1' breaks after first usage event per routing decision; 'v2' sums all usage events. */
+  readonly accountingVersion: string
   /** Actual selected sandbox backend (runner name, path, version, enforcement, network isolation). */
   readonly sandboxBackend: Readonly<{
     runner: string
@@ -114,6 +119,7 @@ export function buildExperimentManifest(params: {
   /** Skip the clean-source enforcement gate. Tests use this to avoid depending on the repo's working-tree state. */
   skipCleanSourceCheck?: boolean
   repairStrategy: 'transactional' | 'iterative'
+  accountingVersion: string
   sandboxBackend: { runner: string; runnerPath: string; runnerVersion: string; enforcement: string; networkDenied: boolean }
   snapshotAlgorithm: string
   snapshotExclusions: string
@@ -198,6 +204,7 @@ export function buildExperimentManifest(params: {
     runClass,
     securityGateBypassed,
     repairStrategy: params.repairStrategy,
+    accountingVersion: params.accountingVersion,
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
@@ -225,6 +232,7 @@ export function buildExperimentManifest(params: {
     runClass,
     securityGateBypassed,
     repairStrategy: params.repairStrategy,
+    accountingVersion: params.accountingVersion,
     sandboxBackend: params.sandboxBackend,
     snapshotAlgorithm: params.snapshotAlgorithm,
     snapshotExclusions: params.snapshotExclusions,
@@ -261,6 +269,7 @@ function computeExperimentManifestHash(fields: Omit<ExperimentManifest, 'manifes
     String(fields.repositoryCount),
     String(fields.benchmarkEligible),
     fields.repairStrategy,
+    fields.accountingVersion,
     backendLine,
     fields.snapshotAlgorithm,
     fields.snapshotExclusions,
