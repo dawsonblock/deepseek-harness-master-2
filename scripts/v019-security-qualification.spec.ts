@@ -287,7 +287,7 @@ describe('deterministic negative benchmark-security tests', () => {
       join(fileURLToPath(new URL('.', import.meta.url)), 'v019-trajectory-collector.ts'),
       'utf8',
     )
-    expect(collectorSource).toContain('hashVerifierControlledFiles')
+    expect(collectorSource).toContain('freezeVerifierSnapshot')
     expect(collectorSource).toContain('verifier-controlled files were modified')
   })
 

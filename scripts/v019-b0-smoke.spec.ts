@@ -76,7 +76,7 @@ describe('v019 post-security B0 smoke test', () => {
       corpusManifestHash: 'test-corpus-hash',
     })
     expect(manifest.benchmarkEligible).toBe(false)
-    expect(manifest.experimentId).toBe('v019-infra-validation-v2')
+    expect(manifest.experimentId).toBe('v019-infra-validation-v4')
   })
 
   it('B0.3: evaluator config uses fs-sandbox, not fs-local', () => {
