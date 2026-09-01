@@ -195,6 +195,24 @@ describe('P1.1: computeAttemptAccounting', () => {
 
     expect(costUsd).toBe(0)
   })
+
+  it('sums cost and output tokens across multiple usage events for the same routing decision', () => {
+    // A logical attempt can contain multiple provider calls (Flash then Pro
+    // mid-turn), each with its own usage event sharing the routing decision ID.
+    // The accounting must sum all calls, not just the first.
+    const session = Session.create(SessionId('acct-multi-call'))
+    setupTurn(session, 1, FLASH, 'rd-1')
+    const flashTokens = { input: 1000, output: 500, cacheRead: 200, cacheMiss: 800 }
+    const proTokens = { input: 2000, output: 1000, cacheRead: 500, cacheMiss: 1500 }
+    appendUsage(session, 'rd-1', 1, FLASH, flashTokens)
+    appendUsage(session, 'rd-1', 1, PRO, proTokens)
+
+    const { costUsd, outputTokens } = computeAttemptAccounting(session.events, 'rd-1', TEST_PRICING)
+
+    const expected = expectedCost(FLASH, flashTokens) + expectedCost(PRO, proTokens)
+    expect(costUsd).toBeCloseTo(expected, 10)
+    expect(outputTokens).toBe(flashTokens.output + proTokens.output)
+  })
 })
 
 describe('P1.1: handleVerificationFailure populates real cost', () => {

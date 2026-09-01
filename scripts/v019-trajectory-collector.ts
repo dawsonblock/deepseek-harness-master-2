@@ -1495,12 +1495,12 @@ function buildTrajectoryFromEvents(
   const flashAttempts = attempts.filter(a => a.model === 'deepseek-v4-flash').length
   const proAttempts = attempts.filter(a => a.model === 'deepseek-v4-pro').length
   const escalatedToPro = proAttempts > 0
-  // Compute total cost as the sum of per-attempt costs, not from the
-  // repair runtime's completedEvent.data.totalCostUsd. The runtime's
-  // computeAttemptAccounting breaks after the first model/usage event per
-  // routing decision, so it undercounts mid-turn escalations where Pro
-  // has a separate routingDecisionId. The per-attempt costUsd is the sum
-  // of all provider call costs within the attempt, which is correct.
+  // Compute total cost as the sum of per-attempt costs. Both the live
+  // repair runtime (computeAttemptAccounting) and this trajectory collector
+  // now sum all provider call costs within an attempt, so the runtime's
+  // completedEvent.data.totalCostUsd should agree with this value. Using
+  // the per-attempt sum as the source of truth ensures the accounting
+  // invariant: Σ provider call cost == Σ attempt cost == task total.
   const totalCostUsd = attempts.reduce((s, a) => s + a.costUsd, 0)
 
   // Compute per-model costs from provider call trajectories, not from

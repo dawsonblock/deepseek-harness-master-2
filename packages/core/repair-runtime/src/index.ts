@@ -824,7 +824,7 @@ export function computeAttemptAccounting(
   failOnMissingUsage = false,
 ): { costUsd: number; latencyMs: number; outputTokens: number } {
   let routingTime: number | undefined
-  let usageTime: number | undefined
+  let lastUsageTime: number | undefined
   let costUsd = 0
   let outputTokens = 0
   let usageFound = false
@@ -845,11 +845,14 @@ export function computeAttemptAccounting(
         model: string
         usage: import('@deepseek-ai/dsh-llm').TokenUsage
       }
-      // Match by routingDecisionId when present.
+      // Sum all usage events for this routing decision. A logical attempt
+      // can contain multiple provider calls (e.g. Flash then Pro mid-turn),
+      // each with its own usage event. Breaking after the first undercounts
+      // cost, tokens, and latency.
       if (data.routingDecisionId === routingDecisionId) {
         usageFound = true
-        usageTime = event.time
-        outputTokens = data.usage.outputTokens
+        lastUsageTime = event.time
+        outputTokens += data.usage.outputTokens
         const pricing = lookupPricingAt(
           pricingRegistry,
           data.provider,
@@ -857,11 +860,10 @@ export function computeAttemptAccounting(
           new Date(event.time),
         )
         if (pricing !== undefined) {
-          costUsd = calculateCost(data.usage, pricing).amount
+          costUsd += calculateCost(data.usage, pricing).amount
         } else if (failOnUnpriced) {
           throw new Error(`UNPRICED_USAGE: no pricing found for model ${data.provider}/${data.model}`)
         }
-        break
       }
     }
     if ((event.type as string) === 'model/request-outcome') {
@@ -876,8 +878,8 @@ export function computeAttemptAccounting(
     throw new Error(`MISSING_USAGE: no model/usage or model/request-outcome(failure) event found for routingDecisionId ${routingDecisionId}`)
   }
 
-  const latencyMs = routingTime !== undefined && usageTime !== undefined
-    ? Math.max(0, usageTime - routingTime)
+  const latencyMs = routingTime !== undefined && lastUsageTime !== undefined
+    ? Math.max(0, lastUsageTime - routingTime)
     : 0
 
   return { costUsd, latencyMs, outputTokens }
