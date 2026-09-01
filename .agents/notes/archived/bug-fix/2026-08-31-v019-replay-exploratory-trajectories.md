@@ -1,6 +1,7 @@
 # Agent Note: Replay exploratory trajectories with corrected accounting
 
 Status: implemented
+Archived: 2026-09-01
 
 English | [中文](2026-08-31-v019-replay-exploratory-trajectories.zh.md)
 

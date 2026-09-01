@@ -1,6 +1,7 @@
 # Agent Note: 重放探索性轨迹并修正核算
 
 Status: implemented
+Archived: 2026-09-01
 
 [English](2026-08-31-v019-replay-exploratory-trajectories.md) | 中文
 
