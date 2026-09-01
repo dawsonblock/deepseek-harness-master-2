@@ -119,6 +119,21 @@ describe('v019 VerifierSnapshot multi-file regression', () => {
       rmSync(workspace, { recursive: true, force: true })
     }
   })
+
+  it('DENY: model introduces a hidden holdout file that must remain absent', () => {
+    const workspace = makeBaselineWorkspace()
+    try {
+      // Freeze with a mustRemainAbsent path for a hidden holdout.
+      const snapshot = freezeVerifierSnapshot(workspace, ['vitest.holdout.config.ts'])
+
+      // Model creates the hidden holdout file — must be rejected.
+      writeFileSync(join(workspace, 'vitest.holdout.config.ts'), 'export default {}')
+
+      expect(verifyAgainstSnapshot(workspace, snapshot)).toBe(false)
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('v019 applyWorkspaceDelta', () => {

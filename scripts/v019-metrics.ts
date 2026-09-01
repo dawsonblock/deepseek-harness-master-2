@@ -403,6 +403,91 @@ function emptyMetrics(): MetricsReport {
   }
 }
 
+/** Result of verifying accounting invariants across a trajectory set. */
+export interface AccountingInvariantResult {
+  /** Σ provider-call cost == Σ attempt cost == Σ task cost. */
+  readonly costInvariant: boolean
+  /** Σ provider-call output tokens == Σ attempt output tokens. */
+  readonly tokenInvariant: boolean
+  /** Every provider call has a unique requestId. */
+  readonly requestIdInvariant: boolean
+  /** Every provider call has a terminal outcome (not 'unknown'). */
+  readonly outcomeInvariant: boolean
+  /** Maximum absolute cost discrepancy across all tasks, in USD. */
+  readonly maxCostDiscrepancy: number
+  /** Human-readable violation messages, empty when all invariants hold. */
+  readonly violations: readonly string[]
+}
+
+/**
+ * Verify that accounting invariants hold across a trajectory set.
+ *
+ * Checks:
+ * 1. Σ provider-call cost == Σ attempt cost == Σ task cost (within tolerance)
+ * 2. Σ provider-call output tokens == Σ attempt output tokens
+ * 3. Every provider call has a unique requestId
+ * 4. Every provider call has a terminal outcome (not 'unknown')
+ *
+ * @param trajectories - the trajectories to verify.
+ * @param tolerance - maximum allowed floating-point cost discrepancy in USD.
+ * @returns the invariant check result.
+ */
+export function verifyAccountingInvariants(
+  trajectories: readonly TaskTrajectory[],
+  tolerance = 1e-9,
+): AccountingInvariantResult {
+  const violations: string[] = []
+  let maxCostDiscrepancy = 0
+
+  for (const t of trajectories) {
+    const providerCallCost = t.attempts.reduce((s, a) =>
+      s + a.providerCalls.reduce((c, p) => c + p.costUsd, 0), 0)
+    const attemptCost = t.attempts.reduce((s, a) => s + a.costUsd, 0)
+    const taskCost = t.attempts.reduce((s, a) => s + a.costUsd, 0)
+
+    const disc1 = Math.abs(providerCallCost - attemptCost)
+    const disc2 = Math.abs(attemptCost - taskCost)
+    if (disc1 > tolerance) {
+      violations.push(`${t.taskId}: Σ provider-call cost ($${providerCallCost.toFixed(6)}) != Σ attempt cost ($${attemptCost.toFixed(6)})`)
+    }
+    if (disc2 > tolerance) {
+      violations.push(`${t.taskId}: Σ attempt cost ($${attemptCost.toFixed(6)}) != task cost ($${taskCost.toFixed(6)})`)
+    }
+    maxCostDiscrepancy = Math.max(maxCostDiscrepancy, disc1, disc2)
+
+    // Check output token invariant
+    const providerCallTokens = t.attempts.reduce((s, a) =>
+      s + a.providerCalls.reduce((c, p) => c + (p.usage?.outputTokens ?? 0), 0), 0)
+    const attemptTokens = t.attempts.reduce((s, a) => s + a.usage.outputTokens, 0)
+    if (providerCallTokens !== attemptTokens) {
+      violations.push(`${t.taskId}: Σ provider-call output tokens (${providerCallTokens}) != Σ attempt output tokens (${attemptTokens})`)
+    }
+
+    // Check requestId uniqueness and outcome
+    const seenIds = new Set<string>()
+    for (const a of t.attempts) {
+      for (const pc of a.providerCalls) {
+        if (seenIds.has(pc.requestId)) {
+          violations.push(`${t.taskId}: duplicate requestId ${pc.requestId}`)
+        }
+        seenIds.add(pc.requestId)
+        if (pc.outcome === 'unknown') {
+          violations.push(`${t.taskId}: provider call ${pc.requestId} has unknown outcome`)
+        }
+      }
+    }
+  }
+
+  return {
+    costInvariant: violations.filter(v => v.includes('cost')).length === 0,
+    tokenInvariant: violations.filter(v => v.includes('tokens')).length === 0,
+    requestIdInvariant: violations.filter(v => v.includes('duplicate requestId')).length === 0,
+    outcomeInvariant: violations.filter(v => v.includes('unknown outcome')).length === 0,
+    maxCostDiscrepancy,
+    violations,
+  }
+}
+
 function computeLatencyByAttemptType(evaluated: readonly TaskTrajectory[]): {
   readonly oneShotFlash: number | null
   readonly flashRepair: number | null

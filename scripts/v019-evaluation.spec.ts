@@ -11,7 +11,7 @@ import {
   buildTaskManifest,
   validateTaskManifest,
 } from './v019-task-manifest.ts'
-import { computeMetrics } from './v019-metrics.ts'
+import { computeMetrics, verifyAccountingInvariants } from './v019-metrics.ts'
 import {
   classifyFailure,
   classifyAllFailures,
@@ -732,5 +732,117 @@ describe('v019 metrics reproducibility', () => {
     ]
     const metrics = computeMetrics(trajectories)
     expect(metrics.referenceFixFileInspectionRate).toBe(0.5)
+  })
+})
+
+describe('v019-accounting-invariants', () => {
+  it('passes when provider-call cost equals attempt cost equals task cost', () => {
+    const trajectories: TaskTrajectory[] = [
+      makeTrajectory({
+        taskId: 't1',
+        finalVerified: true,
+        attempts: [{
+          attempt: 1, attemptId: 'a1', model: 'deepseek-v4-flash',
+          routingDecisionId: 'rd-1',
+          finalModel: 'deepseek-v4-flash', modelsUsed: ['deepseek-v4-flash'],
+          costByModel: [] as readonly [string, number][],
+          providerCalls: [{
+            requestId: 'req:v1:1:0:1', turn: 1, step: 0, providerAttempt: 1,
+            model: 'deepseek-v4-flash', provider: 'deepseek-official',
+            routingDecisionId: 'rd-1', outcome: 'success',
+            usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100 },
+            costUsd: 0.001, latencyMs: 100,
+          }],
+          verified: true, diagnosticPass: true, holdoutPass: true,
+          failureFingerprint: undefined, progress: undefined,
+          failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [],
+          usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100 },
+          costUsd: 0.001, latencyMs: 100,
+          repairAction: 'complete', repairReason: undefined,
+          changedFiles: ['src/index.ts'], toolCallCount: 1, filesInspected: ['src/index.ts'],
+          terminalOutcome: 'verified-complete',
+        }],
+      }),
+    ]
+    const result = verifyAccountingInvariants(trajectories)
+    expect(result.costInvariant).toBe(true)
+    expect(result.tokenInvariant).toBe(true)
+    expect(result.requestIdInvariant).toBe(true)
+    expect(result.outcomeInvariant).toBe(true)
+    expect(result.violations).toHaveLength(0)
+  })
+
+  it('detects cost discrepancy between provider calls and attempt cost', () => {
+    const trajectories: TaskTrajectory[] = [
+      makeTrajectory({
+        taskId: 't1',
+        finalVerified: true,
+        attempts: [{
+          attempt: 1, attemptId: 'a1', model: 'deepseek-v4-flash',
+          routingDecisionId: 'rd-1',
+          finalModel: 'deepseek-v4-flash', modelsUsed: ['deepseek-v4-flash'],
+          costByModel: [] as readonly [string, number][],
+          providerCalls: [{
+            requestId: 'req:v1:1:0:1', turn: 1, step: 0, providerAttempt: 1,
+            model: 'deepseek-v4-flash', provider: 'deepseek-official',
+            routingDecisionId: 'rd-1', outcome: 'success',
+            usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100 },
+            costUsd: 0.002, latencyMs: 100,
+          }],
+          verified: true, diagnosticPass: true, holdoutPass: true,
+          failureFingerprint: undefined, progress: undefined,
+          failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [],
+          usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100 },
+          costUsd: 0.001, latencyMs: 100,
+          repairAction: 'complete', repairReason: undefined,
+          changedFiles: ['src/index.ts'], toolCallCount: 1, filesInspected: ['src/index.ts'],
+          terminalOutcome: 'verified-complete',
+        }],
+      }),
+    ]
+    const result = verifyAccountingInvariants(trajectories)
+    expect(result.costInvariant).toBe(false)
+    expect(result.violations.length).toBeGreaterThan(0)
+  })
+
+  it('detects duplicate requestIds', () => {
+    const trajectories: TaskTrajectory[] = [
+      makeTrajectory({
+        taskId: 't1',
+        finalVerified: true,
+        attempts: [{
+          attempt: 1, attemptId: 'a1', model: 'deepseek-v4-flash',
+          routingDecisionId: 'rd-1',
+          finalModel: 'deepseek-v4-flash', modelsUsed: ['deepseek-v4-flash'],
+          costByModel: [] as readonly [string, number][],
+          providerCalls: [
+            {
+              requestId: 'req:v1:1:0:1', turn: 1, step: 0, providerAttempt: 1,
+              model: 'deepseek-v4-flash', provider: 'deepseek-official',
+              routingDecisionId: 'rd-1', outcome: 'success',
+              usage: { inputTokens: 50, outputTokens: 25, reasoningTokens: 0, totalTokens: 75, cacheReadTokens: 0, cacheMissTokens: 50 },
+              costUsd: 0.001, latencyMs: 100,
+            },
+            {
+              requestId: 'req:v1:1:0:1', turn: 1, step: 0, providerAttempt: 1,
+              model: 'deepseek-v4-flash', provider: 'deepseek-official',
+              routingDecisionId: 'rd-1', outcome: 'success',
+              usage: { inputTokens: 50, outputTokens: 25, reasoningTokens: 0, totalTokens: 75, cacheReadTokens: 0, cacheMissTokens: 50 },
+              costUsd: 0.001, latencyMs: 100,
+            },
+          ],
+          verified: true, diagnosticPass: true, holdoutPass: true,
+          failureFingerprint: undefined, progress: undefined,
+          failedCriteria: [], failingTests: [], typeErrors: [], buildErrors: [],
+          usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150, cacheReadTokens: 0, cacheMissTokens: 100 },
+          costUsd: 0.002, latencyMs: 100,
+          repairAction: 'complete', repairReason: undefined,
+          changedFiles: ['src/index.ts'], toolCallCount: 1, filesInspected: ['src/index.ts'],
+          terminalOutcome: 'verified-complete',
+        }],
+      }),
+    ]
+    const result = verifyAccountingInvariants(trajectories)
+    expect(result.requestIdInvariant).toBe(false)
   })
 })

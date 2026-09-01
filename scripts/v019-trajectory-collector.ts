@@ -662,7 +662,10 @@ const TEST_DIRS = ['tests', 'test', '__tests__', 'src/__tests__'] as const
  * @param workspace - the model workspace at baseline state.
  * @returns a frozen verifier snapshot.
  */
-export function freezeVerifierSnapshot(workspace: string): VerifierSnapshot {
+export function freezeVerifierSnapshot(
+  workspace: string,
+  mustRemainAbsent: readonly string[] = [],
+): VerifierSnapshot {
   const controlledPaths: string[] = [...VERIFIER_CONFIG_FILES, ...VERIFIER_TEST_SETUP_FILES]
 
   // Walk test directories for existing test files.
@@ -734,7 +737,7 @@ export function freezeVerifierSnapshot(workspace: string): VerifierSnapshot {
     version: 'v1',
     controlledPaths: sortedPaths,
     controlledHash: hash.digest('hex'),
-    mustRemainAbsent: [],
+    mustRemainAbsent,
   }
 }
 
