@@ -590,6 +590,35 @@ describe('v019 B0 vs benchmark separation', () => {
     expect(b0.manifestHash).not.toBe(bench.manifestHash)
   })
 
+  it('exploratory runs get a distinct identity from B0 and benchmark', () => {
+    const exploratory = buildExperimentManifest({
+      repairControllerVersion: '0.18.0',
+      repairRuntimeVersion: '0.18.0',
+      eventSchemaVersion: 0,
+      pricingVersion: '2026-08-25',
+      sandboxPolicyVersion: 'v1',
+      sandboxQualificationId: 'test',
+      taskCorpusVersion: 'v1',
+      taskCount: 25,
+      repositoryCount: 7,
+      benchmarkEligible: false,
+      securityGateBypassed: true,
+      skipCleanSourceCheck: true,
+      repairStrategy: 'transactional',
+      sandboxBackend: { runner: 'test', runnerPath: '/test', runnerVersion: '1.0', enforcement: 'partial', networkDenied: false },
+      snapshotAlgorithm: 'sha256-tree-v2',
+      snapshotExclusions: 'verifier-snapshot-exclusions-v1',
+      qualificationSemanticHash: 'test-semantic-hash',
+      qualificationArtifactHash: 'test-hash',
+      corpusManifestHash: 'test-corpus-hash',
+    })
+    expect(exploratory.runClass).toBe('exploratory')
+    expect(exploratory.experimentId).toBe('v019-exploratory-v4')
+    expect(exploratory.experimentId).not.toBe('v019-infra-validation-v4')
+    expect(exploratory.experimentId).not.toBe('v019-synthetic-multirepo-validation-v4')
+    expect(exploratory.benchmarkEligible).toBe(false)
+  })
+
   it('task manifest carries benchmarkEligible', () => {
     const m = buildTaskManifest({
       taskId: 'test-bm',
