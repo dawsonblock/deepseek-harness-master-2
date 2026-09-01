@@ -50,6 +50,8 @@ export interface TaskManifest {
     readonly url: string
     readonly baseCommit: string
     readonly referenceFixCommit: string | undefined
+    /** SHA-256 of the package-lock.json at the base commit. Empty string if no lockfile. */
+    readonly dependencyLockHash: string
   }
   readonly repoSize: RepoSize
   readonly task: {
@@ -89,6 +91,7 @@ export function computeTaskManifestHash(fields: Omit<TaskManifest, 'manifestHash
     fields.repository.url,
     fields.repository.baseCommit,
     fields.repository.referenceFixCommit ?? 'none',
+    fields.repository.dependencyLockHash,
     fields.repoSize,
     fields.task.title,
     fields.task.description,

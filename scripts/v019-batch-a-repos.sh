@@ -10,11 +10,21 @@
 # Idempotent: deletes and recreates repos if they already exist.
 set -euo pipefail
 
-REPO_ROOT="/tmp/v019-batch-a-repos"
-HOLDOUT_ROOT="$HOME/.dsh-v019-holdouts"
+REPO_ROOT="${REPO_ROOT:-/tmp/v019-batch-a-repos}"
+HOLDOUT_ROOT="${HOLDOUT_ROOT:-$HOME/.dsh-v019-holdouts}"
 mkdir -p "$REPO_ROOT" "$HOLDOUT_ROOT"
 
-# Common package.json template
+# Deterministic Git identity — generator has zero dependency on machine config.
+export GIT_AUTHOR_NAME="DSH Benchmark"
+export GIT_AUTHOR_EMAIL="benchmark@local.invalid"
+export GIT_COMMITTER_NAME="DSH Benchmark"
+export GIT_COMMITTER_EMAIL="benchmark@local.invalid"
+
+# Deterministic commit timestamps. Base commits start at T0, fix commits at T0+60s.
+# Each repo gets a distinct epoch to keep commit hashes unique across repos.
+GIT_BASE_EPOCH=1735689600  # 2025-01-01T00:00:00Z
+
+# Common package.json template — pinned exact versions for reproducibility.
 make_package_json() {
   local name="$1"
   cat <<EOF
@@ -27,8 +37,8 @@ make_package_json() {
     "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "vitest": "^2.0.0"
+    "typescript": "5.4.5",
+    "vitest": "2.1.9"
   }
 }
 EOF
@@ -84,13 +94,39 @@ export default defineConfig({
 EOF
 }
 
-# Initialize a git repo and make initial commit
+# Initialize a git repo and make initial commit with deterministic metadata.
+# Generates a package-lock.json and includes it in the initial commit so
+# dependency resolution is frozen. $1 = dir, $2 = repo ordinal.
 init_repo() {
   local dir="$1"
+  local ordinal="${2:-0}"
   cd "$dir"
   git init --quiet
+  git config user.name "DSH Benchmark"
+  git config user.email "benchmark@local.invalid"
+  # Generate lockfile before first commit so it is part of the base commit.
+  npm install --silent --no-audit --no-fund 2>/dev/null
   git add -A
-  git commit -m "initial: project setup" --quiet
+  local base_ts=$((GIT_BASE_EPOCH + ordinal * 3600))
+  GIT_AUTHOR_DATE="$base_ts" GIT_COMMITTER_DATE="$base_ts" \
+    git commit -m "initial: project setup" --quiet
+}
+
+# Make a fix commit with deterministic metadata.
+# Regenerates lockfile if package.json changed. $1 = dir, $2 = repo ordinal, $3 = message.
+make_fix_commit() {
+  local dir="$1"
+  local ordinal="${2:-0}"
+  local message="$3"
+  local fix_ts=$((GIT_BASE_EPOCH + ordinal * 3600 + 60))
+  # Regenerate lockfile if package.json was modified by the fix.
+  if git -C "$dir" diff --cached --name-only 2>/dev/null | grep -q '^package\.json$' || \
+     git -C "$dir" diff --name-only 2>/dev/null | grep -q '^package\.json$'; then
+    (cd "$dir" && npm install --silent --no-audit --no-fund 2>/dev/null)
+  fi
+  git -C "$dir" add -A
+  GIT_AUTHOR_DATE="$fix_ts" GIT_COMMITTER_DATE="$fix_ts" \
+    git -C "$dir" commit -m "$message" --quiet
 }
 
 # =========================================================================
@@ -283,7 +319,7 @@ describe('binarySearch holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 0
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes
@@ -348,7 +384,7 @@ export function binarySearch(arr: number[], target: number): number {
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: correct debounce, chunk, throttle, binarySearch" --quiet
+  make_fix_commit "$dir" 0 "fix: correct debounce, chunk, throttle, binarySearch"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-utils base=$base_commit fix=$fix_commit"
@@ -433,7 +469,7 @@ describe('isUrl holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 1
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes: fix isUrl, add isPhoneNumber, refactor to ValidationResult, add validateWithSchema
@@ -570,7 +606,7 @@ describe('isRequired', () => {
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: correct isUrl, add isPhoneNumber, refactor to ValidationResult, add validateWithSchema" --quiet
+  make_fix_commit "$dir" 1 "fix: correct isUrl, add isPhoneNumber, refactor to ValidationResult, add validateWithSchema"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-validate base=$base_commit fix=$fix_commit"
@@ -783,7 +819,7 @@ describe('HashMap', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 2
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes
@@ -924,7 +960,7 @@ export { Stack } from './Stack.js'
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: LinkedList head removal, quickSort partition, add Stack, refactor HashMap" --quiet
+  make_fix_commit "$dir" 2 "fix: LinkedList head removal, quickSort partition, add Stack, refactor HashMap"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-collections base=$base_commit fix=$fix_commit"
@@ -938,7 +974,7 @@ create_ts_http() {
   rm -rf "$dir"
   mkdir -p "$dir/src" "$dir/tests"
 
-  # Base has typescript ^5.4.0 but vitest in dependencies (not devDependencies).
+  # Base has typescript 5.4.5 but vitest in dependencies (not devDependencies).
   # The deps task asks the model to move vitest to devDependencies.
   cat > "$dir/package.json" <<'EOF'
 {
@@ -950,8 +986,8 @@ create_ts_http() {
     "test": "vitest run"
   },
   "dependencies": {
-    "typescript": "^5.4.0",
-    "vitest": "^2.0.0"
+    "typescript": "5.4.5",
+    "vitest": "2.1.9"
   }
 }
 EOF
@@ -1058,7 +1094,7 @@ describe('parseHeaders holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 3
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes
@@ -1128,7 +1164,7 @@ export class HttpClient {
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: parseHeaders duplicates, add interceptors, fix deps" --quiet
+  make_fix_commit "$dir" 3 "fix: parseHeaders duplicates, add interceptors, fix deps"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-http base=$base_commit fix=$fix_commit"
@@ -1276,7 +1312,7 @@ describe('template', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 4
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes
@@ -1328,7 +1364,7 @@ export function slugify(str: string): string {
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: truncate multi-byte, padStart negative, slugify unicode, refactor template" --quiet
+  make_fix_commit "$dir" 4 "fix: truncate multi-byte, padStart negative, slugify unicode, refactor template"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-string base=$base_commit fix=$fix_commit"
@@ -1481,7 +1517,7 @@ describe('Store holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 5
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes
@@ -1601,7 +1637,7 @@ export { createSelector } from './selector.js'
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: Store unsubscribe, Reducer undefined, add createSelector" --quiet
+  make_fix_commit "$dir" 5 "fix: Store unsubscribe, Reducer undefined, add createSelector"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-state base=$base_commit fix=$fix_commit"
@@ -1747,7 +1783,7 @@ describe('isLeapYear holdout', () => {
 })
 EOF
 
-  init_repo "$dir"
+  init_repo "$dir" 6
   local base_commit=$(git -C "$dir" rev-parse HEAD)
 
   # Apply fixes
@@ -1784,7 +1820,7 @@ export function isLeapYear(year: number): boolean {
 EOF
 
   git -C "$dir" add -A
-  git -C "$dir" commit -m "fix: formatDate UTC, daysBetween DST, isLeapYear formula" --quiet
+  make_fix_commit "$dir" 6 "fix: formatDate UTC, daysBetween DST, isLeapYear formula"
   local fix_commit=$(git -C "$dir" rev-parse HEAD)
 
   echo "ts-date base=$base_commit fix=$fix_commit"
@@ -1793,12 +1829,35 @@ EOF
 # =========================================================================
 # Main
 # =========================================================================
+RECEIPT_FILE="${RECEIPT_FILE:-$REPO_ROOT/corpus-receipt.json}"
 echo "Creating Batch A repositories under $REPO_ROOT..."
-create_ts_utils
-create_ts_validate
-create_ts_collections
-create_ts_http
-create_ts_string
-create_ts_state
-create_ts_date
-echo "Done."
+{
+  create_ts_utils
+  create_ts_validate
+  create_ts_collections
+  create_ts_http
+  create_ts_string
+  create_ts_state
+  create_ts_date
+} > "$REPO_ROOT/corpus-receipt-raw.txt"
+
+# Build machine-readable JSON receipt from the raw output.
+python3 -c "
+import json, re, sys
+lines = open('$REPO_ROOT/corpus-receipt-raw.txt').readlines()
+receipt = {}
+for line in lines:
+    m = re.match(r'^(\S+) base=([0-9a-f]+) fix=([0-9a-f]+)', line.strip())
+    if m:
+        repo, base, fix = m.group(1), m.group(2), m.group(3)
+        import hashlib, os
+        lock_path = os.path.join('$REPO_ROOT', repo, 'package-lock.json')
+        lock_hash = ''
+        if os.path.exists(lock_path):
+            lock_hash = hashlib.sha256(open(lock_path, 'rb').read()).hexdigest()
+        receipt[repo] = {'baseCommit': base, 'referenceFixCommit': fix, 'lockHash': lock_hash}
+json.dump(receipt, open('$RECEIPT_FILE', 'w'), indent=2)
+print(json.dumps(receipt, indent=2))
+"
+rm -f "$REPO_ROOT/corpus-receipt-raw.txt"
+echo "Done. Receipt: $RECEIPT_FILE"

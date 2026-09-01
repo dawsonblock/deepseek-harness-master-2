@@ -50,7 +50,7 @@ import { BATCH_A_CORPUS } from './v019-batch-a-corpus.ts'
 import { getReferenceFixFiles } from './v019-corpus-qualification.ts'
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
-const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v3')
+const EVAL_DIR = join(REPO_ROOT, 'artifacts', 'evals', 'v019-synthetic-multirepo-validation-v4')
 const CHECKPOINT_PATH = join(EVAL_DIR, 'checkpoint.json')
 const METRICS_PATH = join(EVAL_DIR, 'metrics.json')
 const FAILURES_PATH = join(EVAL_DIR, 'failures.json')
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
     pricingVersion: '2026-08-25',
     sandboxPolicyVersion: 'v1',
     sandboxQualificationId: SECURITY_QUALIFICATION_ID,
-    taskCorpusVersion: 'v019-synthetic-multirepo-v3',
+    taskCorpusVersion: 'v019-synthetic-multirepo-v4',
     corpusManifestHash: computeCorpusManifestHash(tasks),
     taskCount: tasks.length,
     repositoryCount: new Set(tasks.map(t => t.repository.name)).size,

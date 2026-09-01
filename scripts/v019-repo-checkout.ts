@@ -260,6 +260,7 @@ function detectInstallCommand(workspace: string): string {
     if (statSync(join(workspace, 'pnpm-lock.yaml')).isFile()) return 'pnpm install --frozen-lockfile'
     if (statSync(join(workspace, 'yarn.lock')).isFile()) return 'yarn install --frozen-lockfile'
     if (statSync(join(workspace, 'bun.lockb')).isFile()) return 'bun install --frozen-lockfile'
+    if (statSync(join(workspace, 'package-lock.json')).isFile()) return 'npm ci'
   } catch { /* fall through */ }
   return 'npm install'
 }

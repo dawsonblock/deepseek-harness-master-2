@@ -21,7 +21,7 @@ import type { TaskTrajectory } from './v019-trajectory-collector.ts'
 
 describe('v019-experiment-identity', () => {
   it('exports the correct experiment ID', () => {
-    expect(EXPERIMENT_ID).toBe('v019-synthetic-multirepo-validation-v3')
+    expect(EXPERIMENT_ID).toBe('v019-synthetic-multirepo-validation-v4')
   })
 
   it('freezes the v0.18.0 tag', () => {
@@ -240,7 +240,7 @@ function makeTrajectory(overrides: Partial<TaskTrajectory> = {}): TaskTrajectory
   return {
     taskId: 'task-001',
     taskManifestHash: 'abc',
-    experimentId: 'v019-synthetic-multirepo-validation-v3',
+    experimentId: 'v019-synthetic-multirepo-validation-v4',
     experimentManifestHash: 'test-manifest-hash',
     benchmarkEligible: true,
     repository: {
@@ -350,7 +350,7 @@ describe('v019-failure-taxonomy', () => {
     return {
       taskId: 'fail-001',
       taskManifestHash: 'abc',
-      experimentId: 'v019-synthetic-multirepo-validation-v3',
+      experimentId: 'v019-synthetic-multirepo-validation-v4',
       experimentManifestHash: 'test-manifest-hash',
       benchmarkEligible: true,
       repository: {
@@ -500,7 +500,7 @@ describe('v019 B0 vs benchmark separation', () => {
       corpusManifestHash: 'test-corpus-hash',
     })
     expect(m.benchmarkEligible).toBe(false)
-    expect(m.experimentId).toBe('v019-infra-validation-v3')
+    expect(m.experimentId).toBe('v019-infra-validation-v4')
   })
 
   it('benchmark manifest is benchmark-eligible', () => {
@@ -524,7 +524,7 @@ describe('v019 B0 vs benchmark separation', () => {
       corpusManifestHash: 'test-corpus-hash',
     })
     expect(m.benchmarkEligible).toBe(true)
-    expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v3')
+    expect(m.experimentId).toBe('v019-synthetic-multirepo-validation-v4')
   })
 
   it('B0 and benchmark produce different experiment IDs', () => {
