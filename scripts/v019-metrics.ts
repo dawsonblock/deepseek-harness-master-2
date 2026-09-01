@@ -24,7 +24,14 @@ export interface MetricsReport {
   readonly evaluatedTaskCount: number
   readonly infraFailureCount: number
   readonly verifiedTaskRate: number
+  /** Tasks verified in one attempt whose starting model was Flash (may include mid-turn Pro assistance). */
   readonly oneShotFlashRate: number
+  /** Tasks verified in one attempt using only Flash (no Pro in any provider call). */
+  readonly flashOnlyOneShotRate: number
+  /** Tasks verified in one attempt where Pro participated mid-turn (Flash started, Pro assisted). */
+  readonly midTurnProAssistRate: number
+  /** Tasks that used Pro in any attempt (mid-turn or repair). */
+  readonly anyProUsageRate: number
   readonly repairRescueRate: number
   readonly flashSelfRepairRate: number
   readonly proEscalationRate: number
@@ -125,12 +132,28 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     t.attempts[0]?.model === 'deepseek-v4-flash' &&
     t.finalVerified,
   )
-  const initialFailures = evaluated.filter(t =>
-    !(t.attempts.length === 1 && t.attempts[0]?.verified),
+  // Flash-only one-shot: verified in 1 attempt with no Pro in any provider call.
+  const flashOnlyOneShot = evaluated.filter(t =>
+    t.attempts.length === 1 &&
+    t.attempts[0]?.model === 'deepseek-v4-flash' &&
+    t.attempts[0]?.modelsUsed.every(m => m !== 'deepseek-v4-pro') &&
+    t.finalVerified,
   )
-  const rescued = evaluated.filter(t => t.attempts.length > 1 && t.finalVerified)
-  const flashSelfRepaired = evaluated.filter(t =>
-    t.attempts.length > 1 &&
+  // Mid-turn Pro assist: verified in 1 attempt where Flash started but Pro participated.
+  const midTurnProAssist = evaluated.filter(t =>
+    t.attempts.length === 1 &&
+    t.attempts[0]?.model === 'deepseek-v4-flash' &&
+    t.attempts[0]?.modelsUsed.includes('deepseek-v4-pro') &&
+    t.finalVerified,
+  )
+  // Any Pro usage: tasks that used Pro in any attempt (mid-turn or repair).
+  const anyProUsage = evaluated.filter(t =>
+    t.attempts.some(a => a.modelsUsed.includes('deepseek-v4-pro')),
+  )
+  // Repair-eligible: tasks that entered repair (got a second attempt).
+  const repairEligible = evaluated.filter(t => t.attempts.length > 1)
+  const rescued = repairEligible.filter(t => t.finalVerified)
+  const flashSelfRepaired = repairEligible.filter(t =>
     t.finalVerified &&
     t.proAttempts === 0,
   )
@@ -191,8 +214,16 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     .filter(t => t.referenceFixFiles.length > 0)
     .map(t => t.referenceFixFilesInspected.length / t.referenceFixFiles.length)
 
-  const totalCost = evaluated.reduce((s, t) => s + t.totalCostUsd, 0)
-  const verifiedCost = verified.reduce((s, t) => s + t.totalCostUsd, 0)
+  // Compute total cost from per-attempt costs, not from totalCostUsd.
+  // The repair runtime's totalCostUsd only counts the first model/usage
+  // event per routing decision, undercounting mid-turn escalations where
+  // Pro has a separate routingDecisionId. The per-attempt costUsd is the
+  // sum of all provider call costs within the attempt, which is correct.
+  // This ensures the accounting invariant: Σ attempt cost == Σ task cost.
+  const totalCost = evaluated.reduce((s, t) =>
+    s + t.attempts.reduce((a, x) => a + x.costUsd, 0), 0)
+  const verifiedCost = verified.reduce((s, t) =>
+    s + t.attempts.reduce((a, x) => a + x.costUsd, 0), 0)
   // Use per-model cost from provider call trajectories, not from the
   // starting model's pricing applied to all usage. This correctly
   // attributes cost when a mid-turn escalation changes the model.
@@ -206,8 +237,8 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     s + t.attempts.slice(1).reduce((a, x) => a + x.costUsd, 0), 0)
 
   const latencies = evaluated.map(t => t.totalLatencyMs).sort((a, b) => a - b)
-  const costs = evaluated.map(t => t.totalCostUsd).sort((a, b) => a - b)
-  const verifiedCosts = verified.map(t => t.totalCostUsd).sort((a, b) => a - b)
+  const costs = evaluated.map(t => t.attempts.reduce((a, x) => a + x.costUsd, 0)).sort((a, b) => a - b)
+  const verifiedCosts = verified.map(t => t.attempts.reduce((a, x) => a + x.costUsd, 0)).sort((a, b) => a - b)
 
   const totalCacheRead = evaluated.reduce((s, t) => s + t.totalCacheReadTokens, 0)
   const totalCacheMiss = evaluated.reduce((s, t) => s + t.totalCacheMissTokens, 0)
@@ -222,8 +253,11 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     infraFailureCount: infraFailures.length,
     verifiedTaskRate: evalN > 0 ? verifiedCount / evalN : 0,
     oneShotFlashRate: evalN > 0 ? oneShotFlash.length / evalN : 0,
-    repairRescueRate: initialFailures.length > 0 ? rescued.length / initialFailures.length : 0,
-    flashSelfRepairRate: initialFailures.length > 0 ? flashSelfRepaired.length / initialFailures.length : 0,
+    flashOnlyOneShotRate: evalN > 0 ? flashOnlyOneShot.length / evalN : 0,
+    midTurnProAssistRate: evalN > 0 ? midTurnProAssist.length / evalN : 0,
+    anyProUsageRate: evalN > 0 ? anyProUsage.length / evalN : 0,
+    repairRescueRate: repairEligible.length > 0 ? rescued.length / repairEligible.length : 0,
+    flashSelfRepairRate: repairEligible.length > 0 ? flashSelfRepaired.length / repairEligible.length : 0,
     proEscalationRate: evalN > 0 ? proEscalations.length / evalN : 0,
     proRescueRate: proEscalations.length > 0 ? proRescued.length / proEscalations.length : 0,
     midTurnProRate: evalN > 0 ? midTurnPro.length / evalN : 0,
@@ -297,7 +331,7 @@ function groupByCategory(trajectories: readonly TaskTrajectory[]): CategoryMetri
       failed: evalTasks.filter(t => !t.finalVerified).length,
       infraFailed: tasks.filter(t => t.taskState === 'FAILED_INFRA').length,
       meanCost: evalTasks.length > 0
-        ? evalTasks.reduce((s, t) => s + t.totalCostUsd, 0) / evalTasks.length
+        ? evalTasks.reduce((s, t) => s + t.attempts.reduce((a, x) => a + x.costUsd, 0), 0) / evalTasks.length
         : 0,
       meanLatency: evalTasks.length > 0
         ? evalTasks.reduce((s, t) => s + t.totalLatencyMs, 0) / evalTasks.length
@@ -327,6 +361,7 @@ function emptyMetrics(): MetricsReport {
   return {
     experimentId: '', taskCount: 0, evaluatedTaskCount: 0, infraFailureCount: 0,
     verifiedTaskRate: 0, oneShotFlashRate: 0,
+    flashOnlyOneShotRate: 0, midTurnProAssistRate: 0, anyProUsageRate: 0,
     repairRescueRate: 0, flashSelfRepairRate: 0, proEscalationRate: 0, proRescueRate: 0, midTurnProRate: 0,
     meanAttemptsPerTask: 0, meanCostPerTask: 0, medianCostPerTask: 0,
     meanCostPerVerifiedTask: 0, medianCostPerVerifiedTask: 0,
@@ -387,11 +422,11 @@ function computeCostByOutcome(evaluated: readonly TaskTrajectory[]): {
 } {
   const verifiedOneShot = evaluated.filter(t =>
     t.attempts.length === 1 && t.finalVerified,
-  ).map(t => t.totalCostUsd)
+  ).map(t => t.attempts.reduce((a, x) => a + x.costUsd, 0))
   const verifiedRescued = evaluated.filter(t =>
     t.attempts.length > 1 && t.finalVerified,
-  ).map(t => t.totalCostUsd)
-  const ultimatelyFailed = evaluated.filter(t => !t.finalVerified).map(t => t.totalCostUsd)
+  ).map(t => t.attempts.reduce((a, x) => a + x.costUsd, 0))
+  const ultimatelyFailed = evaluated.filter(t => !t.finalVerified).map(t => t.attempts.reduce((a, x) => a + x.costUsd, 0))
   return {
     verifiedOneShot: meanOrNull(verifiedOneShot),
     verifiedRescued: meanOrNull(verifiedRescued),

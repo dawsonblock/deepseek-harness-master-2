@@ -48,8 +48,7 @@ function deriveProviderCalls(attempt: OldAttempt): ProviderCallTrajectory[] {
 /** Re-derive the new attempt fields from an old attempt. */
 function upgradeAttempt(attempt: OldAttempt, index: number): AttemptTrajectory {
   const providerCalls = deriveProviderCalls(attempt)
-  const costByModel = new Map<string, number>()
-  costByModel.set(attempt.model, attempt.costUsd)
+  const costByModel: readonly [string, number][] = [[attempt.model, attempt.costUsd]]
   return {
     attempt: attempt.attempt,
     attemptId: `replay-attempt-${index + 1}`,
@@ -167,12 +166,13 @@ function upgradeTrajectory(old: OldTrajectory): TaskTrajectory {
   const proCostUsd = upgradedAttempts
     .filter(a => a.model === 'deepseek-v4-pro')
     .reduce((s, a) => s + a.costUsd, 0)
-  const costByModel = new Map<string, number>()
+  const costByModelMap = new Map<string, number>()
   for (const a of upgradedAttempts) {
     for (const [model, cost] of a.costByModel) {
-      costByModel.set(model, (costByModel.get(model) ?? 0) + cost)
+      costByModelMap.set(model, (costByModelMap.get(model) ?? 0) + cost)
     }
   }
+  const costByModel = [...costByModelMap.entries()] as readonly [string, number][]
   return {
     taskId: old.taskId,
     taskManifestHash: old.taskManifestHash,

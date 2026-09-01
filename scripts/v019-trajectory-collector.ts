@@ -83,8 +83,8 @@ export interface TaskTrajectory {
   readonly flashCostUsd: number
   /** Total cost attributed to Pro model calls. */
   readonly proCostUsd: number
-  /** Per-model cost breakdown across all attempts. */
-  readonly costByModel: ReadonlyMap<string, number>
+  /** Per-model cost breakdown across all attempts, as [model, cost] pairs. */
+  readonly costByModel: readonly [string, number][]
   readonly totalCostUsd: number
   readonly totalLatencyMs: number
   readonly totalOutputTokens: number
@@ -167,8 +167,8 @@ export interface AttemptTrajectory {
     readonly cacheMissTokens: number
   }
   readonly costUsd: number
-  /** Per-model cost breakdown for this attempt. */
-  readonly costByModel: ReadonlyMap<string, number>
+  /** Per-model cost breakdown for this attempt, as [model, cost] pairs. */
+  readonly costByModel: readonly [string, number][]
   readonly latencyMs: number
   readonly repairAction: RepairDecision['action']
   readonly repairReason: string | undefined
@@ -411,7 +411,7 @@ export function buildInfraFailureTrajectory(
     escalatedToPro: false,
     flashCostUsd: 0,
     proCostUsd: 0,
-    costByModel: new Map<string, number>(),
+    costByModel: [] as readonly [string, number][],
     totalCostUsd: 0,
     totalLatencyMs: 0,
     totalOutputTokens: 0,
@@ -1164,7 +1164,6 @@ function buildTrajectoryFromEvents(
   // The attempts array is built from model/usage events grouped by turn,
   // with the model extracted from the first routing decision for the turn,
   // so it correctly attributes the attempt to the starting model.
-  const totalCostUsd = completedEvent?.data.totalCostUsd ?? 0
   const finalVerified = completedEvent?.data.verified ?? false
   const outcome = completedEvent?.data.outcome ?? 'unknown'
 
@@ -1223,7 +1222,7 @@ function buildTrajectoryFromEvents(
     // first routing decision for the entire turn. This correctly
     // attributes cost when a mid-turn escalation changes the model.
     const providerCalls: ProviderCallTrajectory[] = []
-    const costByModel = new Map<string, number>()
+    const costByModelMap = new Map<string, number>()
     const modelsUsedSet = new Set<string>()
 
     for (const evt of group.events) {
@@ -1280,7 +1279,7 @@ function buildTrajectoryFromEvents(
       const callCostUsd = callCost.amount
 
       // Accumulate per-model cost.
-      costByModel.set(callModel, (costByModel.get(callModel) ?? 0) + callCostUsd)
+      costByModelMap.set(callModel, (costByModelMap.get(callModel) ?? 0) + callCostUsd)
 
       // Build the provider call trajectory.
       const requestId = `req:v1:${group.turn}:${step}:${providerCalls.length + 1}`
@@ -1397,7 +1396,7 @@ function buildTrajectoryFromEvents(
       buildErrors,
       usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens },
       costUsd,
-      costByModel,
+      costByModel: [...costByModelMap.entries()] as readonly [string, number][],
       // Per-attempt model latency: time from turn/start to last usage event.
       latencyMs: (() => {
         const turnStart = allEvents.find(e => e.type === 'turn/start' && (e.data as { turn?: number }).turn === turn)
@@ -1496,18 +1495,26 @@ function buildTrajectoryFromEvents(
   const flashAttempts = attempts.filter(a => a.model === 'deepseek-v4-flash').length
   const proAttempts = attempts.filter(a => a.model === 'deepseek-v4-pro').length
   const escalatedToPro = proAttempts > 0
+  // Compute total cost as the sum of per-attempt costs, not from the
+  // repair runtime's completedEvent.data.totalCostUsd. The runtime's
+  // computeAttemptAccounting breaks after the first model/usage event per
+  // routing decision, so it undercounts mid-turn escalations where Pro
+  // has a separate routingDecisionId. The per-attempt costUsd is the sum
+  // of all provider call costs within the attempt, which is correct.
+  const totalCostUsd = attempts.reduce((s, a) => s + a.costUsd, 0)
 
   // Compute per-model costs from provider call trajectories, not from
   // the starting model's pricing applied to all usage. This correctly
   // attributes cost when a mid-turn escalation changes the model.
-  const taskCostByModel = new Map<string, number>()
+  const taskCostByModelMap = new Map<string, number>()
   for (const attempt of attempts) {
     for (const [model, cost] of attempt.costByModel) {
-      taskCostByModel.set(model, (taskCostByModel.get(model) ?? 0) + cost)
+      taskCostByModelMap.set(model, (taskCostByModelMap.get(model) ?? 0) + cost)
     }
   }
-  const flashCostUsd = taskCostByModel.get('deepseek-v4-flash') ?? 0
-  const proCostUsd = taskCostByModel.get('deepseek-v4-pro') ?? 0
+  const flashCostUsd = taskCostByModelMap.get('deepseek-v4-flash') ?? 0
+  const proCostUsd = taskCostByModelMap.get('deepseek-v4-pro') ?? 0
+  const taskCostByModel = [...taskCostByModelMap.entries()] as readonly [string, number][]
   // Model capability is NOT_EVALUATED when the control plane failed before
   // the model had a fair chance to demonstrate capability. For rollback
   // failures and unknown outcomes, the model's capability cannot be assessed
