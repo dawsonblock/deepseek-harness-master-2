@@ -24,7 +24,10 @@ export interface MetricsReport {
   readonly evaluatedTaskCount: number
   readonly infraFailureCount: number
   readonly verifiedTaskRate: number
-  /** Tasks verified in one attempt whose starting model was Flash (may include mid-turn Pro assistance). */
+  /** Tasks verified in one attempt regardless of model. */
+  readonly oneShotVerifiedRate: number
+  /** Verified in 1 attempt starting with Flash (may include mid-turn Pro).
+ * Retained for backward compatibility; prefer flashOnlyOneShotRate and midTurnProAssistRate. */
   readonly oneShotFlashRate: number
   /** Tasks verified in one attempt using only Flash (no Pro in any provider call). */
   readonly flashOnlyOneShotRate: number
@@ -34,7 +37,13 @@ export interface MetricsReport {
   readonly anyProUsageRate: number
   readonly repairRescueRate: number
   readonly flashSelfRepairRate: number
+  /** Tasks that entered repair with a Pro attempt. */
+  readonly repairProEscalationRate: number
+  /** Of tasks that entered repair with Pro, the fraction that were verified. */
+  readonly proRepairRescueRate: number
+  /** Tasks with Pro repair attempts. Alias for repairProEscalationRate, retained for backward compatibility. */
   readonly proEscalationRate: number
+  /** Of Pro repair escalations, the fraction that were verified. Alias for proRepairRescueRate, retained for backward compatibility. */
   readonly proRescueRate: number
   /** Tasks where a mid-turn escalation occurred (Flash started, Pro finished within the same attempt). */
   readonly midTurnProRate: number
@@ -127,6 +136,9 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
 
   const verified = evaluated.filter(t => t.finalVerified)
   const verifiedCount = verified.length
+  const oneShotVerified = evaluated.filter(t =>
+    t.attempts.length === 1 && t.finalVerified,
+  )
   const oneShotFlash = evaluated.filter(t =>
     t.attempts.length === 1 &&
     t.attempts[0]?.model === 'deepseek-v4-flash' &&
@@ -252,12 +264,15 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     evaluatedTaskCount: evalN,
     infraFailureCount: infraFailures.length,
     verifiedTaskRate: evalN > 0 ? verifiedCount / evalN : 0,
+    oneShotVerifiedRate: evalN > 0 ? oneShotVerified.length / evalN : 0,
     oneShotFlashRate: evalN > 0 ? oneShotFlash.length / evalN : 0,
     flashOnlyOneShotRate: evalN > 0 ? flashOnlyOneShot.length / evalN : 0,
     midTurnProAssistRate: evalN > 0 ? midTurnProAssist.length / evalN : 0,
     anyProUsageRate: evalN > 0 ? anyProUsage.length / evalN : 0,
     repairRescueRate: repairEligible.length > 0 ? rescued.length / repairEligible.length : 0,
     flashSelfRepairRate: repairEligible.length > 0 ? flashSelfRepaired.length / repairEligible.length : 0,
+    repairProEscalationRate: evalN > 0 ? proEscalations.length / evalN : 0,
+    proRepairRescueRate: proEscalations.length > 0 ? proRescued.length / proEscalations.length : 0,
     proEscalationRate: evalN > 0 ? proEscalations.length / evalN : 0,
     proRescueRate: proEscalations.length > 0 ? proRescued.length / proEscalations.length : 0,
     midTurnProRate: evalN > 0 ? midTurnPro.length / evalN : 0,
@@ -360,9 +375,11 @@ function percentile(sorted: number[], p: number): number {
 function emptyMetrics(): MetricsReport {
   return {
     experimentId: '', taskCount: 0, evaluatedTaskCount: 0, infraFailureCount: 0,
-    verifiedTaskRate: 0, oneShotFlashRate: 0,
+    verifiedTaskRate: 0, oneShotVerifiedRate: 0, oneShotFlashRate: 0,
     flashOnlyOneShotRate: 0, midTurnProAssistRate: 0, anyProUsageRate: 0,
-    repairRescueRate: 0, flashSelfRepairRate: 0, proEscalationRate: 0, proRescueRate: 0, midTurnProRate: 0,
+    repairRescueRate: 0, flashSelfRepairRate: 0,
+    repairProEscalationRate: 0, proRepairRescueRate: 0,
+    proEscalationRate: 0, proRescueRate: 0, midTurnProRate: 0,
     meanAttemptsPerTask: 0, meanCostPerTask: 0, medianCostPerTask: 0,
     meanCostPerVerifiedTask: 0, medianCostPerVerifiedTask: 0,
     latencyP50: 0, latencyP75: 0, latencyP90: 0, latencyP95: 0, latencyMax: 0,
