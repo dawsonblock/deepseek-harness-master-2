@@ -29,6 +29,8 @@ export interface MetricsReport {
   readonly flashSelfRepairRate: number
   readonly proEscalationRate: number
   readonly proRescueRate: number
+  /** Tasks where a mid-turn escalation occurred (Flash started, Pro finished within the same attempt). */
+  readonly midTurnProRate: number
   readonly meanAttemptsPerTask: number
   readonly meanCostPerTask: number
   readonly medianCostPerTask: number
@@ -134,6 +136,12 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
   )
   const proEscalations = evaluated.filter(t => t.proAttempts > 0)
   const proRescued = proEscalations.filter(t => t.finalVerified)
+  // Mid-turn Pro: an attempt where Flash started but Pro was used for
+  // some provider calls within the same attempt. Detected by checking
+  // if any attempt has multiple models in modelsUsed.
+  const midTurnPro = evaluated.filter(t =>
+    t.attempts.some(a => a.modelsUsed.length > 1 && a.modelsUsed.includes('deepseek-v4-pro')),
+  )
   const budgetStops = evaluated.filter(t => t.terminalOutcome === 'budget-stop')
   const rollbacks = evaluated.filter(t => t.rollbackUsed)
   // Provider failure rate: per-request, not per-task. Counted as
@@ -185,10 +193,11 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
 
   const totalCost = evaluated.reduce((s, t) => s + t.totalCostUsd, 0)
   const verifiedCost = verified.reduce((s, t) => s + t.totalCostUsd, 0)
-  const flashCost = evaluated.reduce((s, t) =>
-    s + t.attempts.filter(a => a.model === 'deepseek-v4-flash').reduce((a, x) => a + x.costUsd, 0), 0)
-  const proCost = evaluated.reduce((s, t) =>
-    s + t.attempts.filter(a => a.model === 'deepseek-v4-pro').reduce((a, x) => a + x.costUsd, 0), 0)
+  // Use per-model cost from provider call trajectories, not from the
+  // starting model's pricing applied to all usage. This correctly
+  // attributes cost when a mid-turn escalation changes the model.
+  const flashCost = evaluated.reduce((s, t) => s + t.flashCostUsd, 0)
+  const proCost = evaluated.reduce((s, t) => s + t.proCostUsd, 0)
   // Incremental repair cost: the sum of costs for all attempts after
   // the first across all evaluated tasks. This measures the actual
   // additional spend on repair, not total cost minus one-shot cost
@@ -217,6 +226,7 @@ export function computeMetrics(trajectories: readonly TaskTrajectory[]): Metrics
     flashSelfRepairRate: initialFailures.length > 0 ? flashSelfRepaired.length / initialFailures.length : 0,
     proEscalationRate: evalN > 0 ? proEscalations.length / evalN : 0,
     proRescueRate: proEscalations.length > 0 ? proRescued.length / proEscalations.length : 0,
+    midTurnProRate: evalN > 0 ? midTurnPro.length / evalN : 0,
     meanAttemptsPerTask: evalN > 0 ? evaluated.reduce((s, t) => s + t.attempts.length, 0) / evalN : 0,
     meanCostPerTask: evalN > 0 ? totalCost / evalN : 0,
     medianCostPerTask: median(costs),
@@ -317,7 +327,7 @@ function emptyMetrics(): MetricsReport {
   return {
     experimentId: '', taskCount: 0, evaluatedTaskCount: 0, infraFailureCount: 0,
     verifiedTaskRate: 0, oneShotFlashRate: 0,
-    repairRescueRate: 0, flashSelfRepairRate: 0, proEscalationRate: 0, proRescueRate: 0,
+    repairRescueRate: 0, flashSelfRepairRate: 0, proEscalationRate: 0, proRescueRate: 0, midTurnProRate: 0,
     meanAttemptsPerTask: 0, meanCostPerTask: 0, medianCostPerTask: 0,
     meanCostPerVerifiedTask: 0, medianCostPerVerifiedTask: 0,
     latencyP50: 0, latencyP75: 0, latencyP90: 0, latencyP95: 0, latencyMax: 0,

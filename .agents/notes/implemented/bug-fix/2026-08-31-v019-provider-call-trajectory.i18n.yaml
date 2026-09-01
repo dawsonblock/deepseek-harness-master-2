@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-31-v019-provider-call-trajectory.md
+2026-08-31-v019-provider-call-trajectory.md: 0ad66d0925852adb324ca316fe34da58836c24f1
+2026-08-31-v019-provider-call-trajectory.zh.md: 24459182f55fc6c886a39b1138c6c4bde6b3c5ff

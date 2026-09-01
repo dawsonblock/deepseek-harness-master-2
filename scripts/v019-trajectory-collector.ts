@@ -79,6 +79,12 @@ export interface TaskTrajectory {
   readonly flashAttempts: number
   readonly proAttempts: number
   readonly escalatedToPro: boolean
+  /** Total cost attributed to Flash model calls. */
+  readonly flashCostUsd: number
+  /** Total cost attributed to Pro model calls. */
+  readonly proCostUsd: number
+  /** Per-model cost breakdown across all attempts. */
+  readonly costByModel: ReadonlyMap<string, number>
   readonly totalCostUsd: number
   readonly totalLatencyMs: number
   readonly totalOutputTokens: number
@@ -106,12 +112,41 @@ export interface TaskTrajectory {
   readonly timestamp: string
 }
 
+/** One provider call within an attempt, with per-call model attribution. */
+export interface ProviderCallTrajectory {
+  /** Deterministic request ID: `req:v1:<turn>:<step>:<providerAttempt>`. */
+  readonly requestId: string
+  readonly turn: number
+  readonly step: number
+  /** Provider attempt ordinal for retries within the same step. */
+  readonly providerAttempt: number
+  readonly model: string
+  readonly provider: string
+  readonly routingDecisionId: string | undefined
+  readonly outcome: 'success' | 'error' | 'aborted' | 'max-tokens' | 'unknown'
+  readonly usage: {
+    readonly inputTokens: number
+    readonly outputTokens: number
+    readonly reasoningTokens: number
+    readonly totalTokens: number
+    readonly cacheReadTokens: number
+    readonly cacheMissTokens: number
+  } | undefined
+  readonly costUsd: number
+  readonly latencyMs: number | undefined
+}
+
 /** Full trajectory record for one attempt within a task. */
 export interface AttemptTrajectory {
   readonly attempt: number
   /** Durable attempt ID from the repair controller: `${repairId}#attempt-${attempt}`. */
   readonly attemptId: string | undefined
+  /** Starting model for this attempt (first routing decision). */
   readonly model: string
+  /** Final model for this attempt (last provider call's model). */
+  readonly finalModel: string
+  /** All models used in this attempt. */
+  readonly modelsUsed: readonly string[]
   readonly routingDecisionId: string
   readonly verified: boolean
   readonly diagnosticPass: boolean
@@ -132,6 +167,8 @@ export interface AttemptTrajectory {
     readonly cacheMissTokens: number
   }
   readonly costUsd: number
+  /** Per-model cost breakdown for this attempt. */
+  readonly costByModel: ReadonlyMap<string, number>
   readonly latencyMs: number
   readonly repairAction: RepairDecision['action']
   readonly repairReason: string | undefined
@@ -139,6 +176,8 @@ export interface AttemptTrajectory {
   readonly toolCallCount: number
   readonly filesInspected: readonly string[]
   readonly terminalOutcome: string
+  /** Individual provider calls within this attempt. */
+  readonly providerCalls: readonly ProviderCallTrajectory[]
 }
 
 const REPO_ROOT = join(import.meta.dirname, '..')
@@ -370,6 +409,9 @@ export function buildInfraFailureTrajectory(
     flashAttempts: 0,
     proAttempts: 0,
     escalatedToPro: false,
+    flashCostUsd: 0,
+    proCostUsd: 0,
+    costByModel: new Map<string, number>(),
     totalCostUsd: 0,
     totalLatencyMs: 0,
     totalOutputTokens: 0,
@@ -819,7 +861,7 @@ function runHoldoutInCleanWorkspace(
     // fallback was removed because it does not apply deletions.
     try {
       execSync(
-        `rsync -a --delete --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='sessions' "${workspace}/" "${verifierWorkspace}/"`,
+        `rsync -a --delete --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude='sessions' --exclude='.tmp' "${workspace}/" "${verifierWorkspace}/"`,
         { stdio: 'pipe', timeout: 60000 },
       )
     } catch {
@@ -1092,14 +1134,94 @@ function buildTrajectoryFromEvents(
     let totalTokens = 0
     let cacheReadTokens = 0
     let cacheMissTokens = 0
+
+    // Build per-provider-call trajectories. Each usage event is one
+    // provider call. The model for each call is determined by the
+    // routing decision for that specific (turn, step), not by the
+    // first routing decision for the entire turn. This correctly
+    // attributes cost when a mid-turn escalation changes the model.
+    const providerCalls: ProviderCallTrajectory[] = []
+    const costByModel = new Map<string, number>()
+    const modelsUsedSet = new Set<string>()
+
     for (const evt of group.events) {
       const usage = (evt.data as unknown as UsageData).usage
+      const evtData = evt.data as { turn?: number; step?: number; model?: string; provider?: string }
+      const step = evtData.step ?? 0
       inputTokens += usage.inputTokens ?? 0
       outputTokens += usage.outputTokens ?? 0
       reasoningTokens += usage.reasoningTokens ?? 0
       totalTokens += usage.totalTokens ?? 0
       cacheReadTokens += usage.cacheReadTokens ?? 0
       cacheMissTokens += usage.cacheMissTokens ?? 0
+
+      // Find the routing decision for this specific step.
+      const stepRoutingEvent = allEvents.find(e =>
+        e.type === 'model/routing-decision'
+        && (e.data as { turn?: number }).turn === group.turn
+        && (e.data as { step?: number }).step === step,
+      ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+        ?? allEvents.find(e =>
+          e.type === 'model/routing-decision'
+          && (e.data as { turn?: number }).turn === group.turn,
+        ) as Extract<SessionEvent, { type: 'model/routing-decision' }> | undefined
+
+      const callModel = (stepRoutingEvent?.data as { selected?: { model?: string } }).selected?.model
+        ?? evtData.model
+        ?? 'unknown'
+      const callProvider = evtData.provider ?? 'deepseek-official'
+      const callRoutingId = stepRoutingEvent?.data.routingDecisionId
+      modelsUsedSet.add(callModel)
+
+      // Find the request-outcome for this call.
+      const callOutcome = allEvents.find(e =>
+        e.type === 'model/request-outcome'
+        && (e.data as { turn?: number }).turn === group.turn
+        && (e.data as { step?: number }).step === step,
+      ) as Extract<SessionEvent, { type: 'model/request-outcome' }> | undefined
+
+      // Compute per-call cost using the actual model for this step.
+      const callTimestamp = new Date(evt.time)
+      const callPricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', callModel, callTimestamp)
+      if (callPricing === undefined) {
+        throw new Error(`UNPRICED_USAGE: no pricing found for model ${callModel}`)
+      }
+      const callCost = calculateCost({
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cacheReadTokens: usage.cacheReadTokens ?? 0,
+        cacheMissTokens: usage.cacheMissTokens ?? 0,
+        reasoningTokens: usage.reasoningTokens ?? 0,
+        totalTokens: usage.totalTokens ?? 0,
+        source: 'provider',
+      }, callPricing)
+      const callCostUsd = callCost.amount
+
+      // Accumulate per-model cost.
+      costByModel.set(callModel, (costByModel.get(callModel) ?? 0) + callCostUsd)
+
+      // Build the provider call trajectory.
+      const requestId = `req:v1:${group.turn}:${step}:${providerCalls.length + 1}`
+      providerCalls.push({
+        requestId,
+        turn: group.turn,
+        step,
+        providerAttempt: providerCalls.length + 1,
+        model: callModel,
+        provider: callProvider,
+        routingDecisionId: callRoutingId,
+        outcome: callOutcome?.data.outcome ?? 'success',
+        usage: {
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+          reasoningTokens: usage.reasoningTokens ?? 0,
+          totalTokens: usage.totalTokens ?? 0,
+          cacheReadTokens: usage.cacheReadTokens ?? 0,
+          cacheMissTokens: usage.cacheMissTokens ?? 0,
+        },
+        costUsd: callCostUsd,
+        latencyMs: undefined,
+      })
     }
     totalOutputTokens += outputTokens
     totalCacheReadTokens += cacheReadTokens
@@ -1119,19 +1241,13 @@ function buildTrajectoryFromEvents(
       ?? (firstUsageEvent.data as { model?: string }).model
       ?? 'unknown'
 
-    // Fail loud on unpriced model usage: unknown pricing must not silently
-    // become $0, which would make economic metrics look artificially better.
-    // Use the event's actual timestamp for historical pricing accuracy.
-    const eventTimestamp = new Date(firstUsageEvent.time)
-    const pricing = lookupPricingAt(DEFAULT_PRICING_REGISTRY, 'deepseek-official', model, eventTimestamp)
-    if (pricing === undefined) {
-      throw new Error(`UNPRICED_USAGE: no pricing found for model ${model}`)
-    }
-    const cost = calculateCost({
-      inputTokens, outputTokens, cacheReadTokens, cacheMissTokens,
-      reasoningTokens, totalTokens, source: 'provider',
-    }, pricing)
-    const costUsd = cost.amount
+    // Attempt cost is the sum of per-call costs, not the cost computed
+    // from the starting model's pricing applied to all usage.
+    const costUsd = providerCalls.reduce((sum, c) => sum + c.costUsd, 0)
+    const finalModel = providerCalls.length > 0
+      ? (providerCalls[providerCalls.length - 1]?.model ?? model)
+      : model
+    const modelsUsed = [...modelsUsedSet]
 
     // Find repair evidence and decision for this attempt. Join by turn
     // first (all steps in a turn share the same repair cycle), then fall
@@ -1184,6 +1300,8 @@ function buildTrajectoryFromEvents(
       attempt: i + 1,
       attemptId,
       model,
+      finalModel,
+      modelsUsed,
       routingDecisionId,
       verified: repairAction === 'complete' && finalVerified,
       diagnosticPass: repairAction === 'complete',
@@ -1197,6 +1315,7 @@ function buildTrajectoryFromEvents(
       buildErrors,
       usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cacheReadTokens, cacheMissTokens },
       costUsd,
+      costByModel,
       // Per-attempt model latency: time from turn/start to last usage event.
       latencyMs: (() => {
         const turnStart = allEvents.find(e => e.type === 'turn/start' && (e.data as { turn?: number }).turn === turn)
@@ -1211,6 +1330,7 @@ function buildTrajectoryFromEvents(
       toolCallCount: turnEvents.filter(e => e.type === 'tool/call').length,
       filesInspected: attemptObservation.filesInspected,
       terminalOutcome: outcome,
+      providerCalls,
     })
   }
 
@@ -1294,6 +1414,18 @@ function buildTrajectoryFromEvents(
   const flashAttempts = attempts.filter(a => a.model === 'deepseek-v4-flash').length
   const proAttempts = attempts.filter(a => a.model === 'deepseek-v4-pro').length
   const escalatedToPro = proAttempts > 0
+
+  // Compute per-model costs from provider call trajectories, not from
+  // the starting model's pricing applied to all usage. This correctly
+  // attributes cost when a mid-turn escalation changes the model.
+  const taskCostByModel = new Map<string, number>()
+  for (const attempt of attempts) {
+    for (const [model, cost] of attempt.costByModel) {
+      taskCostByModel.set(model, (taskCostByModel.get(model) ?? 0) + cost)
+    }
+  }
+  const flashCostUsd = taskCostByModel.get('deepseek-v4-flash') ?? 0
+  const proCostUsd = taskCostByModel.get('deepseek-v4-pro') ?? 0
   // Model capability is NOT_EVALUATED when the control plane failed before
   // the model had a fair chance to demonstrate capability. For rollback
   // failures and unknown outcomes, the model's capability cannot be assessed
@@ -1328,6 +1460,9 @@ function buildTrajectoryFromEvents(
     flashAttempts,
     proAttempts,
     escalatedToPro,
+    flashCostUsd,
+    proCostUsd,
+    costByModel: taskCostByModel,
     totalCostUsd,
     totalLatencyMs: Date.now() - wallClockStart,
     totalOutputTokens,

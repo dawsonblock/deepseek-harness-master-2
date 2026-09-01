@@ -22,6 +22,9 @@ export const EXPERIMENT_ID = 'v019-synthetic-multirepo-validation-v4'
 /** Experiment identity for the B0 infrastructure validation shakedown. */
 export const B0_EXPERIMENT_ID = 'v019-infra-validation-v4'
 
+/** Experiment identity for exploratory runs (security-gate-bypassed, not benchmark-eligible). */
+export const EXPLORATORY_EXPERIMENT_ID = 'v019-exploratory-v4'
+
 /** v0.18.0 tag that this experiment freezes as experimental control. */
 export const FROZEN_V018_TAG = 'v0.18.0'
 
@@ -152,7 +155,15 @@ export function buildExperimentManifest(params: {
     )
   }
   const sourceTreeHash = computeSourceTreeHash()
-  const experimentId = params.benchmarkEligible ? EXPERIMENT_ID : B0_EXPERIMENT_ID
+  // Experiment ID is determined by runClass, not just benchmarkEligible.
+  // Exploratory runs (security-gate-bypassed) get their own identity, distinct
+  // from B0 infrastructure validation runs. This prevents exploratory
+  // trajectories from being mapped to the B0 experiment identity.
+  const experimentId = runClass === 'benchmark'
+    ? EXPERIMENT_ID
+    : runClass === 'exploratory'
+      ? EXPLORATORY_EXPERIMENT_ID
+      : B0_EXPERIMENT_ID
   const modelRoutes = [
     { alias: 'flash', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     { alias: 'pro', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
