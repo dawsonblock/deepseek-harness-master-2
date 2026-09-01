@@ -206,6 +206,7 @@ function upgradeTrajectory(old: OldTrajectory): TaskTrajectory {
     rollbackUsed: old.rollbackUsed,
     aborted: old.aborted,
     abortReason: undefined,
+    failureCategory: undefined,
     terminalOutcome: old.terminalOutcome as TaskTrajectory['terminalOutcome'],
     providerRequestOutcomes: old.providerRequestOutcomes,
     timestamp: old.timestamp,
