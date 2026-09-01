@@ -366,7 +366,7 @@ async function bootComposedRuntime(
     repoSize: 'small',
     task: { title: 'Composed qualification', description: '', source: 'synthetic' },
     limits: QUAL_LIMITS,
-    verification: { build: { command: 'true', expectedExitCode: 0 }, strength: 'V0', diagnostic: [], holdout: [] },
+    verification: { build: { command: 'true', expectedExitCode: 0 }, strength: 'V0', diagnostic: [], holdout: [], holdoutArtifacts: [] },
     manifestHash: '',
   }
   const repairConfig = createRepairRuntimeConfig(workspace, qualManifest, undefined, baseline, 'transactional')

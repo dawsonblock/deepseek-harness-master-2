@@ -10,6 +10,8 @@
  */
 
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /** Verification strength classification. */
 export type VerificationStrength = 'V3' | 'V2' | 'V1' | 'V0'
@@ -40,6 +42,14 @@ export interface VerificationCommand {
   readonly kind?: DiagnosticKind
 }
 
+/** A hidden holdout artifact bound into task identity by content hash. */
+export interface VerifierArtifact {
+  /** Stable logical identifier (not a filesystem path). */
+  readonly logicalName: string
+  /** SHA-256 of the holdout file bytes at corpus freeze time. */
+  readonly sha256: string
+}
+
 /** Task manifest for one evaluation task. */
 export interface TaskManifest {
   readonly taskId: string
@@ -63,6 +73,8 @@ export interface TaskManifest {
     readonly build: VerificationCommand
     readonly diagnostic: readonly VerificationCommand[]
     readonly holdout: readonly VerificationCommand[]
+    /** Content hashes of hidden holdout files, bound into task identity. */
+    readonly holdoutArtifacts: readonly VerifierArtifact[]
     readonly strength: VerificationStrength
   }
   readonly limits: {
@@ -83,6 +95,10 @@ export function computeTaskManifestHash(fields: Omit<TaskManifest, 'manifestHash
     .map(c => `${c.command}=${c.expectedExitCode}:${c.kind ?? 'auto'}`)
     .sort()
     .join('|')
+  const holdoutArtifactLines = fields.verification.holdoutArtifacts
+    .map(a => `${a.logicalName}=${a.sha256}`)
+    .sort()
+    .join('|')
   const manifestContent = [
     fields.taskId,
     fields.category,
@@ -100,6 +116,7 @@ export function computeTaskManifestHash(fields: Omit<TaskManifest, 'manifestHash
     String(fields.verification.build.expectedExitCode),
     diagLines,
     holdoutLines,
+    holdoutArtifactLines,
     fields.verification.strength,
     String(fields.limits.maxFlashAttempts),
     String(fields.limits.maxProAttempts),
@@ -130,6 +147,34 @@ export function validateTaskManifest(manifest: TaskManifest): readonly string[] 
   const recomputed = computeTaskManifestHash(manifest)
   if (recomputed !== manifest.manifestHash) errors.push('manifestHash mismatch')
   return errors
+}
+
+/**
+ * Verify that current holdout file bytes match the hashes stored in the manifest.
+ * Returns an empty array if all holdout artifacts match, or a list of mismatch descriptions.
+ */
+export function verifyHoldoutIntegrity(
+  manifest: TaskManifest,
+  holdoutDir: string,
+): readonly string[] {
+  const mismatches: string[] = []
+  for (const artifact of manifest.verification.holdoutArtifacts) {
+    // Resolve the holdout file by logical name convention: <logicalName>-holdout -> <logicalName>.holdout.test.ts
+    const fileName = `${artifact.logicalName.replace('-holdout', '')}.holdout.test.ts`
+    const filePath = join(holdoutDir, manifest.repository.name, fileName)
+    if (!existsSync(filePath)) {
+      mismatches.push(`holdout file ${fileName} missing for ${artifact.logicalName}`)
+      continue
+    }
+    const fileBytes = readFileSync(filePath)
+    const actualHash = createHash('sha256').update(fileBytes).digest('hex')
+    if (actualHash !== artifact.sha256) {
+      mismatches.push(
+        `holdout ${artifact.logicalName}: expected ${artifact.sha256.slice(0, 16)}…, got ${actualHash.slice(0, 16)}…`,
+      )
+    }
+  }
+  return mismatches
 }
 
 /** Default repair limits matching the frozen v0.18.0 policy. */

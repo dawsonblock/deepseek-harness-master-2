@@ -37,6 +37,7 @@ function makeManifest(overrides: Partial<Parameters<typeof buildTaskManifest>[0]
       build: { command: 'npm run build', expectedExitCode: 0 },
       diagnostic: [{ command: 'npm test', expectedExitCode: 0 }],
       holdout: [],
+      holdoutArtifacts: [],
       strength: 'V2',
     },
     limits: { ...FROZEN_V018_LIMITS },

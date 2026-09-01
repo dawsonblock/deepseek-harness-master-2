@@ -15,7 +15,7 @@
  */
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -196,24 +196,23 @@ export async function runTaskTrajectory(
     // Register a goal completion verifier that runs the task's diagnostic
     // commands. The repair-runtime plugin watches goal/verification events
     // emitted by verifyCompletion() and handles repair decisions.
-    // Hash verifier-controlled files before model execution. The diagnostic
-    // verifier re-hashes these files on each verification call and rejects
-    // the task if the model has tampered with them.
-    const verifierFileHash = hashVerifierControlledFiles(workspace)
+    // Freeze verifier-controlled path set at baseline. The diagnostic
+    // verifier checks exactly these paths — no dynamic rediscovery — so
+    // a model creating a new test file does not cause a false mismatch.
+    const verifierSnapshot = freezeVerifierSnapshot(workspace)
 
     const diagnosticVerifier: GoalCompletionVerifier = {
       name: 'v019-diagnostic',
       version: '1',
       verify: () => {
-        // Check verifier-controlled files have not been tampered with.
-        const currentHash = hashVerifierControlledFiles(workspace)
-        if (currentHash !== verifierFileHash) {
+        // Check verifier-controlled files against the frozen snapshot.
+        if (!verifyAgainstSnapshot(workspace, verifierSnapshot)) {
           return {
             name: 'v019-diagnostic',
             role: 'acceptance',
             passed: false,
             reason: 'verifier-controlled files were modified by the model — task rejected',
-            evidence: [`expected hash: ${verifierFileHash}`, `actual hash: ${currentHash}`],
+            evidence: [`expected hash: ${verifierSnapshot.controlledHash}`, `controlled paths: ${verifierSnapshot.controlledPaths.join(', ')}`],
           }
         }
         const result = runDiagnosticSync(workspace, manifest)
@@ -560,48 +559,71 @@ function runDiagnosticSync(workspace: string, manifest: TaskManifest): Diagnosti
 }
 
 /**
- * Compute a SHA-256 hash of verifier-controlled task files before model
- * execution. This protects the verifier environment from model tampering:
- * the diagnostic verifier re-hashes these files and rejects modifications
- * before final verification.
+ * Frozen snapshot of verifier-controlled state at task initialization.
  *
- * Verifier-controlled files are files the model should not alter: package
- * manifests, test configurations, and test setup files. The model workspace
- * is extracted from a git archive without .git, so the model cannot use git
- * to inspect these — but it can still overwrite them with tool calls.
+ * The controlled path set is discovered once at baseline and never
+ * rediscovered. This prevents the multi-file verifier bug where a model
+ * creating a new test file causes the second discovery to include it,
+ * producing a hash mismatch even though the model was supposed to create
+ * that file.
  */
-function hashVerifierControlledFiles(workspace: string): string {
-  const hash = createHash('sha256')
-  const controlledFiles = [
-    'package.json',
-    'package-lock.json',
-    'pnpm-lock.yaml',
-    'yarn.lock',
-    'tsconfig.json',
-    'vitest.config.ts',
-    'vitest.config.mts',
-    'vitest.config.js',
-    'vite.config.ts',
-  ]
-  // Also include diagnostic test files and test setup. A model modifying
-  // these files could make diagnostic verification pass without actually
-  // solving the task. Walk common test directories to find test files.
-  const testDirs = ['tests', 'test', '__tests__', 'src/__tests__']
-  const testFilePatterns = [
-    /\.test\.ts$/, /\.test\.tsx$/, /\.test\.js$/, /\.test\.jsx$/,
-    /\.spec\.ts$/, /\.spec\.tsx$/, /\.spec\.js$/, /\.spec\.jsx$/,
-    /\.test\.py$/, /\.test\.rs$/,
-    /^test_.*\.py$/, /_test\.py$/, /^test_.*\.rs$/, /_test\.rs$/,
-    /\.test\.go$/, /_test\.go$/,
-    /\.test\.java$/, /Test\.java$/,
-  ]
-  const testSetupFiles = ['tests/setup.ts', 'tests/setup.js', 'test/setup.ts', 'test/setup.js', 'tests/setup.mts', '__tests__/setup.ts', 'tests/setup.py', 'conftest.py']
+interface VerifierSnapshot {
+  readonly version: 'v1'
+  /** Paths whose contents must not change between baseline and verification. */
+  readonly controlledPaths: readonly string[]
+  /** SHA-256 over the controlled paths' contents at baseline. */
+  readonly controlledHash: string
+  /** Paths that must not exist at verification time. */
+  readonly mustRemainAbsent: readonly string[]
+}
 
-  const allFiles = [...controlledFiles, ...testSetupFiles]
+/** Config files that are always verifier-controlled, whether present or absent. */
+const VERIFIER_CONFIG_FILES = [
+  'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'tsconfig.json',
+  'vitest.config.ts',
+  'vitest.config.mts',
+  'vitest.config.js',
+  'vite.config.ts',
+] as const
 
-  // Walk test directories recursively for test files. Historical
-  // repositories commonly organize tests in nested subdirectories
-  // (e.g. tests/unit/foo.test.ts, tests/integration/api/bar.spec.ts).
+/** Test setup files that are always verifier-controlled. */
+const VERIFIER_TEST_SETUP_FILES = [
+  'tests/setup.ts', 'tests/setup.js', 'test/setup.ts', 'test/setup.js',
+  'tests/setup.mts', '__tests__/setup.ts', 'tests/setup.py', 'conftest.py',
+] as const
+
+/** Test file patterns for discovering baseline test files. */
+const TEST_FILE_PATTERNS = [
+  /\.test\.ts$/, /\.test\.tsx$/, /\.test\.js$/, /\.test\.jsx$/,
+  /\.spec\.ts$/, /\.spec\.tsx$/, /\.spec\.js$/, /\.spec\.jsx$/,
+  /\.test\.py$/, /\.test\.rs$/,
+  /^test_.*\.py$/, /_test\.py$/, /^test_.*\.rs$/, /_test\.rs$/,
+  /\.test\.go$/, /_test\.go$/,
+  /\.test\.java$/, /Test\.java$/,
+] as const
+
+/** Directories to walk for test files. */
+const TEST_DIRS = ['tests', 'test', '__tests__', 'src/__tests__'] as const
+
+/**
+ * Freeze the verifier-controlled path set at task initialization.
+ *
+ * Discovers all verifier-controlled files (config files, test setup, and
+ * existing test files) and computes a hash over their current contents.
+ * The returned snapshot is used at verification time to check exactly
+ * these paths — no dynamic rediscovery occurs.
+ *
+ * @param workspace - the model workspace at baseline state.
+ * @returns a frozen verifier snapshot.
+ */
+export function freezeVerifierSnapshot(workspace: string): VerifierSnapshot {
+  const controlledPaths: string[] = [...VERIFIER_CONFIG_FILES, ...VERIFIER_TEST_SETUP_FILES]
+
+  // Walk test directories for existing test files.
   const walkTestDir = (dirRel: string, dirAbs: string): void => {
     try {
       const entries = readdirSync(dirAbs, { withFileTypes: true })
@@ -610,44 +632,42 @@ function hashVerifierControlledFiles(workspace: string): string {
         const entryRel = join(dirRel, entry.name)
         if (entry.isDirectory()) {
           walkTestDir(entryRel, entryAbs)
-        } else if (entry.isFile() && testFilePatterns.some(p => p.test(entry.name))) {
-          allFiles.push(entryRel)
+        } else if (entry.isFile() && TEST_FILE_PATTERNS.some(p => p.test(entry.name))) {
+          controlledPaths.push(entryRel)
         }
       }
     } catch {
       // Test directory doesn't exist — skip.
     }
   }
-  for (const dir of testDirs) {
+  for (const dir of TEST_DIRS) {
     walkTestDir(dir, join(workspace, dir))
   }
 
-  for (const file of allFiles) {
+  // Deduplicate and sort before hashing so verification uses the same order.
+  const sortedPaths = [...new Set(controlledPaths)].sort()
+
+  // Compute hash over exactly the discovered paths.
+  const hash = createHash('sha256')
+  for (const file of sortedPaths) {
     const absPath = join(workspace, file)
     try {
       const content = readFileSync(absPath)
       hash.update(file).update(':').update(content).update('\n')
     } catch {
-      // Config files and test setup files are always included in the hash,
-      // even when absent, so a model creating them is detected. Test files
-      // discovered by walking test directories are only hashed when they
-      // exist: multi-file-feature tasks legitimately ask the model to create
-      // new test files, and recording their absence would reject every
-      // multi-file-feature task before verification.
-      const isConfigOrSetup = controlledFiles.includes(file) || testSetupFiles.includes(file)
+      // Config and setup files are always included, even when absent.
+      // Test files that don't exist are not in the path set (they were
+      // only added if they existed during the walk).
+      const isConfigOrSetup =
+        (VERIFIER_CONFIG_FILES as readonly string[]).includes(file) ||
+        (VERIFIER_TEST_SETUP_FILES as readonly string[]).includes(file)
       if (isConfigOrSetup) {
         hash.update(file).update(':absent\n')
       }
-      // Test files that don't exist at baseline are simply not in the hash.
-      // The diagnostic verifier still runs the actual tests, so a new test
-      // file that doesn't test the right thing will fail verification.
     }
   }
 
-  // Hash node_modules integrity: the lockfile metadata and the top-level
-  // package directory listing. A model that modifies installed dependencies
-  // (e.g. patching vitest internals) would change this hash. Full content
-  // hashing of node_modules is impractical; this detects structural tampering.
+  // Hash node_modules structural integrity.
   const nodeModulesPath = join(workspace, 'node_modules')
   try {
     const nmEntries = readdirSync(nodeModulesPath, { withFileTypes: true })
@@ -655,7 +675,6 @@ function hashVerifierControlledFiles(workspace: string): string {
     for (const entry of nmEntries) {
       hash.update('node_modules/').update(entry.name).update(':').update(entry.isDirectory() ? 'dir' : 'file').update('\n')
     }
-    // Hash the package-lock metadata inside node_modules if present.
     for (const lockFile of ['.package-lock.json', '.modules.yaml', '.pnpm/lock.yaml']) {
       const lockPath = join(nodeModulesPath, lockFile)
       try {
@@ -669,7 +688,81 @@ function hashVerifierControlledFiles(workspace: string): string {
     hash.update('node_modules:absent\n')
   }
 
-  return hash.digest('hex')
+  return {
+    version: 'v1',
+    controlledPaths: sortedPaths,
+    controlledHash: hash.digest('hex'),
+    mustRemainAbsent: [],
+  }
+}
+
+/**
+ * Verify the workspace against a frozen verifier snapshot.
+ *
+ * Hashes exactly the paths in the snapshot's `controlledPaths` — no
+ * dynamic rediscovery. A model creating a new test file that was not in
+ * the baseline path set does not cause a mismatch. A model modifying an
+ * existing controlled file does.
+ *
+ * @param workspace - the model workspace after model execution.
+ * @param snapshot - the frozen verifier snapshot from baseline.
+ * @returns true if the workspace matches the snapshot, false otherwise.
+ */
+export function verifyAgainstSnapshot(workspace: string, snapshot: VerifierSnapshot): boolean {
+  const hash = createHash('sha256')
+  for (const file of snapshot.controlledPaths) {
+    const absPath = join(workspace, file)
+    try {
+      const content = readFileSync(absPath)
+      hash.update(file).update(':').update(content).update('\n')
+    } catch {
+      const isConfigOrSetup =
+        (VERIFIER_CONFIG_FILES as readonly string[]).includes(file) ||
+        (VERIFIER_TEST_SETUP_FILES as readonly string[]).includes(file)
+      if (isConfigOrSetup) {
+        hash.update(file).update(':absent\n')
+      }
+      // A test file that was present at baseline but is now absent means
+      // the model deleted it — this is a modification and must be detected.
+      if (!isConfigOrSetup) {
+        hash.update(file).update(':deleted\n')
+      }
+    }
+  }
+
+  // Hash node_modules structural integrity.
+  const nodeModulesPath = join(workspace, 'node_modules')
+  try {
+    const nmEntries = readdirSync(nodeModulesPath, { withFileTypes: true })
+    nmEntries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of nmEntries) {
+      hash.update('node_modules/').update(entry.name).update(':').update(entry.isDirectory() ? 'dir' : 'file').update('\n')
+    }
+    for (const lockFile of ['.package-lock.json', '.modules.yaml', '.pnpm/lock.yaml']) {
+      const lockPath = join(nodeModulesPath, lockFile)
+      try {
+        const content = readFileSync(lockPath)
+        hash.update('node_modules/').update(lockFile).update(':').update(content).update('\n')
+      } catch {
+        hash.update('node_modules/').update(lockFile).update(':absent\n')
+      }
+    }
+  } catch {
+    hash.update('node_modules:absent\n')
+  }
+
+  if (hash.digest('hex') !== snapshot.controlledHash) {
+    return false
+  }
+
+  // Check mustRemainAbsent paths.
+  for (const absentPath of snapshot.mustRemainAbsent) {
+    if (existsSync(join(workspace, absentPath))) {
+      return false
+    }
+  }
+
+  return true
 }
 
 /**
