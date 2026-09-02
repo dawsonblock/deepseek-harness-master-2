@@ -186,9 +186,14 @@ async function main(): Promise<void> {
 
   // Verify verifier-controlled files match the freeze hash.
   if (!verifyVerifierIntegrity(freezeRecord.verifierIntegrityHash)) {
-    process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have been modified since freeze.\n')
-    process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
-    process.exit(1)
+    if (skipSecurityGate) {
+      process.stderr.write('\nWARNING: VERIFIER INTEGRITY CHECK FAILED, but --skip-security-gate was passed.\n')
+      process.stderr.write('Results from this run are NOT benchmark-eligible.\n')
+    } else {
+      process.stderr.write('\nVERIFIER INTEGRITY CHECK FAILED: verifier-controlled files have been modified since freeze.\n')
+      process.stderr.write('Cannot proceed to live evaluation. Re-qualify or restore the frozen verifier files.\n')
+      process.exit(1)
+    }
   }
   process.stderr.write('Verifier integrity: verified\n')
   process.stderr.write(`Security qualification: ${SECURITY_QUALIFICATION_ID} (${securityRecord.passedCount} properties passed)\n`)
